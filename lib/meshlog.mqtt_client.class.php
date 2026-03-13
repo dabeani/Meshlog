@@ -1,14 +1,20 @@
 <?php
 
 class MeshLogMqttClient {
+    const READ_BUFFER_SIZE = 4096;
+    const POLL_SLEEP_MICROSECONDS = 50000;
+
     private $config;
     private $socket = null;
     private $buffer = '';
     private $connected = false;
     private $websocket = false;
+    private $timeout = 5;
 
     public function __construct($config) {
         $this->config = $config;
+        $this->timeout = intval($this->config['timeout'] ?? 5);
+        if ($this->timeout < 1) $this->timeout = 5;
     }
 
     public function connect() {
@@ -39,7 +45,7 @@ class MeshLogMqttClient {
         if (!$this->socket) {
             throw new RuntimeException("MQTT connect failed: $errstr ($errno)");
         }
-        stream_set_timeout($this->socket, 5);
+        stream_set_timeout($this->socket, $this->timeout);
 
         $this->websocket = in_array($transport, array('ws', 'wss', 'websocket'));
         if ($this->websocket) {
@@ -137,7 +143,8 @@ class MeshLogMqttClient {
         $this->sendRaw($packet);
     }
 
-    private function readPacketType($timeoutSeconds = 5) {
+    private function readPacketType($timeoutSeconds = null) {
+        if ($timeoutSeconds === null) $timeoutSeconds = $this->timeout;
         $byte = $this->readByte($timeoutSeconds);
         if ($byte === null) return null;
         return (ord($byte) >> 4) & 0x0F;
@@ -175,14 +182,15 @@ class MeshLogMqttClient {
         return pack('n', strlen($value)) . $value;
     }
 
-    private function readByte($timeoutSeconds = 5) {
+    private function readByte($timeoutSeconds = null) {
+        if ($timeoutSeconds === null) $timeoutSeconds = $this->timeout;
         $data = $this->readFromBuffer(1, $timeoutSeconds);
         if ($data === '') return null;
         return $data;
     }
 
     private function readExact($len) {
-        $data = $this->readFromBuffer($len, 5);
+        $data = $this->readFromBuffer($len, $this->timeout);
         if (strlen($data) !== $len) {
             throw new RuntimeException("MQTT read timeout");
         }
@@ -196,9 +204,9 @@ class MeshLogMqttClient {
                 break;
             }
 
-            $chunk = $this->websocket ? $this->readWebSocketFrame() : fread($this->socket, 4096);
+            $chunk = $this->websocket ? $this->readWebSocketFrame() : fread($this->socket, static::READ_BUFFER_SIZE);
             if ($chunk === false || $chunk === '') {
-                usleep(50000);
+                usleep(static::POLL_SLEEP_MICROSECONDS);
                 continue;
             }
             $this->buffer .= $chunk;
@@ -293,6 +301,7 @@ class MeshLogMqttClient {
         }
 
         if ($opcode == 0x8) {
+            $this->connected = false;
             fclose($this->socket);
             $this->socket = null;
             return '';

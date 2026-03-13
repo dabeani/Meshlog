@@ -19,6 +19,7 @@ class MeshLogMqttDecoder {
         $snr = intval($data['SNR'] ?? 0);
 
         $timestamp = floor(microtime(true) * 1000);
+        // meshcoretomqtt uses ISO8601 timestamp strings (datetime.now().isoformat()).
         if (isset($data['timestamp'])) {
             $ts = strtotime($data['timestamp']);
             if ($ts) {

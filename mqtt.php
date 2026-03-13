@@ -26,8 +26,10 @@ try {
     echo "Connected. Waiting for packets...\n";
 
     $client->loop(function($topic, $payload) use ($meshlog) {
-        $ok = $meshlog->insertMqtt($topic, $payload);
-        if ($ok === false) {
+        $result = $meshlog->insertMqtt($topic, $payload);
+        if (is_array($result) && array_key_exists("error", $result)) {
+            echo "Skipped MQTT message from topic $topic: " . $result["error"] . "\n";
+        } else if ($result === false) {
             echo "Skipped MQTT message from topic $topic\n";
         }
     });
