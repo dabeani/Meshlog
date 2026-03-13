@@ -51,8 +51,8 @@ class MeshLogReporter extends MeshLogEntity {
 
     public function updateLocation($meshlog, $lat, $lon, $data=array()) {
         if (!$lat || !$lon) return;
-        if (floatval($lat) == floatval($this->lat) &&
-            floatval($lon) == floatval($this->lon)) return;
+        if (number_format(floatval($lat), 6, '.', '') == number_format(floatval($this->lat), 6, '.', '') &&
+            number_format(floatval($lon), 6, '.', '') == number_format(floatval($this->lon), 6, '.', '')) return;
 
         $tableStr = static::$table;
         $query = $meshlog->pdo->prepare("UPDATE $tableStr SET lat = :lat, lon = :lon WHERE id = :id");
