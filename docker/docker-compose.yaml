@@ -1,4 +1,4 @@
-name: meshlog
+version: "3.8"
 services:
   mariadb:
     image: mariadb:12
