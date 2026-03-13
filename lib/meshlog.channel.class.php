@@ -44,6 +44,7 @@ class MeshLogChannel extends MeshLogEntity {
             'id' => $this->getId(),
             'hash' => $this->hash,
             'name' => $this->name,
+            'enabled' => $this->enabled,
             'created_at' => $this->created_at
         );
     }
