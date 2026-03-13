@@ -20,3 +20,17 @@ Web side for [MeshCore logger firmware](https://github.com/Anrijs/MeshCore/tree/
  - `set lon xx.xxxxx`
  - `reboot` Apply changes
 5. Add reporter to database by going to `admin/`
+
+## MQTT ingest (optional)
+MeshLog can ingest MeshCore packet logs from MQTT (for example from [meshcoretomqtt](https://github.com/Cisien/meshcoretomqtt)) while keeping firmware HTTP logging active.
+
+1. Configure MQTT in `config.php` (see `config.example.php`)
+   - `enabled`: `true` to activate MQTT ingest
+   - `transport`: `tcp`, `ssl`, `ws`, or `wss`
+   - `host`, `port`, `topic`
+   - `username` / `password` for authenticated brokers (or leave empty for anonymous)
+2. Ensure each MQTT publisher `origin_id` exists as a reporter `public_key` in MeshLog.
+3. Run MQTT worker:
+   - `php mqtt.php`
+
+The worker listens to packet topics and stores them as RAW packets. MQTT `path` values are normalized and hash prefix size is detected for 1/2/3-byte routing hashes (MeshCore 1.14 compatible).

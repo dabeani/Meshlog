@@ -1,0 +1,73 @@
+<?php
+
+class MeshLogMqttDecoder {
+    public static function decode($topic, $payload) {
+        $data = json_decode($payload, true);
+        if (!is_array($data)) return null;
+
+        if (($data['type'] ?? null) != 'PACKET') return null;
+
+        $reporter = strtoupper($data['origin_id'] ?? '');
+        $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
+        if (strlen($raw) % 2 !== 0) return null;
+
+        if (!$reporter || !$raw) return null;
+
+        $path = static::decodePath($data['path'] ?? '');
+        $hashSize = static::decodeHashSize($path);
+        $packetType = intval($data['packet_type'] ?? 0);
+        $snr = intval($data['SNR'] ?? 0);
+
+        $timestamp = floor(microtime(true) * 1000);
+        // meshcoretomqtt uses ISO 8601 timestamp strings (datetime.now().isoformat()).
+        if (isset($data['timestamp'])) {
+            $ts = strtotime($data['timestamp']);
+            if ($ts) {
+                $timestamp = intval($ts) * 1000;
+            }
+        }
+
+        return array(
+            "type" => "RAW",
+            "reporter" => $reporter,
+            "time" => array(
+                "local" => $timestamp,
+                "sender" => $timestamp,
+                "server" => $timestamp
+            ),
+            "packet" => array(
+                "header" => $packetType,
+                "path" => $path,
+                "payload" => $raw,
+                "snr" => $snr,
+                "decoded" => false,
+                "hash_size" => $hashSize
+            )
+        );
+    }
+
+    private static function decodePath($rawPath) {
+        if (!$rawPath || !is_string($rawPath)) return "";
+
+        $parts = preg_split('/\s*->\s*/', trim($rawPath));
+        $hashes = array();
+        foreach ($parts as $part) {
+            $hash = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($part));
+            if ($hash !== '') $hashes[] = strtolower($hash);
+        }
+
+        return implode(",", $hashes);
+    }
+
+    private static function decodeHashSize($path) {
+        if (!$path) return 1;
+        $first = explode(",", $path, 2)[0];
+        $len = strlen($first);
+        $hashSize = intval($len / 2);
+        if ($hashSize < 1) return 1;
+        if ($hashSize > 3) return 3;
+        return $hashSize;
+    }
+}
+
+?>
