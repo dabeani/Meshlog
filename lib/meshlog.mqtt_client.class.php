@@ -81,32 +81,41 @@ class MeshLogMqttClient {
         $lastPing = time();
 
         while (!feof($this->socket)) {
-            $packetType = $this->readPacketType(1);
-            if ($packetType === null) {
+            $headerByte = $this->readPacketHeaderByte(1);
+            if ($headerByte === null) {
                 if ((time() - $lastPing) >= $keepalive) {
                     $this->sendRaw(chr(0xC0) . chr(0x00));
                     $lastPing = time();
                 }
                 continue;
             }
+            $packetType = ($headerByte >> 4) & 0x0F;
+            $flags = $headerByte & 0x0F;
 
             $payload = $this->readPacketPayload();
             $lastPing = time();
 
             if ($packetType == 3) {
-                $this->handlePublish($payload, $onMessage);
+                $this->handlePublish($payload, $flags, $onMessage);
             } else if ($packetType == 13) {
                 // PINGRESP
             }
         }
     }
 
-    private function handlePublish($payload, $onMessage) {
+    private function handlePublish($payload, $flags, $onMessage) {
         if (strlen($payload) < 2) return;
         $topicLen = unpack('n', substr($payload, 0, 2))[1];
         $offset = 2;
+        if (strlen($payload) < ($offset + $topicLen)) return;
         $topic = substr($payload, $offset, $topicLen);
         $offset += $topicLen;
+
+        $qos = ($flags >> 1) & 0x03;
+        if ($qos > 0) {
+            if (strlen($payload) < ($offset + 2)) return;
+            $offset += 2;
+        }
 
         $message = substr($payload, $offset);
         $onMessage($topic, $message);
@@ -143,11 +152,11 @@ class MeshLogMqttClient {
         $this->sendRaw($packet);
     }
 
-    private function readPacketType($timeoutSeconds = null) {
+    private function readPacketHeaderByte($timeoutSeconds = null) {
         if ($timeoutSeconds === null) $timeoutSeconds = $this->timeout;
         $byte = $this->readByte($timeoutSeconds);
         if ($byte === null) return null;
-        return (ord($byte) >> 4) & 0x0F;
+        return ord($byte);
     }
 
     private function readPacketPayload() {
