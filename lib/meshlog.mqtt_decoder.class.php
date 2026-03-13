@@ -62,10 +62,12 @@ class MeshLogMqttDecoder {
     public static function extractReporterFromTopic($topic) {
         if (!$topic || !is_string($topic)) return '';
 
-        $parts = explode('/', trim($topic));
-        if (count($parts) < 2 || strtolower($parts[0]) !== 'meshcore') return '';
+        $parts = explode('/', trim($topic, '/'));
+        if (count($parts) < 4) return '';
+        if (trim($parts[0]) === '' || trim($parts[1]) === '') return '';
+        if (!in_array(strtolower(trim($parts[3])), array('status', 'packets', 'debug'))) return '';
 
-        $candidate = strtoupper(trim($parts[1]));
+        $candidate = strtoupper(trim($parts[2]));
         if ($candidate === '' || $candidate === '+') return '';
         if (!preg_match('/^[0-9A-F]+$/', $candidate)) return '';
         if (strlen($candidate) % 2 !== 0) return '';

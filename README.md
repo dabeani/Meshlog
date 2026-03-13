@@ -22,7 +22,7 @@ Web side for [MeshCore logger firmware](https://github.com/Anrijs/MeshCore/tree/
 5. Add reporter to database by going to `admin/`
    - `Public Key` must match the logger/reporter public key.
      - HTTP ingest uses the `reporter` field from the logger payload.
-     - MQTT ingest uses the topic key from `meshcore/<public_key>/.../packets` (for example `meshcore/+/PUBLICLY/packets`) and falls back to `origin_id` when no key can be parsed from the topic.
+     - MQTT ingest uses the topic key from `<prefix>/<iata>/<public_key>/(status|packets|debug)` and falls back to `origin_id` when no key can be parsed from the topic.
    - `Auth` must match the logger `log auth` value. MeshLog expects this in HTTP `Authorization: Bearer <secret>` from the logger firmware.
    - For MQTT ingest (`php mqtt.php`), authorization header is not used, but the reporter must still exist and be `authorized = 1`.
    - You can leave `Auth` empty for MQTT-only reporters.
@@ -36,7 +36,7 @@ MeshLog can ingest MeshCore packet logs from MQTT (for example from [meshcoretom
    - `host`, `port`, `topic`
    - `username` / `password` for authenticated brokers (or leave empty for anonymous)
 2. Ensure each MQTT reporter public key exists as a reporter `public_key` in MeshLog.
-   - Preferred mapping is from the MQTT topic segment: `meshcore/<public_key>/.../packets`.
+   - Preferred mapping is from the MQTT topic segment: `<prefix>/<iata>/<public_key>/(status|packets|debug)`.
    - If topic key extraction is not possible, MeshLog falls back to payload `origin_id`.
    - Add it from `admin/` with:
      - `public_key = <public_key from MQTT topic (or origin_id fallback)>`
