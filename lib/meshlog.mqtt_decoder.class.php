@@ -58,7 +58,7 @@ class MeshLogMqttDecoder {
     public static function extractReporterFromTopic($topic) {
         if (!is_string($topic) || $topic === '') return '';
 
-        $parts = explode('/', trim($topic, "/ \t\n\r\0\x0B"));
+        $parts = explode('/', trim(trim($topic), '/'));
         if (count($parts) < 2) return '';
         if (!in_array(strtolower(trim($parts[count($parts) - 1])), static::TOPIC_TYPES)) return '';
 
