@@ -3,6 +3,7 @@
 class MeshLogMqttDecoder {
     // At least 4 hex characters (2 bytes) so tiny placeholders (for example "AA") are rejected.
     const MIN_REPORTER_KEY_LENGTH = 4;
+    const TOPIC_TYPES = array('status', 'packets', 'debug');
 
     public static function decode($topic, $payload) {
         $data = json_decode($payload, true);
@@ -12,6 +13,9 @@ class MeshLogMqttDecoder {
 
         $topicReporter = static::extractReporterFromTopic($topic);
         $payloadReporter = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['origin_id'] ?? ''));
+        if (strlen($payloadReporter) % 2 !== 0 || strlen($payloadReporter) < static::MIN_REPORTER_KEY_LENGTH) {
+            $payloadReporter = '';
+        }
         $reporter = $topicReporter ?: $payloadReporter;
         $reporterSource = $topicReporter ? 'topic' : 'payload';
         $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
@@ -60,12 +64,12 @@ class MeshLogMqttDecoder {
     }
 
     public static function extractReporterFromTopic($topic) {
-        if (!$topic || !is_string($topic)) return '';
+        if (!is_string($topic) || $topic === '') return '';
 
         $parts = explode('/', trim($topic, '/'));
         if (count($parts) < 4) return '';
         if (trim($parts[0]) === '' || trim($parts[1]) === '') return '';
-        if (!in_array(strtolower(trim($parts[3])), array('status', 'packets', 'debug'))) return '';
+        if (!in_array(strtolower(trim($parts[3])), static::TOPIC_TYPES)) return '';
 
         $candidate = strtoupper(trim($parts[2]));
         if ($candidate === '' || $candidate === '+') return '';

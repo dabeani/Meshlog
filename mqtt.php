@@ -34,8 +34,8 @@ function mqttDebug($enabled, $message) {
     mqttLog("DEBUG", $message);
 }
 
-function mqttResolvedReporter($mqttMeta) {
-    if (($mqttMeta['resolved_reporter'] ?? '') !== '') return $mqttMeta['resolved_reporter'];
+function mqttGetEffectiveReporter($mqttMeta) {
+    if (($mqttMeta['attempted_reporter'] ?? '') !== '') return $mqttMeta['attempted_reporter'];
     if (($mqttMeta['topic_reporter'] ?? '') !== '') return $mqttMeta['topic_reporter'];
     if (($mqttMeta['payload_reporter'] ?? '') !== '') return $mqttMeta['payload_reporter'];
 
@@ -64,7 +64,7 @@ while (true) {
             if ($debug && is_array($mqttMeta)) {
                 mqttDebug(
                     $debug,
-                    "MQTT reporter resolution reporter=" . mqttResolvedReporter($mqttMeta) .
+                    "MQTT reporter resolution reporter=" . mqttGetEffectiveReporter($mqttMeta) .
                     " source=" . ($mqttMeta['reporter_source'] ?? 'unknown') .
                     " topic_reporter=" . ($mqttMeta['topic_reporter'] ?? '') .
                     " payload_reporter=" . ($mqttMeta['payload_reporter'] ?? '') .

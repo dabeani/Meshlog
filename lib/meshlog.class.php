@@ -144,7 +144,7 @@ class MeshLog {
         );
         if (!$reporter) {
             $error = $this->repError("invalid or unauthorized reporter");
-            $mqttMeta['resolved_reporter'] = $data['reporter'];
+            $mqttMeta['attempted_reporter'] = $data['reporter'];
             $error['_mqtt'] = $mqttMeta;
             return $error;
         }
