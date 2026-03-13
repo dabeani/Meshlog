@@ -11,13 +11,11 @@ class MeshLogMqttDecoder {
 
         if (($data['type'] ?? null) != 'PACKET') return null;
 
-        $topicReporter = static::extractReporterFromTopic($topic);
-        $payloadReporter = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['origin_id'] ?? ''));
-        if (strlen($payloadReporter) % 2 !== 0 || strlen($payloadReporter) < static::MIN_REPORTER_KEY_LENGTH) {
-            $payloadReporter = '';
-        }
-        $reporter = $topicReporter ?: $payloadReporter;
-        $reporterSource = $topicReporter ? 'topic' : 'payload';
+        $mqttMeta = static::extractMetadata($topic, $data);
+        $topicReporter = $mqttMeta['topic_reporter'];
+        $payloadReporter = $mqttMeta['payload_reporter'];
+        $reporter = $mqttMeta['attempted_reporter'];
+        $reporterSource = $mqttMeta['reporter_source'];
         $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
         if (strlen($raw) % 2 !== 0) return null;
 
@@ -53,13 +51,7 @@ class MeshLogMqttDecoder {
                 "decoded" => false,
                 "hash_size" => $hashSize
             ),
-            "_mqtt" => array(
-                "topic" => $topic,
-                "topic_reporter" => $topicReporter,
-                "payload_reporter" => $payloadReporter,
-                "reporter_source" => $reporterSource,
-                "topic_payload_mismatch" => boolval($topicReporter && $payloadReporter && $topicReporter !== $payloadReporter),
-            ),
+            "_mqtt" => $mqttMeta,
         );
     }
 
@@ -78,6 +70,27 @@ class MeshLogMqttDecoder {
         if (strlen($candidate) < static::MIN_REPORTER_KEY_LENGTH) return '';
 
         return $candidate;
+    }
+
+    public static function extractMetadata($topic, $payload) {
+        $data = is_array($payload) ? $payload : json_decode($payload, true);
+        $topicReporter = static::extractReporterFromTopic($topic);
+        $payloadReporter = '';
+        if (is_array($data)) {
+            $payloadReporter = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['origin_id'] ?? ''));
+            if (strlen($payloadReporter) % 2 !== 0 || strlen($payloadReporter) < static::MIN_REPORTER_KEY_LENGTH) {
+                $payloadReporter = '';
+            }
+        }
+
+        return array(
+            "topic" => is_string($topic) ? $topic : '',
+            "topic_reporter" => $topicReporter,
+            "payload_reporter" => $payloadReporter,
+            "reporter_source" => $topicReporter ? 'topic' : ($payloadReporter ? 'payload' : 'unknown'),
+            "topic_payload_mismatch" => boolval($topicReporter && $payloadReporter && $topicReporter !== $payloadReporter),
+            "attempted_reporter" => $topicReporter ?: $payloadReporter,
+        );
     }
 
     private static function decodePath($rawPath) {
