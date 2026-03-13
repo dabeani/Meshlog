@@ -131,7 +131,12 @@ class MeshLog {
 
     function insertMqtt($topic, $payload) {
         $data = MeshLogMqttDecoder::decode($topic, $payload);
-        if (!$data || !isset($data['reporter'])) return $this->repError("invalid MQTT payload");
+        if (!$data || !isset($data['reporter'])) {
+            return $this->repError(
+                "invalid MQTT payload",
+                array("_mqtt" => MeshLogMqttDecoder::extractMetadata($topic, $payload))
+            );
+        }
         $mqttMeta = $data['_mqtt'] ?? array();
 
         $reporter = MeshLogReporter::findBy(
@@ -475,8 +480,8 @@ class MeshLog {
         $error = $this->writeInfluxDb($line);
     }
 
-    private function repError($msg) {
-        return array('error' => $msg);
+    private function repError($msg, $extra = array()) {
+        return array_merge(array('error' => $msg), $extra);
     }
 
     // getters
