@@ -44,6 +44,7 @@ DB_USER=meshcore
 DB_PASS=meshcore
 DB_ROOT_PASS=meshcore
 TIMEZONE=Europe/Riga
+WEB_PORT=80
 MQTT_ENABLED=false
 MQTT_TRANSPORT=tcp
 MQTT_HOST=127.0.0.1
@@ -95,7 +96,7 @@ SELECT * FROM reporters WHERE name='ANR-Log';
 
 The Meshlog web interface is available at:
 ```
-http://<your-server-ip>:80
+http://<your-server-ip>:<WEB_PORT>
 ```
 
 ## ⚠️ Warning

@@ -46,7 +46,7 @@ services:
       MQTT_PATH: ${MQTT_PATH:-/mqtt}
       MQTT_TIMEOUT: ${MQTT_TIMEOUT:-5}
     ports:
-      - "80:80"
+      - "${WEB_PORT:-80}:80"
     restart: unless-stopped
 
 volumes:
