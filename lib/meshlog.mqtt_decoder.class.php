@@ -1,6 +1,9 @@
 <?php
 
 class MeshLogMqttDecoder {
+    // At least 4 hex characters (2 bytes) so tiny placeholders (for example "AA") are rejected.
+    const MIN_REPORTER_KEY_LENGTH = 4;
+
     public static function decode($topic, $payload) {
         $data = json_decode($payload, true);
         if (!is_array($data)) return null;
@@ -66,6 +69,7 @@ class MeshLogMqttDecoder {
         if ($candidate === '' || $candidate === '+') return '';
         if (!preg_match('/^[0-9A-F]+$/', $candidate)) return '';
         if (strlen($candidate) % 2 !== 0) return '';
+        if (strlen($candidate) < static::MIN_REPORTER_KEY_LENGTH) return '';
 
         return $candidate;
     }

@@ -143,8 +143,10 @@ class MeshLog {
             true
         );
         if (!$reporter) {
-            $source = $mqttMeta['reporter_source'] ?? 'payload';
-            return $this->repError("invalid or unauthorized reporter: " . $data['reporter'] . " (source: " . $source . ")");
+            $error = $this->repError("invalid or unauthorized reporter");
+            $mqttMeta['resolved_reporter'] = $data['reporter'];
+            $error['_mqtt'] = $mqttMeta;
+            return $error;
         }
 
         $result = $this->insertForReporter($data, $reporter);
