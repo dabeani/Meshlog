@@ -373,6 +373,147 @@
 
         loadReporters();
     </script>
+
+    <h1>Channels</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Hash</th>
+                <th>Name</th>
+                <th>Enabled</th>
+                <td></td>
+            </tr>
+        </thead>
+        <tbody id="channels"></tbody>
+    </table>
+
+    <script>
+        const channelsTable = document.getElementById("channels");
+
+        function loadChannels() {
+            fetch('api/channels/', {
+                method: "GET",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            })
+            .then(response => response.json())
+            .then(result => {
+                channelsTable.innerHTML = '';
+                result.objects.forEach(obj => { addChannelRow(channelsTable, obj) });
+                addChannelRow(channelsTable, {
+                    id: 'Add',
+                    hash: '',
+                    name: '',
+                    enabled: 1,
+                    header: 'Add New Channel'
+                });
+            });
+        }
+
+        function addChannelRow(table, channel) {
+            if (channel.header) {
+                let h = document.createElement("h2");
+                h.innerText = channel.header;
+                let hrow = table.insertRow();
+                let hcell = hrow.insertCell();
+                hcell.colSpan = 5;
+                hcell.append(h);
+            }
+
+            const id = channel['id'];
+            let row = table.insertRow();
+            row.dataset.id = id;
+
+            let td1 = row.insertCell();
+            td1.innerText = id;
+
+            let hashCell = row.insertCell();
+            let hashInput = document.createElement("input");
+            hashInput.type = "text";
+            hashInput.value = channel['hash'] ?? '';
+            hashInput.oninput = () => { hashInput.style.color = '#1976D2'; };
+            hashCell.append(hashInput);
+
+            let nameCell = row.insertCell();
+            let nameInput = document.createElement("input");
+            nameInput.type = "text";
+            nameInput.value = channel['name'] ?? '';
+            nameInput.oninput = () => { nameInput.style.color = '#1976D2'; };
+            nameCell.append(nameInput);
+
+            let enabledCell = row.insertCell();
+            let enabledInput = document.createElement("input");
+            enabledInput.type = "checkbox";
+            enabledInput.checked = channel['enabled'] === 1;
+            enabledCell.append(enabledInput);
+
+            let td2 = row.insertCell();
+
+            let getData = () => ({
+                id: id,
+                hash: hashInput.value,
+                name: nameInput.value,
+                enabled: enabledInput.checked ? 1 : 0,
+            });
+
+            if (id === 'Add') {
+                let btnAdd = document.createElement("button");
+                btnAdd.innerText = "Add";
+                btnAdd.onclick = () => {
+                    const d = getData();
+                    fetch('api/channels/', {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: new URLSearchParams({ add: 1, hash: d.hash, name: d.name, enabled: d.enabled })
+                    })
+                    .then(r => r.json())
+                    .then(result => {
+                        if (getError(result)) { alert(getError(result)); } else { loadChannels(); }
+                    });
+                };
+                td2.append(btnAdd);
+            } else {
+                let btnSave = document.createElement("button");
+                let btnDelete = document.createElement("button");
+                btnSave.innerText = "Save";
+                btnDelete.innerText = "Delete";
+                td2.append(btnSave);
+                td2.append(btnDelete);
+
+                btnSave.onclick = () => {
+                    const d = getData();
+                    fetch('api/channels/', {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: new URLSearchParams({ edit: 1, id: d.id, name: d.name, enabled: d.enabled })
+                    })
+                    .then(r => r.json())
+                    .then(result => {
+                        if (getError(result)) { alert(getError(result)); }
+                        else {
+                            let inputs = row.querySelectorAll('input');
+                            inputs.forEach(i => { i.style.color = ''; });
+                        }
+                    });
+                };
+
+                btnDelete.onclick = () => {
+                    fetch('api/channels/', {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: new URLSearchParams({ delete: 1, id: id })
+                    })
+                    .then(r => r.json())
+                    .then(result => {
+                        if (getError(result)) { alert(getError(result)); }
+                        else { row.remove(); }
+                    });
+                };
+            }
+        }
+
+        loadChannels();
+    </script>
 <?php endif ?>
 </body>
 </html>

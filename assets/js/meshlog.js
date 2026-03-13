@@ -1120,6 +1120,94 @@ class MeshLogDirectMessage extends MeshLogReportedObject {
     isVisible() { return Settings.getBool('messageTypes.direct', false); }
 }
 
+class MeshLogRawPacket extends MeshLogObject {
+    static idPrefix = "r";
+
+    constructor(meshlog, data) {
+        super(meshlog, data);
+        this.time = new Date(data.created_at).getTime();
+    }
+
+    isVisible() {
+        return Settings.getBool('messageTypes.raw_packets', false);
+    }
+
+    createDom(recreate = false) {
+        if (this.dom && !recreate) return this.dom;
+
+        if (this.dom && this.dom.container && this.dom.container.parentNode) {
+            this.dom.container.parentNode.removeChild(this.dom.container);
+            this.dom = null;
+        }
+
+        let divContainer = document.createElement("div");
+        let divLog = document.createElement("div");
+        divContainer.dataset.time = this.time;
+        divLog.classList = 'log-entry';
+        divLog.instance = this;
+        divContainer.append(divLog);
+
+        let divLine1 = document.createElement("div");
+        let divLine2 = document.createElement("div");
+        divLine1.classList.add('log-entry-info');
+        divLine2.classList.add('log-entry-msg');
+        divLog.append(divLine1);
+        divLog.append(divLine2);
+
+        let spDate = document.createElement("span");
+        let spTag = document.createElement("span");
+        let spDot = document.createElement("span");
+        let spPath = document.createElement("span");
+        let spPayload = document.createElement("span");
+
+        spDate.classList.add(...['sp', 'c']);
+        spDate.innerText = this.data.created_at;
+
+        spTag.classList.add(...['sp', 'tag']);
+        spTag.innerText = 'RAW';
+
+        let reporter = this._meshlog.reporters[this.data.reporter_id] ?? false;
+        if (reporter) {
+            let textColor = reporter.getStyle().color;
+            let strokeColor = reporter.getStyle().stroke ?? textColor;
+            let strokeWeight = reporter.getStyle().weight ?? '1px';
+            spDot.classList.add(...['dot']);
+            spDot.innerText = reporter.data.name;
+            spDot.style.color = textColor;
+            spDot.style.border = `solid ${strokeWeight} ${strokeColor}`;
+        }
+
+        spPath.classList.add(...['sp']);
+        spPath.innerText = this.data.path || 'direct';
+
+        spPayload.classList.add(...['sp']);
+        let payload = this.data.payload || '';
+        spPayload.innerText = payload.length > 32 ? payload.substring(0, 32) + '\u2026' : payload;
+
+        divLine1.append(spDate);
+        divLine1.append(spTag);
+        divLine1.append(spDot);
+        divLine1.append(spPath);
+        divLine2.append(spPayload);
+
+        this.dom = {
+            container: divContainer,
+            log: divLog,
+        };
+
+        return this.dom;
+    }
+
+    updateDom() {
+        if (!this.dom) return;
+        this.dom.container.hidden = !this.isVisible();
+    }
+
+    static onclick(e) {}
+    static onmouseover(e) {}
+    static onmouseout(e) {}
+}
+
 class MeshLogLinkLayer {
     constructor(from, to, reporter, circle) {
         this.from = from;
@@ -1485,6 +1573,18 @@ class MeshLog {
 
         this.dom_settings_types.append(
             this.__createCb(
+                "Raw Packets",
+                "",
+                'messageTypes.raw_packets',
+                false,
+                (e) => {
+                    self.__onTypesChanged();
+                }
+            )
+        );
+
+        this.dom_settings_types.append(
+            this.__createCb(
                 "🐐",
                 "",
                 'notifications.enabled',
@@ -1688,6 +1788,7 @@ class MeshLog {
             const rep3 = this.__loadObjects(this.messages, data.advertisements, MeshLogAdvertisement);
             const rep5 = this.__loadObjects(this.messages, data.channel_messages, MeshLogChannelMessage);
             const rep6 = this.__loadObjects(this.messages, data.direct_messages, MeshLogDirectMessage);
+            const rep7 = data.raw_packets ? this.__loadObjects(this.messages, data.raw_packets, MeshLogRawPacket) : [];
 
             if (rep1.length) console.log(`${rep1.length} reporters loaded`);
             if (rep2.length) console.log(`${rep2.length} contacts loaded`);
@@ -1695,6 +1796,7 @@ class MeshLog {
             if (rep4.length) console.log(`${rep4.length} groups loaded`);
             if (rep5.length) console.log(`${rep5.length} group messages loaded`);
             if (rep6.length) console.log(`${rep6.length} direct messages loaded`);
+            if (rep7.length) console.log(`${rep7.length} raw packets loaded`);
 
             this.__init_reporters();
             this.onLoadAll();
@@ -1707,6 +1809,7 @@ class MeshLog {
                     advertisements: rep3,
                     channel_messages: rep5,
                     direct_messages: rep6,
+                    raw_packets: rep7,
                 });
             }
         });
@@ -1753,7 +1856,7 @@ class MeshLog {
         let dom = ch.createDom();
         ch.updateDom();
         if (isnew) {
-            this.dom_settings_reporters.appendChild(dom.cb);
+            this.dom_settings_types.appendChild(dom.cb);
         }
     }
 
