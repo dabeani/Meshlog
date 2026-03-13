@@ -19,9 +19,19 @@ if (!isset($config['db']) || !is_array($config['db'])) {
 
 $mqttConfig = $config['mqtt'] ?? array();
 $enabled = boolval($mqttConfig['enabled'] ?? false);
+$debug = boolval($mqttConfig['debug'] ?? false);
 if (!$enabled) {
     echo "MQTT disabled. Set \$config['mqtt']['enabled'] = true\n";
     exit(0);
+}
+
+function mqttLog($level, $message) {
+    echo "[" . date('c') . "][$level] $message\n";
+}
+
+function mqttDebug($enabled, $message) {
+    if (!$enabled) return;
+    mqttLog("DEBUG", $message);
 }
 
 $meshlog = new MeshLog($config['db']);
@@ -29,25 +39,44 @@ $meshlog = new MeshLog($config['db']);
 while (true) {
     try {
         $client = new MeshLogMqttClient($mqttConfig);
-        echo "Connecting to MQTT broker...\n";
+        mqttLog(
+            "INFO",
+            "Connecting to MQTT broker transport=" . ($mqttConfig['transport'] ?? 'tcp') .
+            " host=" . ($mqttConfig['host'] ?? '') .
+            " port=" . strval($mqttConfig['port'] ?? 1883) .
+            " topic=" . ($mqttConfig['topic'] ?? 'meshcore/+/+/packets')
+        );
         $client->connect();
-        echo "Connected. Waiting for packets...\n";
+        mqttLog("INFO", "Connected. Waiting for packets...");
 
-        $client->loop(function($topic, $payload) use ($meshlog) {
+        $client->loop(function($topic, $payload) use ($meshlog, $debug) {
+            mqttDebug($debug, "MQTT message received topic=" . $topic . " bytes=" . strlen($payload));
             $result = $meshlog->insertMqtt($topic, $payload);
+            $mqttMeta = is_array($result) ? ($result['_mqtt'] ?? array()) : array();
+            if ($debug && is_array($mqttMeta)) {
+                mqttDebug(
+                    $debug,
+                    "MQTT reporter resolution reporter=" . ($mqttMeta['topic_reporter'] ?: $mqttMeta['payload_reporter'] ?: 'unknown') .
+                    " source=" . ($mqttMeta['reporter_source'] ?? 'unknown') .
+                    " topic_reporter=" . ($mqttMeta['topic_reporter'] ?? '') .
+                    " payload_reporter=" . ($mqttMeta['payload_reporter'] ?? '') .
+                    " mismatch=" . (boolval($mqttMeta['topic_payload_mismatch'] ?? false) ? 'yes' : 'no')
+                );
+            }
+
             if (is_array($result) && array_key_exists("error", $result)) {
-                echo "Skipped MQTT message from topic $topic: " . $result["error"] . "\n";
+                mqttLog("WARN", "Skipped MQTT message from topic " . $topic . ": " . $result["error"]);
             } else if ($result === false) {
-                echo "Skipped MQTT message from topic $topic\n";
+                mqttLog("WARN", "Skipped MQTT message from topic " . $topic);
             }
         });
 
-        fwrite(STDERR, "MQTT connection closed\n");
+        fwrite(STDERR, "[" . date('c') . "][ERROR] MQTT connection closed\n");
     } catch (Throwable $e) {
-        fwrite(STDERR, "MQTT worker error: " . $e->getMessage() . "\n");
+        fwrite(STDERR, "[" . date('c') . "][ERROR] MQTT worker error: " . $e->getMessage() . "\n");
     }
 
-    fwrite(STDERR, "Retrying in " . MQTT_RECONNECT_DELAY_SECONDS . " seconds...\n");
+    fwrite(STDERR, "[" . date('c') . "][INFO] Retrying in " . MQTT_RECONNECT_DELAY_SECONDS . " seconds...\n");
     sleep(MQTT_RECONNECT_DELAY_SECONDS);
 }
 

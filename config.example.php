@@ -9,10 +9,11 @@ $config = array(
     ),
     'mqtt' => array(
         'enabled' => false,
+        'debug' => false, // true prints detailed MQTT topic/reporter resolution logs
         'transport' => 'tcp', // tcp, ssl, ws, wss
         'host' => '127.0.0.1',
         'port' => 1883,
-        'topic' => 'meshcore/+/+/packets',
+        'topic' => 'meshcore/+/+/packets', // meshcore/<reporter_public_key>/<scope>/packets
         'client_id' => 'meshlog-mqtt',
         'username' => '',
         'password' => '',

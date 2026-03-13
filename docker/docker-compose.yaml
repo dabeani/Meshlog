@@ -34,6 +34,7 @@ services:
       DB_USER: ${DB_USER:-meshcore}
       DB_PASS: ${DB_PASS:-meshcore}
       MQTT_ENABLED: ${MQTT_ENABLED:-false}
+      MQTT_DEBUG: ${MQTT_DEBUG:-false}
       MQTT_TRANSPORT: ${MQTT_TRANSPORT:-tcp}
       MQTT_HOST: ${MQTT_HOST:-127.0.0.1}
       MQTT_PORT: ${MQTT_PORT:-1883}

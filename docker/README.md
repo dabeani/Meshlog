@@ -46,6 +46,7 @@ DB_ROOT_PASS=meshcore
 TIMEZONE=Europe/Riga
 WEB_PORT=80
 MQTT_ENABLED=false
+MQTT_DEBUG=false
 MQTT_TRANSPORT=tcp
 MQTT_HOST=127.0.0.1
 MQTT_PORT=1883
@@ -61,6 +62,7 @@ MQTT_TIMEOUT=5
 
 When `MQTT_ENABLED=true`, the backend container automatically runs the MQTT worker on startup.
 Firmware HTTP logging via `log.php` remains available at the same time.
+Set `MQTT_DEBUG=true` to enable detailed MQTT topic/reporter resolution logs from `mqtt.php`.
 
 ### 4. Build and start the stack
 

@@ -7,7 +7,10 @@ class MeshLogMqttDecoder {
 
         if (($data['type'] ?? null) != 'PACKET') return null;
 
-        $reporter = strtoupper($data['origin_id'] ?? '');
+        $topicReporter = static::extractReporterFromTopic($topic);
+        $payloadReporter = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['origin_id'] ?? ''));
+        $reporter = $topicReporter ?: $payloadReporter;
+        $reporterSource = $topicReporter ? 'topic' : 'payload';
         $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
         if (strlen($raw) % 2 !== 0) return null;
 
@@ -42,8 +45,29 @@ class MeshLogMqttDecoder {
                 "snr" => $snr,
                 "decoded" => false,
                 "hash_size" => $hashSize
-            )
+            ),
+            "_mqtt" => array(
+                "topic" => $topic,
+                "topic_reporter" => $topicReporter,
+                "payload_reporter" => $payloadReporter,
+                "reporter_source" => $reporterSource,
+                "topic_payload_mismatch" => boolval($topicReporter && $payloadReporter && $topicReporter !== $payloadReporter),
+            ),
         );
+    }
+
+    public static function extractReporterFromTopic($topic) {
+        if (!$topic || !is_string($topic)) return '';
+
+        $parts = explode('/', trim($topic));
+        if (count($parts) < 2 || strtolower($parts[0]) !== 'meshcore') return '';
+
+        $candidate = strtoupper(trim($parts[1]));
+        if ($candidate === '' || $candidate === '+') return '';
+        if (!preg_match('/^[0-9A-F]+$/', $candidate)) return '';
+        if (strlen($candidate) % 2 !== 0) return '';
+
+        return $candidate;
     }
 
     private static function decodePath($rawPath) {
