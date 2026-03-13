@@ -6,6 +6,8 @@ if (php_sapi_name() !== 'cli') {
     exit;
 }
 
+const MQTT_RECONNECT_DELAY_SECONDS = 5;
+
 require_once "config.php";
 require_once "lib/meshlog.class.php";
 require_once "lib/meshlog.mqtt_client.class.php";
@@ -23,24 +25,30 @@ if (!$enabled) {
 }
 
 $meshlog = new MeshLog($config['db']);
-$client = new MeshLogMqttClient($mqttConfig);
 
-try {
-    echo "Connecting to MQTT broker...\n";
-    $client->connect();
-    echo "Connected. Waiting for packets...\n";
+while (true) {
+    try {
+        $client = new MeshLogMqttClient($mqttConfig);
+        echo "Connecting to MQTT broker...\n";
+        $client->connect();
+        echo "Connected. Waiting for packets...\n";
 
-    $client->loop(function($topic, $payload) use ($meshlog) {
-        $result = $meshlog->insertMqtt($topic, $payload);
-        if (is_array($result) && array_key_exists("error", $result)) {
-            echo "Skipped MQTT message from topic $topic: " . $result["error"] . "\n";
-        } else if ($result === false) {
-            echo "Skipped MQTT message from topic $topic\n";
-        }
-    });
-} catch (Throwable $e) {
-    fwrite(STDERR, "MQTT worker error: " . $e->getMessage() . "\n");
-    exit(1);
+        $client->loop(function($topic, $payload) use ($meshlog) {
+            $result = $meshlog->insertMqtt($topic, $payload);
+            if (is_array($result) && array_key_exists("error", $result)) {
+                echo "Skipped MQTT message from topic $topic: " . $result["error"] . "\n";
+            } else if ($result === false) {
+                echo "Skipped MQTT message from topic $topic\n";
+            }
+        });
+
+        fwrite(STDERR, "MQTT connection closed\n");
+    } catch (Throwable $e) {
+        fwrite(STDERR, "MQTT worker error: " . $e->getMessage() . "\n");
+    }
+
+    fwrite(STDERR, "Retrying in " . MQTT_RECONNECT_DELAY_SECONDS . " seconds...\n");
+    sleep(MQTT_RECONNECT_DELAY_SECONDS);
 }
 
 ?>
