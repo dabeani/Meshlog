@@ -143,7 +143,7 @@ class MeshLog {
             "public_key",
             $data['reporter'],
             $this,
-            array("authorized" => 1),
+            array("authorized" => array('operator' => '=', 'value' => 1)),
             false,
             true
         );
@@ -157,8 +157,14 @@ class MeshLog {
         $result = $this->insertForReporter($data, $reporter);
         if (is_array($result)) {
             $result['_mqtt'] = $mqttMeta;
+            return $result;
         }
-        return $result;
+        // insertForReporter returned a boolean; wrap it to preserve _mqtt metadata
+        $wrapped = array('_mqtt' => $mqttMeta);
+        if ($result === false) {
+            $wrapped['error'] = 'failed to insert packet';
+        }
+        return $wrapped;
     }
 
     private function insertForReporter($data, $reporter) {

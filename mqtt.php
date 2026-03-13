@@ -74,8 +74,6 @@ while (true) {
 
             if (is_array($result) && array_key_exists("error", $result)) {
                 mqttLog("WARN", "Skipped MQTT message from topic " . $topic . ": " . $result["error"]);
-            } else if ($result === false) {
-                mqttLog("WARN", "Skipped MQTT message from topic " . $topic);
             }
         });
 
