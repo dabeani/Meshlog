@@ -10,6 +10,11 @@ require_once "config.php";
 require_once "lib/meshlog.class.php";
 require_once "lib/meshlog.mqtt_client.class.php";
 
+if (!isset($config['db']) || !is_array($config['db'])) {
+    fwrite(STDERR, "Invalid config.php: missing db configuration\n");
+    exit(1);
+}
+
 $mqttConfig = $config['mqtt'] ?? array();
 $enabled = boolval($mqttConfig['enabled'] ?? false);
 if (!$enabled) {

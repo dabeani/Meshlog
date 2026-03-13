@@ -131,7 +131,7 @@ class MeshLog {
 
     function insertMqtt($topic, $payload) {
         $data = MeshLogMqttDecoder::decode($topic, $payload);
-        if (!$data || !isset($data['reporter'])) return $this->repError("invalid mqtt payload");
+        if (!$data || !isset($data['reporter'])) return $this->repError("invalid MQTT payload");
 
         $reporter = MeshLogReporter::findBy(
             "public_key",
@@ -141,7 +141,7 @@ class MeshLog {
             false,
             true
         );
-        if (!$reporter) return $this->repError("reporter not found or unauthorized");
+        if (!$reporter) return $this->repError("invalid or unauthorized reporter");
 
         return $this->insertForReporter($data, $reporter);
     }
