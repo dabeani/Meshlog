@@ -36,8 +36,8 @@ MeshLog can ingest MeshCore packet logs from MQTT (for example from [meshcoretom
    - `host`, `port`, `topic`
    - `username` / `password` for authenticated brokers (or leave empty for anonymous)
 2. Ensure each MQTT reporter public key exists as a reporter `public_key` in MeshLog.
-    - Preferred mapping is from the MQTT topic segment: `<prefix>/<iata>/<public_key>/(status|packets|debug)`.
-    - If topic key extraction is not possible, MeshLog falls back to payload `origin_id`.
+     - Preferred mapping is from the MQTT topic segment immediately before the final `(status|packets|debug)` suffix (for example `<prefix>/<iata>/<public_key>/packets`).
+     - If topic key extraction is not possible, MeshLog falls back to payload `origin_id`, `public_key`, `pubkey`, or `reporter`.
     - Packet ingest still requires the MQTT `PACKET` payload to include the raw packet bytes in `raw`; otherwise MeshLog can identify the reporter for debug logging, but skips the packet as invalid.
     - Add it from `admin/` with:
       - `public_key = <public_key from MQTT topic (or origin_id fallback)>`

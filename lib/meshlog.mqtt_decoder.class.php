@@ -58,30 +58,22 @@ class MeshLogMqttDecoder {
     public static function extractReporterFromTopic($topic) {
         if (!is_string($topic) || $topic === '') return '';
 
-        $parts = explode('/', trim($topic, '/'));
-        if (count($parts) < 4) return '';
-        if (trim($parts[0]) === '' || trim($parts[1]) === '') return '';
-        if (!in_array(strtolower(trim($parts[3])), static::TOPIC_TYPES)) return '';
+        $parts = explode('/', trim($topic, "/ \t\n\r\0\x0B"));
+        if (count($parts) < 2) return '';
+        if (!in_array(strtolower(trim($parts[count($parts) - 1])), static::TOPIC_TYPES)) return '';
 
-        $candidate = strtoupper(trim($parts[2]));
-        if ($candidate === '' || $candidate === '+') return '';
-        if (!preg_match('/^[0-9A-F]+$/', $candidate)) return '';
-        if (strlen($candidate) % 2 !== 0) return '';
-        if (strlen($candidate) < static::MIN_REPORTER_KEY_LENGTH) return '';
+        for ($i = count($parts) - 2; $i >= 0; $i--) {
+            $candidate = static::normalizeReporterKey($parts[$i]);
+            if ($candidate !== '') return $candidate;
+        }
 
-        return $candidate;
+        return '';
     }
 
     public static function extractMetadata($topic, $payload) {
         $data = is_array($payload) ? $payload : json_decode($payload, true);
         $topicReporter = static::extractReporterFromTopic($topic);
-        $payloadReporter = '';
-        if (is_array($data)) {
-            $payloadReporter = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['origin_id'] ?? ''));
-            if (strlen($payloadReporter) % 2 !== 0 || strlen($payloadReporter) < static::MIN_REPORTER_KEY_LENGTH) {
-                $payloadReporter = '';
-            }
-        }
+        $payloadReporter = static::extractReporterFromPayload($data);
 
         return array(
             "topic" => is_string($topic) ? $topic : '',
@@ -91,6 +83,28 @@ class MeshLogMqttDecoder {
             "topic_payload_mismatch" => boolval($topicReporter && $payloadReporter && $topicReporter !== $payloadReporter),
             "attempted_reporter" => $topicReporter ?: $payloadReporter,
         );
+    }
+
+    private static function extractReporterFromPayload($data) {
+        if (!is_array($data)) return '';
+
+        foreach (array('origin_id', 'public_key', 'pubkey', 'reporter') as $key) {
+            $candidate = static::normalizeReporterKey($data[$key] ?? '');
+            if ($candidate !== '') return $candidate;
+        }
+
+        return '';
+    }
+
+    private static function normalizeReporterKey($value) {
+        if (!is_scalar($value)) return '';
+
+        $candidate = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper(trim(strval($value))));
+        if ($candidate === '' || $candidate === '+') return '';
+        if (strlen($candidate) % 2 !== 0) return '';
+        if (strlen($candidate) < static::MIN_REPORTER_KEY_LENGTH) return '';
+
+        return $candidate;
     }
 
     private static function decodePath($rawPath) {
