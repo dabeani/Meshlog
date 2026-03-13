@@ -159,6 +159,15 @@ class MeshLogMqttClient {
         return ord($byte);
     }
 
+    private function readPacketType($timeoutSeconds = null) {
+        $headerByte = $this->readPacketHeaderByte($timeoutSeconds);
+        if ($headerByte === null) {
+            throw new RuntimeException("MQTT read timeout");
+        }
+
+        return ($headerByte >> 4) & 0x0F;
+    }
+
     private function readPacketPayload() {
         $remainingLength = $this->decodeLength();
         if ($remainingLength <= 0) return '';
