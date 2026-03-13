@@ -25,6 +25,7 @@ $config["db"]["user"] = getenv("DB_USER") ?: "meshcore";
 $config["db"]["password"] = getenv("DB_PASS") ?: "meshcore";
 
 $config["mqtt"]["enabled"] = filter_var(getenv("MQTT_ENABLED") ?: "false", FILTER_VALIDATE_BOOLEAN);
+$config["mqtt"]["debug"] = filter_var(getenv("MQTT_DEBUG") ?: "false", FILTER_VALIDATE_BOOLEAN);
 $config["mqtt"]["transport"] = getenv("MQTT_TRANSPORT") ?: "tcp";
 $config["mqtt"]["host"] = getenv("MQTT_HOST") ?: "127.0.0.1";
 $config["mqtt"]["port"] = intval(getenv("MQTT_PORT") ?: "1883");

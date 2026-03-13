@@ -1,13 +1,23 @@
 <?php
 
 class MeshLogMqttDecoder {
+    // At least 4 hex characters (2 bytes) so tiny placeholders (for example "AA") are rejected.
+    const MIN_REPORTER_KEY_LENGTH = 4;
+    const TOPIC_TYPES = array('status', 'packets', 'debug');
+
     public static function decode($topic, $payload) {
         $data = json_decode($payload, true);
         if (!is_array($data)) return null;
 
         if (($data['type'] ?? null) != 'PACKET') return null;
 
-        $reporter = strtoupper($data['origin_id'] ?? '');
+        $topicReporter = static::extractReporterFromTopic($topic);
+        $payloadReporter = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['origin_id'] ?? ''));
+        if (strlen($payloadReporter) % 2 !== 0 || strlen($payloadReporter) < static::MIN_REPORTER_KEY_LENGTH) {
+            $payloadReporter = '';
+        }
+        $reporter = $topicReporter ?: $payloadReporter;
+        $reporterSource = $topicReporter ? 'topic' : 'payload';
         $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
         if (strlen($raw) % 2 !== 0) return null;
 
@@ -42,8 +52,32 @@ class MeshLogMqttDecoder {
                 "snr" => $snr,
                 "decoded" => false,
                 "hash_size" => $hashSize
-            )
+            ),
+            "_mqtt" => array(
+                "topic" => $topic,
+                "topic_reporter" => $topicReporter,
+                "payload_reporter" => $payloadReporter,
+                "reporter_source" => $reporterSource,
+                "topic_payload_mismatch" => boolval($topicReporter && $payloadReporter && $topicReporter !== $payloadReporter),
+            ),
         );
+    }
+
+    public static function extractReporterFromTopic($topic) {
+        if (!is_string($topic) || $topic === '') return '';
+
+        $parts = explode('/', trim($topic, '/'));
+        if (count($parts) < 4) return '';
+        if (trim($parts[0]) === '' || trim($parts[1]) === '') return '';
+        if (!in_array(strtolower(trim($parts[3])), static::TOPIC_TYPES)) return '';
+
+        $candidate = strtoupper(trim($parts[2]));
+        if ($candidate === '' || $candidate === '+') return '';
+        if (!preg_match('/^[0-9A-F]+$/', $candidate)) return '';
+        if (strlen($candidate) % 2 !== 0) return '';
+        if (strlen($candidate) < static::MIN_REPORTER_KEY_LENGTH) return '';
+
+        return $candidate;
     }
 
     private static function decodePath($rawPath) {
