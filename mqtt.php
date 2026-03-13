@@ -6,6 +6,8 @@ if (php_sapi_name() !== 'cli') {
     exit;
 }
 
+const MQTT_RECONNECT_DELAY_SECONDS = 5;
+
 require_once "config.php";
 require_once "lib/meshlog.class.php";
 require_once "lib/meshlog.mqtt_client.class.php";
@@ -23,7 +25,6 @@ if (!$enabled) {
 }
 
 $meshlog = new MeshLog($config['db']);
-$reconnectDelay = 5;
 
 while (true) {
     try {
@@ -41,13 +42,13 @@ while (true) {
             }
         });
 
-        throw new RuntimeException("MQTT connection closed");
+        fwrite(STDERR, "MQTT connection closed\n");
     } catch (Throwable $e) {
         fwrite(STDERR, "MQTT worker error: " . $e->getMessage() . "\n");
-        fwrite(STDERR, "Retrying in {$reconnectDelay} seconds...\n");
     }
 
-    sleep($reconnectDelay);
+    fwrite(STDERR, "Retrying in " . MQTT_RECONNECT_DELAY_SECONDS . " seconds...\n");
+    sleep(MQTT_RECONNECT_DELAY_SECONDS);
 }
 
 ?>
