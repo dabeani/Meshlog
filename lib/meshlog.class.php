@@ -13,6 +13,7 @@ require_once 'meshlog.telemetry.class.php';
 require_once 'meshlog.user.class.php';
 require_once 'meshlog.report.class.php';
 require_once 'meshlog.raw_packet.class.php';
+require_once 'meshlog.mqtt_decoder.class.php';
 
 define("MAX_COUNT", 2500);
 define("DEFAULT_COUNT", 500);
@@ -125,6 +126,29 @@ class MeshLog {
         $reporter = $this->authorize($data);
         if (!$reporter) return false;
 
+        return $this->insertForReporter($data, $reporter);
+    }
+
+    function insertMqtt($topic, $payload) {
+        $data = MeshLogMqttDecoder::decode($topic, $payload);
+        if (!$data || !isset($data['reporter'])) return false;
+
+        $reporter = MeshLogReporter::findBy(
+            "public_key",
+            $data['reporter'],
+            $this,
+            array("authorized" => 1),
+            false,
+            true
+        );
+        if (!$reporter) return false;
+
+        return $this->insertForReporter($data, $reporter);
+    }
+
+    private function insertForReporter($data, $reporter) {
+        if (!$reporter) return false;
+
         if (!isset($data['type'])) return $this->repError('invalid type');
 
         $type = $data['type'];
@@ -167,6 +191,8 @@ class MeshLog {
             error_log($e);
             throw $e;
         }
+
+        return $rep;
     }
 
     private function insertAdvertisement($data, $reporter) {
