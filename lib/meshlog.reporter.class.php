@@ -23,9 +23,9 @@ class MeshLogReporter extends MeshLogEntity {
         $m->public_key = $data['public_key'];
         $m->lat = $data['lat'];
         $m->lon = $data['lon'];
-        $m->style = $data['style'];
-        $m->data = $data['data'];
-        $m->auth = $data['auth'];
+        $m->style = $data['style'] ?? '{}';
+        $m->data = $data['data'] ?? '{}';
+        $m->auth = $data['auth'] ?? '';
 
         return $m;
     }
@@ -51,17 +51,14 @@ class MeshLogReporter extends MeshLogEntity {
 
     public function updateLocation($meshlog, $lat, $lon, $data=array()) {
         if (!$lat || !$lon) return;
-        $datastr = json_encode($data);
         if (floatval($lat) == floatval($this->lat) &&
-            floatval($lon) == floatval($this->lon) &&
-            $this->data == $datastr) return;
+            floatval($lon) == floatval($this->lon)) return;
 
         $tableStr = static::$table;
-        $query = $meshlog->pdo->prepare("UPDATE $tableStr SET lat = :lat, lon = :lon, data = :data WHERE id = :id");
+        $query = $meshlog->pdo->prepare("UPDATE $tableStr SET lat = :lat, lon = :lon WHERE id = :id");
 
         $query->bindParam(':lat', $lat,  PDO::PARAM_STR);
         $query->bindParam(':lon', $lon,  PDO::PARAM_STR);
-        $query->bindParam(':data', $datastr,  PDO::PARAM_STR);
         $query->bindParam(':id', $this->_id,  PDO::PARAM_INT);
         $query->execute();
     }
@@ -81,7 +78,6 @@ class MeshLogReporter extends MeshLogEntity {
             "lat" => array($this->lat, PDO::PARAM_STR),
             "lon" => array($this->lon, PDO::PARAM_STR),
             "style" => array($this->style, PDO::PARAM_STR),
-            "data" => array($this->data, PDO::PARAM_STR),
             "color" => array("", PDO::PARAM_STR),
             "auth" => array($this->auth, PDO::PARAM_STR),
         );
