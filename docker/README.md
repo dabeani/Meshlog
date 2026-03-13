@@ -11,6 +11,7 @@ This stack provides:
 - **nginx** (serving Meshlog on port `80`)
 - **php-fpm** (running PHP application backend)
 - **MariaDB** (with automatic initialization from `migrations/000_initial_setup.sql` on first start)
+- **MQTT worker** (`php mqtt.php`) started automatically by supervisor in the backend container
 
 Logs from all services are forwarded to container `stdout/stderr`, so you can monitor everything with `docker logs`.
 
@@ -43,7 +44,22 @@ DB_USER=meshcore
 DB_PASS=meshcore
 DB_ROOT_PASS=meshcore
 TIMEZONE=Europe/Riga
+MQTT_ENABLED=false
+MQTT_TRANSPORT=tcp
+MQTT_HOST=127.0.0.1
+MQTT_PORT=1883
+MQTT_TOPIC=meshcore/+/+/packets
+MQTT_CLIENT_ID=meshlog-mqtt
+MQTT_USERNAME=
+MQTT_PASSWORD=
+MQTT_KEEPALIVE=30
+MQTT_QOS=0
+MQTT_PATH=/mqtt
+MQTT_TIMEOUT=5
 ```
+
+When `MQTT_ENABLED=true`, the backend container automatically runs the MQTT worker on startup.
+Firmware HTTP logging via `log.php` remains available at the same time.
 
 ### 4. Build and start the stack
 

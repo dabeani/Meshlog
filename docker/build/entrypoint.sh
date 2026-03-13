@@ -10,11 +10,35 @@ if [[ ! -f "$APP_ROOT/config.php" ]]; then
 	cp "$APP_ROOT/config.example.php" "$APP_ROOT/config.php"
 fi
 
-sed -i \
-	-e "s/^\(\s*\$servername\s*=\s*\).*/\1\"${DB_HOST}\";/" \
-	-e "s/^\(\s*\$dbname\s*=\s*\).*/\1\"${DB_NAME}\";/" \
-	-e "s/^\(\s*\$username\s*=\s*\).*/\1\"${DB_USER}\";/" \
-	-e "s/^\(\s*\$password\s*=\s*\).*/\1\"${DB_PASS}\";/" \
-	"$APP_ROOT/config.php"
+php -r '
+$cfgFile = "'"$APP_ROOT"'/config.php";
+if (!file_exists($cfgFile)) { exit(1); }
+require $cfgFile;
+
+if (!isset($config) || !is_array($config)) { $config = array(); }
+if (!isset($config["db"]) || !is_array($config["db"])) { $config["db"] = array(); }
+if (!isset($config["mqtt"]) || !is_array($config["mqtt"])) { $config["mqtt"] = array(); }
+
+$config["db"]["host"] = getenv("DB_HOST") ?: "mariadb";
+$config["db"]["database"] = getenv("DB_NAME") ?: "meshcore";
+$config["db"]["user"] = getenv("DB_USER") ?: "meshcore";
+$config["db"]["password"] = getenv("DB_PASS") ?: "meshcore";
+
+$config["mqtt"]["enabled"] = filter_var(getenv("MQTT_ENABLED") ?: "false", FILTER_VALIDATE_BOOLEAN);
+$config["mqtt"]["transport"] = getenv("MQTT_TRANSPORT") ?: "tcp";
+$config["mqtt"]["host"] = getenv("MQTT_HOST") ?: "127.0.0.1";
+$config["mqtt"]["port"] = intval(getenv("MQTT_PORT") ?: "1883");
+$config["mqtt"]["topic"] = getenv("MQTT_TOPIC") ?: "meshcore/+/+/packets";
+$config["mqtt"]["client_id"] = getenv("MQTT_CLIENT_ID") ?: "meshlog-mqtt";
+$config["mqtt"]["username"] = getenv("MQTT_USERNAME") ?: "";
+$config["mqtt"]["password"] = getenv("MQTT_PASSWORD") ?: "";
+$config["mqtt"]["keepalive"] = intval(getenv("MQTT_KEEPALIVE") ?: "30");
+$config["mqtt"]["qos"] = intval(getenv("MQTT_QOS") ?: "0");
+$config["mqtt"]["path"] = getenv("MQTT_PATH") ?: "/mqtt";
+$config["mqtt"]["timeout"] = intval(getenv("MQTT_TIMEOUT") ?: "5");
+
+$out = "<?php\n\n\$config = " . var_export($config, true) . ";\n\n?>\n";
+file_put_contents($cfgFile, $out);
+'
 
 exec "$@"
