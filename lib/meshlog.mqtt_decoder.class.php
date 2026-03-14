@@ -12,7 +12,8 @@ class MeshLogMqttDecoder {
         $data = json_decode($payload, true);
         if (!is_array($data)) return null;
 
-        $type = $data['type'] ?? null;
+        $typeRaw = isset($data['type']) ? trim(strval($data['type'])) : '';
+        $type = ($typeRaw === '') ? null : strtoupper($typeRaw);
 
         $mqttMeta = static::extractMetadata($topic, $data);
         $reporter = $mqttMeta['attempted_reporter'];
@@ -29,14 +30,10 @@ class MeshLogMqttDecoder {
             $packetType = intval($data['packet_type'] ?? 0);
             $snr = intval($data['SNR'] ?? 0);
 
-            $timestamp = intval(floor(microtime(true) * 1000));
-            // meshcoretomqtt uses ISO 8601 timestamp strings (datetime.now().isoformat()).
-            if (isset($data['timestamp'])) {
-                $ts = strtotime($data['timestamp']);
-                if ($ts) {
-                    $timestamp = intval($ts) * 1000;
-                }
-            }
+            $timestamp = static::normalizeTimestampMs(
+                $data['timestamp'] ?? null,
+                intval(floor(microtime(true) * 1000))
+            );
 
             return array(
                 "type" => "RAW",
@@ -63,13 +60,33 @@ class MeshLogMqttDecoder {
         // a server-side timestamp so the payload is identical to what insertForReporter() receives
         // from the HTTP path.
         if (isset($type) && in_array($type, static::STRUCTURED_TYPES)) {
+            $data['type'] = $type;
             $data['reporter'] = $reporter;
-            if (!isset($data['time'])) {
+
+            if (!isset($data['time']) || !is_array($data['time'])) {
                 $data['time'] = array();
             }
-            if (!isset($data['time']['server'])) {
-                $data['time']['server'] = floor(microtime(true) * 1000);
-            }
+            $serverTime = static::normalizeTimestampMs(
+                $data['time']['server'] ?? null,
+                intval(floor(microtime(true) * 1000))
+            );
+            $fallbackTime = static::normalizeTimestampMs(
+                $data['timestamp'] ?? null,
+                $serverTime
+            );
+            $localTimeInput = static::normalizeTimestampMs(
+                $data['time']['local'] ?? null,
+                null
+            );
+            $senderTime = static::normalizeTimestampMs(
+                $data['time']['sender'] ?? null,
+                ($localTimeInput !== null) ? $localTimeInput : $fallbackTime
+            );
+            $localTime = ($localTimeInput !== null) ? $localTimeInput : $senderTime;
+
+            $data['time']['server'] = $serverTime;
+            $data['time']['sender'] = $senderTime;
+            $data['time']['local'] = $localTime;
             $data['_mqtt'] = $mqttMeta;
             return $data;
         }
@@ -150,6 +167,32 @@ class MeshLogMqttDecoder {
         if ($hashSize < 1) return 1;
         if ($hashSize > 3) return 3;
         return $hashSize;
+    }
+
+    private static function normalizeTimestampMs($value, $fallback = null) {
+        if (is_int($value) || is_float($value)) {
+            $num = intval($value);
+            if ($num < 0) return $fallback;
+            return ($num > 10000000000) ? $num : ($num * 1000);
+        }
+
+        if (is_string($value)) {
+            $trimmed = trim($value);
+            if ($trimmed === '') return $fallback;
+
+            if (is_numeric($trimmed)) {
+                $num = intval($trimmed);
+                if ($num < 0) return $fallback;
+                return ($num > 10000000000) ? $num : ($num * 1000);
+            }
+
+            $ts = strtotime($trimmed);
+            if ($ts !== false && $ts >= 0) {
+                return intval($ts) * 1000;
+            }
+        }
+
+        return $fallback;
     }
 }
 
