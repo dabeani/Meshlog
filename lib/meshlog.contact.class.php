@@ -15,6 +15,7 @@ class MeshLogContact extends MeshLogEntity {
         
         if (!isset($data['contact'])) return $m;
         $m->public_key = $data['contact']['pubkey'] ?? null;
+        $m->hash_size = $data['hash_size'] ?? 1;
         $m->enabled = true; // default
 
         return $m;
