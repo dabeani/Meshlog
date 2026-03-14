@@ -30,7 +30,6 @@ if ($err) {
     $channels = $meshlog->getChannels($params);
     $direct_messages = $meshlog->getDirectMessagesQuick($params);
     $channel_messages = $meshlog->getChannelMessagesQuick($params);
-    $raw_packets = $meshlog->getRawPackets($params);
 
     $results = array(
         'reporters' => $reporters,
@@ -38,8 +37,7 @@ if ($err) {
         'advertisements' => $advertisements,
         'channels' => $channels,
         'direct_messages' => $direct_messages,
-        'channel_messages' => $channel_messages,
-        'raw_packets' => $raw_packets
+        'channel_messages' => $channel_messages
     );
 }
 

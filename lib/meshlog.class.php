@@ -134,7 +134,7 @@ class MeshLog {
         if (!$data || !isset($data['reporter'])) {
             return $this->repError(
                 "invalid MQTT payload",
-                array("_mqtt" => MeshLogMqttDecoder::extractMetadata($topic, $payload))
+                array("_mqtt" => MeshLogMqttDecoder::extractMetadata($topic, json_decode($payload, true) ?? array()))
             );
         }
         $mqttMeta = $data['_mqtt'] ?? array();
