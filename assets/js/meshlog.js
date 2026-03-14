@@ -1120,6 +1120,83 @@ class MeshLogDirectMessage extends MeshLogReportedObject {
     isVisible() { return Settings.getBool('messageTypes.direct', false); }
 }
 
+class MeshLogRawPacket extends MeshLogObject {
+    static idPrefix = "r";
+
+    constructor(meshlog, data) {
+        super(meshlog, data);
+        this.dom = null;
+        this.time = new Date(data.created_at).getTime();
+    }
+
+    createDom(recreate = false) {
+        if (this.dom && !recreate) return this.dom;
+
+        if (this.dom && this.dom.container && this.dom.container.parentNode) {
+            this.dom.container.parentNode.removeChild(this.dom.container);
+            this.dom = null;
+        }
+
+        let divContainer = document.createElement("div");
+        let divLog = document.createElement("div");
+        let divLine = document.createElement("div");
+
+        divContainer.dataset.time = this.time;
+        divLog.classList = 'log-entry';
+        divLog.instance = this;
+        divLine.classList.add('log-entry-info');
+
+        divLog.append(divLine);
+        divContainer.append(divLog);
+
+        let spDate = document.createElement("span");
+        spDate.classList.add('sp', 'c');
+        spDate.innerText = this.data.created_at;
+        divLine.append(spDate);
+
+        let spTag = document.createElement("span");
+        spTag.classList.add('sp', 'tag');
+        spTag.innerText = 'RAW';
+        divLine.append(spTag);
+
+        let reporter = this._meshlog.reporters[this.data.reporter_id] ?? false;
+        if (reporter) {
+            let spDot = document.createElement("span");
+            spDot.classList.add('dot');
+            spDot.innerText = reporter.data.name;
+            let style = reporter.getStyle();
+            let textColor = style.color;
+            let strokeColor = style.stroke ?? textColor;
+            let strokeWeight = style.weight ?? '1px';
+            spDot.style.color = textColor;
+            spDot.style.border = `solid ${strokeWeight} ${strokeColor}`;
+            divLine.append(spDot);
+        }
+
+        let spPath = document.createElement("span");
+        spPath.classList.add('sp');
+        spPath.innerText = this.data.path || "direct";
+        divLine.append(spPath);
+
+        let spSnr = document.createElement("span");
+        spSnr.classList.add('sp');
+        spSnr.innerText = `snr:${this.data.snr}`;
+        divLine.append(spSnr);
+
+        this.dom = { container: divContainer, log: divLog };
+        return this.dom;
+    }
+
+    updateDom() {
+        if (!this.dom) return;
+        this.dom.container.hidden = !this.isVisible();
+    }
+
+    isVisible() {
+        return Settings.getBool('messageTypes.raw', false);
+    }
+}
+
 class MeshLogLinkLayer {
     constructor(from, to, reporter, circle) {
         this.from = from;
@@ -1485,6 +1562,18 @@ class MeshLog {
 
         this.dom_settings_types.append(
             this.__createCb(
+                "Raw Packets",
+                "assets/img/receipt.svg",
+                'messageTypes.raw',
+                false,
+                (e) => {
+                    self.__onTypesChanged();
+                }
+            )
+        );
+
+        this.dom_settings_types.append(
+            this.__createCb(
                 "🐐",
                 "",
                 'notifications.enabled',
@@ -1688,6 +1777,7 @@ class MeshLog {
             const rep3 = this.__loadObjects(this.messages, data.advertisements, MeshLogAdvertisement);
             const rep5 = this.__loadObjects(this.messages, data.channel_messages, MeshLogChannelMessage);
             const rep6 = this.__loadObjects(this.messages, data.direct_messages, MeshLogDirectMessage);
+            const rep7 = this.__loadObjects(this.messages, data.raw_packets ?? {objects: []}, MeshLogRawPacket);
 
             if (rep1.length) console.log(`${rep1.length} reporters loaded`);
             if (rep2.length) console.log(`${rep2.length} contacts loaded`);
@@ -1695,6 +1785,7 @@ class MeshLog {
             if (rep4.length) console.log(`${rep4.length} groups loaded`);
             if (rep5.length) console.log(`${rep5.length} group messages loaded`);
             if (rep6.length) console.log(`${rep6.length} direct messages loaded`);
+            if (rep7.length) console.log(`${rep7.length} raw packets loaded`);
 
             this.__init_reporters();
             this.onLoadAll();
@@ -1707,6 +1798,7 @@ class MeshLog {
                     advertisements: rep3,
                     channel_messages: rep5,
                     direct_messages: rep6,
+                    raw_packets: rep7,
                 });
             }
         });
