@@ -76,6 +76,11 @@ class MeshLogChannel extends MeshLogObject {
     }
 
     isEnabled() {
+        // Respect the admin-side enabled flag first.  If the admin has disabled this
+        // channel (enabled == 0 or "0") it must be hidden regardless of the user's
+        // per-browser live-feed toggle.
+        const adminEnabled = this.data.enabled;
+        if (adminEnabled === 0 || adminEnabled === "0" || adminEnabled === false) return false;
         return Settings.getBool(`channels.${this.data.id}.enabled`, true);
     }
 

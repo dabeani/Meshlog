@@ -21,13 +21,32 @@ class MeshLogChannelMessage extends MeshLogEntity {
         if (!isset($data['time'])) return $m;
 
         $text = $data['message']['text'] ?? null;
-        $parts = explode(":", $text, 2);
-        $name = $parts[0] ? $parts[0] : null;
-        $msg  = $parts[1] ? substr($parts[1], 1) : ''; 
+        if ($text === null || $text === '') {
+            // No text at all — let isValid() reject it.
+            $m->sent_at = Utils::time2str($data['time']['sender']) ?? null;
+            return $m;
+        }
+
+        $colonPos = strpos($text, ':');
+        if ($colonPos !== false) {
+            $name = substr($text, 0, $colonPos);
+            // Skip the colon and one optional space that separates name from body.
+            $bodyStart = $colonPos + 1;
+            if ($bodyStart < strlen($text) && $text[$bodyStart] === ' ') {
+                $bodyStart++;
+            }
+            $msg = substr($text, $bodyStart);
+        } else {
+            // No "Name: message" separator — treat the entire text as the message
+            // with an unknown sender name derived from any contact advertisement
+            // that may be set by the caller after fromJson() returns.
+            $name = null;
+            $msg  = $text;
+        }
 
         $m->hash = $data['hash'] ?? null;
         $m->hash_size = $data['hash_size'] ?? 1;
-        $m->name = $name;
+        $m->name = ($name !== null && $name !== '') ? $name : null;
         $m->message = $msg;
 
         $m->sent_at = Utils::time2str($data['time']['sender']) ?? null;
@@ -58,10 +77,12 @@ class MeshLogChannelMessage extends MeshLogEntity {
     function isValid() {
         // contact can be empty if it has not advertised yet.
 
-        if ($this->name == null) { $this->error = 'Missing name'; return false; }
-        if ($this->hash == null) { $this->error = 'Missing hash'; return false; }
-        if ($this->message == null) { $this->error = 'Missing message'; return false; }
-        if ($this->sent_at == null) { $this->error = 'Missing sent_at'; return false; }
+        // fromJson() converts empty names to null, so the null check is sufficient here.
+        if ($this->name === null) { $this->error = 'Missing name'; return false; }
+        if ($this->hash === null || $this->hash === '') { $this->error = 'Missing hash'; return false; }
+        // Allow empty string message body: a node can legitimately send "Name: " with no text.
+        if ($this->message === null) { $this->error = 'Missing message'; return false; }
+        if ($this->sent_at === null) { $this->error = 'Missing sent_at'; return false; }
 
         return true;
     }

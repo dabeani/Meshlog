@@ -570,12 +570,16 @@ class MeshLog {
     }
 
     public function getChannels($params) {
-        // Always return all enabled channels regardless of time filters.
-        // Channel state changes (enable/disable via admin) must be reflected on the
-        // next live-feed poll without requiring a full page reload.
+        // Always return ALL channels (enabled and disabled) regardless of time filters.
+        // The JS layer checks each channel's 'enabled' flag from the server response
+        // (MeshLogChannel.isEnabled()) so that admin-disabled channels are hidden in the
+        // live-feed without needing to filter in SQL.  Returning all channels is also
+        // required so that isVisible() can correctly evaluate messages from channels that
+        // an admin has disabled — without the channel object present, those messages would
+        // erroneously appear to have no associated channel and would be permanently hidden.
         $params['after_ms']  = 0;
         $params['before_ms'] = 0;
-        $params['where'] = array('enabled = 1');
+        $params['where'] = array();
         return MeshLogChannel::getAll($this, $params);
     }
 
@@ -676,7 +680,11 @@ class MeshLog {
 
     public function getChannelMessagesQuick($params) {
         $channel_id = $params['channel_id'] ?? null;
-        $extra = "JOIN channels c ON c.id = t.channel_id AND c.enabled = 1 ";
+        // Use LEFT JOIN so messages from disabled (or temporarily unavailable) channels
+        // are still returned by the API.  The JS layer (MeshLogChannel.isEnabled +
+        // MeshLogChannelMessage.isVisible) already handles display filtering based on
+        // the channel's admin-enabled flag and the user's live-feed preferences.
+        $extra = "LEFT JOIN channels c ON c.id = t.channel_id ";
         $binds = array();
 
         if ($channel_id !== null) {
