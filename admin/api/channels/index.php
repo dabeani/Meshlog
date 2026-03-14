@@ -35,6 +35,9 @@
         if (!$channel) {
             $errors[] = 'Channel not found';
         } else {
+            if (isset($_POST['hash']) && trim($_POST['hash']) !== '') {
+                $channel->hash = trim($_POST['hash']);
+            }
             $channel->name = $_POST['name'] ?? $channel->name;
             $channel->enabled = isset($_POST['enabled']) ? intval($_POST['enabled']) : $channel->enabled;
 
