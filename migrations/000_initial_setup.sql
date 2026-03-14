@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `reporters` (
 -- 3. channels (referenced by channel_messages)
 CREATE TABLE IF NOT EXISTS `channels` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `hash` varchar(16) NOT NULL,
+  `hash` varchar(64) NOT NULL,
   `name` varchar(32) NOT NULL,
   `enabled` tinyint(4) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
