@@ -18,6 +18,8 @@ class MeshLogMqttDecoder {
     const ROUTE_TYPE_FLOOD            = 0x01;  // plain flood
     const ROUTE_TYPE_DIRECT           = 0x02;  // direct routing
     const ROUTE_TYPE_TRANSPORT_DIRECT = 0x03;  // direct + transport codes (4 extra bytes)
+    const PATH_HASH_SIZE_VALID_MAX = 2;        // bits 6-7 encode hash_size-1; value 3 is reserved/invalid
+    const PATH_HOP_COUNT_MASK = 0x3F;          // bits 0-5 of path_len encode hop count
 
     // Minimum Unix timestamp (2020-01-01) used to detect invalid/unset device clocks.
     const MIN_VALID_UNIX_TIMESTAMP = 1577836800;
@@ -40,8 +42,10 @@ class MeshLogMqttDecoder {
             $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
             if (strlen($raw) % 2 !== 0 || !$raw) return null;
 
-            $path = static::decodePath($data['path'] ?? '');
-            $hashSize = static::decodeHashSize($path);
+            $bytes = hex2bin($raw);
+            $packet = static::extractPacket($bytes);
+            $path = $packet['path'] ?? static::decodePath($data['path'] ?? '');
+            $hashSize = $packet['hash_size'] ?? static::decodeHashSize($path);
             $packetType = intval($data['packet_type'] ?? 0);
             $snr = intval($data['SNR'] ?? 0);
 
@@ -69,9 +73,9 @@ class MeshLogMqttDecoder {
                     "server" => $timestamp
                 ),
                 "packet" => array(
-                    "header" => $packetType,
+                    "header" => $packet['header'] ?? $packetType,
                     "path" => $path,
-                    "payload" => $raw,
+                    "payload" => $packet['payload'] ?? $raw,
                     "snr" => $snr,
                     "decoded" => false,
                     "hash_size" => $hashSize
@@ -220,6 +224,49 @@ class MeshLogMqttDecoder {
         return $fallback;
     }
 
+    private static function extractPacket($bytes) {
+        $layout = static::extractPacketLayout($bytes);
+        if ($layout === null) return null;
+
+        return array(
+            'header' => $layout['header'],
+            'path' => static::decodePathBytes(substr($bytes, $layout['path_offset'], $layout['path_byte_len']), $layout['hash_size']),
+            'payload' => strtoupper(bin2hex(substr($bytes, $layout['payload_offset']))),
+            'hash_size' => $layout['hash_size'],
+        );
+    }
+
+    private static function extractPacketLayout($bytes) {
+        if (!is_string($bytes) || strlen($bytes) < 2) return null;
+
+        $headerByte = ord($bytes[0]);
+        $routeType  = $headerByte & 0x03;
+
+        $hasTransport = ($routeType === static::ROUTE_TYPE_TRANSPORT_FLOOD ||
+                         $routeType === static::ROUTE_TYPE_TRANSPORT_DIRECT);
+        $pathLenOffset = $hasTransport ? 5 : 1;
+        if (strlen($bytes) <= $pathLenOffset) return null;
+
+        $pathLenByte = ord($bytes[$pathLenOffset]);
+        $pathHashSizeBits = ($pathLenByte >> 6);
+        if ($pathHashSizeBits > static::PATH_HASH_SIZE_VALID_MAX) return null;
+
+        $hashSize = $pathHashSizeBits + 1;
+        $pathHopCount = $pathLenByte & static::PATH_HOP_COUNT_MASK;
+        $pathOffset = $pathLenOffset + 1;
+        $pathByteLen = $pathHopCount * $hashSize;
+        $payloadOffset = $pathOffset + $pathByteLen;
+        if (strlen($bytes) < $payloadOffset) return null;
+
+        return array(
+            'header' => $headerByte,
+            'hash_size' => $hashSize,
+            'path_offset' => $pathOffset,
+            'path_byte_len' => $pathByteLen,
+            'payload_offset' => $payloadOffset,
+        );
+    }
+
     /**
      * Extract the payload bytes from a raw MeshCore packet.
      *
@@ -240,33 +287,25 @@ class MeshLogMqttDecoder {
      */
     private static function extractPayloadBytes($bytes, &$hashSize = null) {
         $hashSize = 1;  // default; updated below when path_len is decoded
-        if (strlen($bytes) < 2) return null;
+        $layout = static::extractPacketLayout($bytes);
+        if ($layout === null) return null;
 
-        $headerByte = ord($bytes[0]);
-        $routeType  = $headerByte & 0x03;
+        $hashSize = $layout['hash_size'];
+        return substr($bytes, $layout['payload_offset']);
+    }
 
-        // TRANSPORT_FLOOD and TRANSPORT_DIRECT carry 4 extra transport-code bytes
-        // after the header before the path_len byte.
-        $hasTransport   = ($routeType === static::ROUTE_TYPE_TRANSPORT_FLOOD ||
-                           $routeType === static::ROUTE_TYPE_TRANSPORT_DIRECT);
-        $pathLenOffset  = $hasTransport ? 5 : 1;
+    private static function decodePathBytes($pathBytes, $hashSize) {
+        if (!is_string($pathBytes) || $pathBytes === '' || $hashSize < 1 || $hashSize > 3) return '';
 
-        if (strlen($bytes) <= $pathLenOffset) return null;
+        $hashes = array();
+        $len = strlen($pathBytes);
+        for ($offset = 0; $offset < $len; $offset += $hashSize) {
+            $chunk = substr($pathBytes, $offset, $hashSize);
+            if (strlen($chunk) !== $hashSize) return '';
+            $hashes[] = strtolower(bin2hex($chunk));
+        }
 
-        // The path_len byte encodes both hash size and hop count:
-        //   bits 6-7: hash_size - 1  (value 3 = reserved/invalid)
-        //   bits 0-5: hop count
-        $pathLenByte  = ord($bytes[$pathLenOffset]);
-        $pathHashSize = ($pathLenByte >> 6) + 1;  // 1, 2, or 3 bytes per hop
-        $pathHopCount = $pathLenByte & 0x3F;       // number of hops
-        $pathByteLen  = $pathHopCount * $pathHashSize;
-        $payloadOffset = $pathLenOffset + 1 + $pathByteLen;
-
-        $hashSize = $pathHashSize;
-
-        if (strlen($bytes) <= $payloadOffset) return null;
-
-        return substr($bytes, $payloadOffset);
+        return implode(",", $hashes);
     }
 
     /**

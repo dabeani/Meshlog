@@ -1129,6 +1129,19 @@ class MeshLogRawPacket extends MeshLogObject {
         this.time = new Date(data.created_at).getTime();
     }
 
+    getPayloadType() {
+        return (parseInt(this.data.header ?? 0, 10) >> 2) & 0x0F;
+    }
+
+    getTypeLabel() {
+        switch (this.getPayloadType()) {
+            case 2: return 'RAW MSG';
+            case 4: return 'RAW ADV';
+            case 5: return 'RAW PUB';
+            default: return 'RAW';
+        }
+    }
+
     createDom(recreate = false) {
         if (this.dom && !recreate) return this.dom;
 
@@ -1156,7 +1169,7 @@ class MeshLogRawPacket extends MeshLogObject {
 
         let spTag = document.createElement("span");
         spTag.classList.add('sp', 'tag');
-        spTag.innerText = 'RAW';
+        spTag.innerText = this.getTypeLabel();
         divLine.append(spTag);
 
         let reporter = this._meshlog.reporters[this.data.reporter_id] ?? false;
