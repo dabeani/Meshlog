@@ -47,4 +47,4 @@ MeshLog can ingest MeshCore packet logs from MQTT (for example from [meshcoretom
    - `php mqtt.php`
    - Optional: set `$config['mqtt']['debug'] = true` to print topic, reporter-key resolution, and mismatch diagnostics.
 
-The worker listens to packet topics and stores them as RAW packets. MQTT `path` values are normalized and hash prefix size is detected for 1/2/3-byte routing hashes (MeshCore 1.14 compatible).
+The worker listens to packet topics. Unencrypted ADVERT packets (packet_type=4) are fully decoded and stored as ADV entries in the database; encrypted packet types (TXT_MSG, GRP_TXT, etc.) are stored as RAW packets. MQTT `path` values are normalized and hash prefix size is detected from the binary `path_len` byte (supports 1/2/3-byte routing hashes, MeshCore 1.14+ compatible).

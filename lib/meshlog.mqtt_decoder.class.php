@@ -224,30 +224,45 @@ class MeshLogMqttDecoder {
      * Extract the payload bytes from a raw MeshCore packet.
      *
      * MeshCore v1 packet layout (bytes):
-     *   [header(1)][transport_codes(4, optional)][path_length(1)][path(N)][payload]
+     *   [header(1)][transport_codes(4, optional)][path_len(1)][path(N)][payload]
      *
      * Transport codes are present only for ROUTE_TYPE_TRANSPORT_FLOOD (0x00)
      * and ROUTE_TYPE_TRANSPORT_DIRECT (0x03).
      *
-     * @param  string $bytes  Raw binary packet bytes.
-     * @return string|null    Payload bytes, or null if the packet is malformed.
+     * The path_len byte is encoded as:
+     *   bits 6-7: hash_size - 1  (00 = 1-byte hashes, 01 = 2-byte, 10 = 3-byte)
+     *   bits 0-5: hop count
+     * Actual path byte length = hop_count × hash_size.
+     *
+     * @param  string   $bytes      Raw binary packet bytes.
+     * @param  int|null &$hashSize  (OUT) path hash size in bytes (1, 2 or 3); set to 1 on malformed input.
+     * @return string|null          Payload bytes, or null if the packet is malformed.
      */
-    private static function extractPayloadBytes($bytes) {
+    private static function extractPayloadBytes($bytes, &$hashSize = null) {
+        $hashSize = 1;  // default; updated below when path_len is decoded
         if (strlen($bytes) < 2) return null;
 
         $headerByte = ord($bytes[0]);
         $routeType  = $headerByte & 0x03;
 
         // TRANSPORT_FLOOD and TRANSPORT_DIRECT carry 4 extra transport-code bytes
-        // after the header before the path_length byte.
+        // after the header before the path_len byte.
         $hasTransport   = ($routeType === static::ROUTE_TYPE_TRANSPORT_FLOOD ||
                            $routeType === static::ROUTE_TYPE_TRANSPORT_DIRECT);
         $pathLenOffset  = $hasTransport ? 5 : 1;
 
         if (strlen($bytes) <= $pathLenOffset) return null;
 
-        $pathLength    = ord($bytes[$pathLenOffset]);
-        $payloadOffset = $pathLenOffset + 1 + $pathLength;
+        // The path_len byte encodes both hash size and hop count:
+        //   bits 6-7: hash_size - 1  (value 3 = reserved/invalid)
+        //   bits 0-5: hop count
+        $pathLenByte  = ord($bytes[$pathLenOffset]);
+        $pathHashSize = ($pathLenByte >> 6) + 1;  // 1, 2, or 3 bytes per hop
+        $pathHopCount = $pathLenByte & 0x3F;       // number of hops
+        $pathByteLen  = $pathHopCount * $pathHashSize;
+        $payloadOffset = $pathLenOffset + 1 + $pathByteLen;
+
+        $hashSize = $pathHashSize;
 
         if (strlen($bytes) <= $payloadOffset) return null;
 
@@ -303,8 +318,13 @@ class MeshLogMqttDecoder {
     private static function decodeAdvertPacket($rawHex, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta) {
         $bytes = hex2bin($rawHex);
 
-        $payload = static::extractPayloadBytes($bytes);
+        $binaryHashSize = 1;
+        $payload = static::extractPayloadBytes($bytes, $binaryHashSize);
         if ($payload === null) return null;
+
+        // Prefer hash size derived from the binary path_len over the JSON-path-derived value,
+        // because ADV packets use flood routing and the JSON path field is never populated.
+        $hashSize = $binaryHashSize;
 
         // Minimum ADV payload: pubkey(32) + timestamp(4) + signature(64) + appdata_flags(1) = 101 bytes
         if (strlen($payload) < 101) return null;
