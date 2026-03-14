@@ -20,7 +20,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 7;
+    private $version = 8;
     private $settings = array(
         MeshlogSetting::KEY_DB_VERSION => 0,
         MeshlogSetting::KEY_MAX_CONTACT_AGE => 1814400,
