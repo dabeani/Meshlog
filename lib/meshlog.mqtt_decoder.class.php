@@ -12,7 +12,7 @@ class MeshLogMqttDecoder {
         $data = json_decode($payload, true);
         if (!is_array($data)) return null;
 
-        $type = $data['type'] ?? null;
+        $type = isset($data['type']) ? strtoupper(trim(strval($data['type']))) : null;
 
         $mqttMeta = static::extractMetadata($topic, $data);
         $reporter = $mqttMeta['attempted_reporter'];
@@ -63,6 +63,7 @@ class MeshLogMqttDecoder {
         // a server-side timestamp so the payload is identical to what insertForReporter() receives
         // from the HTTP path.
         if (isset($type) && in_array($type, static::STRUCTURED_TYPES)) {
+            $data['type'] = $type;
             $data['reporter'] = $reporter;
             if (!isset($data['time'])) {
                 $data['time'] = array();
