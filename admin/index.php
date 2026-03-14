@@ -485,7 +485,7 @@
                     fetch('api/channels/', {
                         method: "POST",
                         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                        body: new URLSearchParams({ edit: 1, id: d.id, name: d.name, enabled: d.enabled })
+                        body: new URLSearchParams({ edit: 1, id: d.id, hash: d.hash, name: d.name, enabled: d.enabled })
                     })
                     .then(r => r.json())
                     .then(result => {

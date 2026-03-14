@@ -570,6 +570,11 @@ class MeshLog {
     }
 
     public function getChannels($params) {
+        // Always return all enabled channels regardless of time filters.
+        // Channel state changes (enable/disable via admin) must be reflected on the
+        // next live-feed poll without requiring a full page reload.
+        $params['after_ms']  = 0;
+        $params['before_ms'] = 0;
         $params['where'] = array('enabled = 1');
         return MeshLogChannel::getAll($this, $params);
     }
@@ -675,6 +680,7 @@ class MeshLog {
         $binds = array();
 
         if ($channel_id !== null) {
+            $extra .= "AND t.channel_id = :channel_id ";
             $binds[] = array(':channel_id', (int) $channel_id, PDO::PARAM_INT);
         }
 
