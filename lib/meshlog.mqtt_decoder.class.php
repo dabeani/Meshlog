@@ -40,8 +40,10 @@ class MeshLogMqttDecoder {
             $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
             if (strlen($raw) % 2 !== 0 || !$raw) return null;
 
-            $path = static::decodePath($data['path'] ?? '');
-            $hashSize = static::decodeHashSize($path);
+            $bytes = hex2bin($raw);
+            $packet = static::extractPacket($bytes);
+            $path = $packet['path'] ?? static::decodePath($data['path'] ?? '');
+            $hashSize = $packet['hash_size'] ?? static::decodeHashSize($path);
             $packetType = intval($data['packet_type'] ?? 0);
             $snr = intval($data['SNR'] ?? 0);
 
@@ -69,9 +71,9 @@ class MeshLogMqttDecoder {
                     "server" => $timestamp
                 ),
                 "packet" => array(
-                    "header" => $packetType,
+                    "header" => $packet['header'] ?? $packetType,
                     "path" => $path,
-                    "payload" => $raw,
+                    "payload" => $packet['payload'] ?? $raw,
                     "snr" => $snr,
                     "decoded" => false,
                     "hash_size" => $hashSize
@@ -220,6 +222,29 @@ class MeshLogMqttDecoder {
         return $fallback;
     }
 
+    private static function extractPacket($bytes) {
+        $hashSize = 1;
+        $payload = static::extractPayloadBytes($bytes, $hashSize);
+        if ($payload === null || strlen($bytes) < 2) return null;
+
+        $headerByte = ord($bytes[0]);
+        $routeType = $headerByte & 0x03;
+        $hasTransport = ($routeType === static::ROUTE_TYPE_TRANSPORT_FLOOD ||
+                         $routeType === static::ROUTE_TYPE_TRANSPORT_DIRECT);
+        $pathLenOffset = $hasTransport ? 5 : 1;
+        $pathLenByte = ord($bytes[$pathLenOffset]);
+        $pathHopCount = $pathLenByte & 0x3F;
+        $pathOffset = $pathLenOffset + 1;
+        $pathByteLen = $pathHopCount * $hashSize;
+
+        return array(
+            'header' => $headerByte,
+            'path' => static::decodePathBytes(substr($bytes, $pathOffset, $pathByteLen), $hashSize),
+            'payload' => strtoupper(bin2hex($payload)),
+            'hash_size' => $hashSize,
+        );
+    }
+
     /**
      * Extract the payload bytes from a raw MeshCore packet.
      *
@@ -257,7 +282,9 @@ class MeshLogMqttDecoder {
         //   bits 6-7: hash_size - 1  (value 3 = reserved/invalid)
         //   bits 0-5: hop count
         $pathLenByte  = ord($bytes[$pathLenOffset]);
-        $pathHashSize = ($pathLenByte >> 6) + 1;  // 1, 2, or 3 bytes per hop
+        $pathHashSizeBits = ($pathLenByte >> 6);
+        if ($pathHashSizeBits > 2) return null;
+        $pathHashSize = $pathHashSizeBits + 1;  // 1, 2, or 3 bytes per hop
         $pathHopCount = $pathLenByte & 0x3F;       // number of hops
         $pathByteLen  = $pathHopCount * $pathHashSize;
         $payloadOffset = $pathLenOffset + 1 + $pathByteLen;
@@ -267,6 +294,20 @@ class MeshLogMqttDecoder {
         if (strlen($bytes) <= $payloadOffset) return null;
 
         return substr($bytes, $payloadOffset);
+    }
+
+    private static function decodePathBytes($pathBytes, $hashSize) {
+        if (!is_string($pathBytes) || $pathBytes === '' || $hashSize < 1) return '';
+
+        $hashes = array();
+        $len = strlen($pathBytes);
+        for ($offset = 0; $offset < $len; $offset += $hashSize) {
+            $chunk = substr($pathBytes, $offset, $hashSize);
+            if (strlen($chunk) !== $hashSize) return '';
+            $hashes[] = strtolower(bin2hex($chunk));
+        }
+
+        return implode(",", $hashes);
     }
 
     /**
