@@ -5,54 +5,76 @@ class MeshLogMqttDecoder {
     const MIN_REPORTER_KEY_LENGTH = 4;
     const TOPIC_TYPES = array('status', 'packets', 'debug');
 
+    // Structured types sent by firmware over MQTT (same JSON format as HTTP ingest).
+    const STRUCTURED_TYPES = array('ADV', 'MSG', 'PUB', 'SYS', 'TEL', 'RAW');
+
     public static function decode($topic, $payload) {
         $data = json_decode($payload, true);
         if (!is_array($data)) return null;
 
-        if (($data['type'] ?? null) != 'PACKET') return null;
+        $type = $data['type'] ?? null;
 
         $mqttMeta = static::extractMetadata($topic, $data);
-        $topicReporter = $mqttMeta['topic_reporter'];
-        $payloadReporter = $mqttMeta['payload_reporter'];
         $reporter = $mqttMeta['attempted_reporter'];
-        $reporterSource = $mqttMeta['reporter_source'];
-        $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
-        if (strlen($raw) % 2 !== 0) return null;
 
-        if (!$reporter || !$raw) return null;
+        if (!$reporter) return null;
 
-        $path = static::decodePath($data['path'] ?? '');
-        $hashSize = static::decodeHashSize($path);
-        $packetType = intval($data['packet_type'] ?? 0);
-        $snr = intval($data['SNR'] ?? 0);
+        // Binary PACKET from meshcoretomqtt: convert to the RAW format expected by insertForReporter().
+        if ($type === 'PACKET') {
+            $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
+            if (strlen($raw) % 2 !== 0 || !$raw) return null;
 
-        $timestamp = floor(microtime(true) * 1000);
-        // meshcoretomqtt uses ISO 8601 timestamp strings (datetime.now().isoformat()).
-        if (isset($data['timestamp'])) {
-            $ts = strtotime($data['timestamp']);
-            if ($ts) {
-                $timestamp = intval($ts) * 1000;
+            $path = static::decodePath($data['path'] ?? '');
+            $hashSize = static::decodeHashSize($path);
+            $packetType = intval($data['packet_type'] ?? 0);
+            $snr = intval($data['SNR'] ?? 0);
+
+            $timestamp = floor(microtime(true) * 1000);
+            // meshcoretomqtt uses ISO 8601 timestamp strings (datetime.now().isoformat()).
+            if (isset($data['timestamp'])) {
+                $ts = strtotime($data['timestamp']);
+                if ($ts) {
+                    $timestamp = intval($ts) * 1000;
+                }
             }
+
+            return array(
+                "type" => "RAW",
+                "reporter" => $reporter,
+                "time" => array(
+                    "local" => $timestamp,
+                    "sender" => $timestamp,
+                    "server" => $timestamp
+                ),
+                "packet" => array(
+                    "header" => $packetType,
+                    "path" => $path,
+                    "payload" => $raw,
+                    "snr" => $snr,
+                    "decoded" => false,
+                    "hash_size" => $hashSize
+                ),
+                "_mqtt" => $mqttMeta,
+            );
         }
 
-        return array(
-            "type" => "RAW",
-            "reporter" => $reporter,
-            "time" => array(
-                "local" => $timestamp,
-                "sender" => $timestamp,
-                "server" => $timestamp
-            ),
-            "packet" => array(
-                "header" => $packetType,
-                "path" => $path,
-                "payload" => $raw,
-                "snr" => $snr,
-                "decoded" => false,
-                "hash_size" => $hashSize
-            ),
-            "_mqtt" => $mqttMeta,
-        );
+        // Pre-decoded structured types (ADV, MSG, PUB, SYS, TEL, RAW) arriving over MQTT
+        // in the same JSON format as the HTTP firmware logger.  Inject the reporter key and
+        // a server-side timestamp so the payload is identical to what insertForReporter() receives
+        // from the HTTP path.
+        if (isset($type) && in_array($type, static::STRUCTURED_TYPES)) {
+            $data['reporter'] = $reporter;
+            if (!isset($data['time'])) {
+                $data['time'] = array();
+            }
+            if (!isset($data['time']['server'])) {
+                $data['time']['server'] = floor(microtime(true) * 1000);
+            }
+            $data['_mqtt'] = $mqttMeta;
+            return $data;
+        }
+
+        return null;
     }
 
     public static function extractReporterFromTopic($topic) {

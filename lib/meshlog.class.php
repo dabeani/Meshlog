@@ -132,34 +132,10 @@ class MeshLog {
     function insertMqtt($topic, $payload) {
         $data = MeshLogMqttDecoder::decode($topic, $payload);
         if (!$data || !isset($data['reporter'])) {
-            // Payload was not a binary PACKET; check if it is a pre-decoded structured type
-            // (ADV, MSG, PUB, SYS, TEL, RAW) sent directly over MQTT in the same format as
-            // the HTTP ingest path.  If so, extract the reporter from the MQTT topic and
-            // route the data through the same general parser as non-MQTT packets.
-            $decoded = json_decode($payload, true);
-            $mqttMeta = MeshLogMqttDecoder::extractMetadata($topic, is_array($decoded) ? $decoded : array());
-            $knownTypes = array('ADV', 'MSG', 'PUB', 'SYS', 'TEL', 'RAW');
-
-            if (is_array($decoded) && isset($decoded['type']) && in_array($decoded['type'], $knownTypes)) {
-                $reporterKey = $mqttMeta['attempted_reporter'];
-                if (!$reporterKey) {
-                    return $this->repError("invalid MQTT payload", array("_mqtt" => $mqttMeta));
-                }
-                $decoded['reporter'] = $reporterKey;
-                if (!isset($decoded['time'])) {
-                    $decoded['time'] = array();
-                }
-                if (!isset($decoded['time']['server'])) {
-                    $decoded['time']['server'] = floor(microtime(true) * 1000);
-                }
-                $data = $decoded;
-                $data['_mqtt'] = $mqttMeta;
-            } else {
-                return $this->repError(
-                    "invalid MQTT payload",
-                    array("_mqtt" => $mqttMeta)
-                );
-            }
+            return $this->repError(
+                "invalid MQTT payload",
+                array("_mqtt" => MeshLogMqttDecoder::extractMetadata($topic, json_decode($payload, true) ?? array()))
+            );
         }
         $mqttMeta = $data['_mqtt'] ?? array();
 
