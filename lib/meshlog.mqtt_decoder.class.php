@@ -12,7 +12,8 @@ class MeshLogMqttDecoder {
         $data = json_decode($payload, true);
         if (!is_array($data)) return null;
 
-        $type = isset($data['type']) ? strtoupper(trim(strval($data['type']))) : null;
+        $typeRaw = isset($data['type']) ? trim(strval($data['type'])) : '';
+        $type = ($typeRaw === '') ? null : strtoupper($typeRaw);
 
         $mqttMeta = static::extractMetadata($topic, $data);
         $reporter = $mqttMeta['attempted_reporter'];
