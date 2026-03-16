@@ -5,6 +5,7 @@ class MeshLogChannel extends MeshLogEntity {
 
     public $hash = null;
     public $name = null;
+    public $psk = null;
     public $enabled = null;
     public $created_at = null;
 
@@ -13,6 +14,7 @@ class MeshLogChannel extends MeshLogEntity {
 
         $m->hash = $data['channel']['hash'] ?? '11';
         $m->name = $data['channel']['name'] ?? 'unknown';
+        $m->psk = '';
         $m->enabled = true; // default
 
         return $m;
@@ -26,6 +28,7 @@ class MeshLogChannel extends MeshLogEntity {
         $m->_id = $data['id'];
         $m->hash = $data['hash'];
         $m->name = $data['name'];
+        $m->psk = $data['psk'] ?? '';
         $m->enabled = $data['enabled'];
         $m->created_at = $data['created_at'];
 
@@ -44,6 +47,7 @@ class MeshLogChannel extends MeshLogEntity {
             'id' => $this->getId(),
             'hash' => $this->hash,
             'name' => $this->name,
+            'psk' => $this->psk ?? '',
             'enabled' => $this->enabled,
             'created_at' => $this->created_at,
             // include message count for admin UI
@@ -55,8 +59,27 @@ class MeshLogChannel extends MeshLogEntity {
         return array(
             "hash" => array($this->hash, PDO::PARAM_STR),
             "name" => array($this->name, PDO::PARAM_STR),
+            "psk" => array($this->psk ?? '', PDO::PARAM_STR),
             "enabled" => array($this->enabled, PDO::PARAM_INT),
         );
+    }
+
+    /**
+     * Returns all enabled channels that have a PSK set (for GRP_TXT decryption).
+     */
+    public static function getAllWithPsk($meshlog) {
+        $channels = array();
+        try {
+            $stmt = $meshlog->pdo->prepare("SELECT * FROM channels WHERE enabled = 1 AND psk != '' ORDER BY id");
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as $row) {
+                $channels[] = static::fromDb($row, $meshlog);
+            }
+        } catch (PDOException $e) {
+            error_log('MeshLogChannel::getAllWithPsk: ' . $e->getMessage());
+        }
+        return $channels;
     }
 
     public function delete($force = false) {

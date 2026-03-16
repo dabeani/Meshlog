@@ -20,7 +20,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 8;
+    private $version = 9;
     private $settings = array(
         MeshlogSetting::KEY_DB_VERSION => 0,
         MeshlogSetting::KEY_MAX_CONTACT_AGE => 1814400,
@@ -139,7 +139,17 @@ class MeshLog {
     }
 
     function insertMqtt($topic, $payload) {
-        $data = MeshLogMqttDecoder::decode($topic, $payload);
+        // For GRP_TXT binary packets (packet_type=5), load enabled channels with a PSK
+        // so the decoder can attempt AES-128 decryption.
+        $channels = array();
+        $payloadArr = json_decode($payload, true);
+        if (is_array($payloadArr) &&
+            strtoupper($payloadArr['type'] ?? '') === 'PACKET' &&
+            intval($payloadArr['packet_type'] ?? -1) === MeshLogMqttDecoder::PAYLOAD_TYPE_GRP_TXT) {
+            $channels = MeshLogChannel::getAllWithPsk($this);
+        }
+
+        $data = MeshLogMqttDecoder::decode($topic, $payload, $channels);
         if (!$data || !isset($data['reporter'])) {
             return $this->repError(
                 "invalid MQTT payload",

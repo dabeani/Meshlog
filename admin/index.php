@@ -381,6 +381,7 @@
                 <th>#</th>
                 <th>Hash</th>
                 <th>Name</th>
+                <th title="Base64-encoded PSK used by MeshCore for AES-128 group channel decryption">PSK (base64)</th>
                 <th>Enabled</th>
                 <td></td>
             </tr>
@@ -404,6 +405,7 @@
                     id: 'Add',
                     hash: '',
                     name: '',
+                    psk: '',
                     enabled: 1,
                     header: 'Add New Channel'
                 });
@@ -416,7 +418,7 @@
                 h.innerText = channel.header;
                 let hrow = table.insertRow();
                 let hcell = hrow.insertCell();
-                hcell.colSpan = 5;
+                hcell.colSpan = 6;
                 hcell.append(h);
             }
 
@@ -441,6 +443,15 @@
             nameInput.oninput = () => { nameInput.style.color = '#1976D2'; };
             nameCell.append(nameInput);
 
+            let pskCell = row.insertCell();
+            let pskInput = document.createElement("input");
+            pskInput.type = "text";
+            pskInput.value = channel['psk'] ?? '';
+            pskInput.placeholder = 'Base64-encoded PSK (16 or 32 bytes)';
+            pskInput.style.minWidth = '260px';
+            pskInput.oninput = () => { pskInput.style.color = '#1976D2'; };
+            pskCell.append(pskInput);
+
             let enabledCell = row.insertCell();
             let enabledInput = document.createElement("input");
             enabledInput.type = "checkbox";
@@ -453,6 +464,7 @@
                 id: id,
                 hash: hashInput.value,
                 name: nameInput.value,
+                psk: pskInput.value,
                 enabled: enabledInput.checked ? 1 : 0,
             });
 
@@ -464,7 +476,7 @@
                     fetch('api/channels/', {
                         method: "POST",
                         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                        body: new URLSearchParams({ add: 1, hash: d.hash, name: d.name, enabled: d.enabled })
+                        body: new URLSearchParams({ add: 1, hash: d.hash, name: d.name, psk: d.psk, enabled: d.enabled })
                     })
                     .then(r => r.json())
                     .then(result => {
@@ -485,7 +497,7 @@
                     fetch('api/channels/', {
                         method: "POST",
                         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                        body: new URLSearchParams({ edit: 1, id: d.id, hash: d.hash, name: d.name, enabled: d.enabled })
+                        body: new URLSearchParams({ edit: 1, id: d.id, hash: d.hash, name: d.name, psk: d.psk, enabled: d.enabled })
                     })
                     .then(r => r.json())
                     .then(result => {

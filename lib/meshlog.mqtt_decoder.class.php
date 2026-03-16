@@ -24,7 +24,7 @@ class MeshLogMqttDecoder {
     // Minimum Unix timestamp (2020-01-01) used to detect invalid/unset device clocks.
     const MIN_VALID_UNIX_TIMESTAMP = 1577836800;
 
-    public static function decode($topic, $payload) {
+    public static function decode($topic, $payload, $channels = array()) {
         $data = json_decode($payload, true);
         if (!is_array($data)) return null;
 
@@ -59,6 +59,15 @@ class MeshLogMqttDecoder {
             if ($packetType === static::PAYLOAD_TYPE_ADVERT) {
                 $decoded = static::decodeAdvertPacket(
                     $raw, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta
+                );
+                if ($decoded !== null) return $decoded;
+            }
+
+            // GRP_TXT packets (packet_type=5) are AES-128 encrypted.
+            // Attempt decryption using channel PSKs supplied by the caller.
+            if ($packetType === static::PAYLOAD_TYPE_GRP_TXT && !empty($channels)) {
+                $decoded = static::decodeGroupPacket(
+                    $raw, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -460,6 +469,128 @@ class MeshLogMqttDecoder {
             ),
             "_mqtt" => $mqttMeta,
         );
+    }
+    /**
+     * Attempt to decrypt a binary MeshCore GRP_TXT packet into the PUB structured
+     * format expected by MeshLog::insertForReporter().
+     *
+     * GRP_TXT payload layout (from MeshCore Packet.h / Mesh.cpp):
+     *   channel_hash  (1 byte)   SHA256(PSK_bytes)[0] — plaintext channel identifier
+     *   mac           (2 bytes)  HMAC-SHA256(secret_32, ciphertext) truncated to 2 bytes
+     *   ciphertext    (N*16 B)   AES-128-ECB( secret[0:16], plaintext_zero_padded )
+     *
+     * Decrypted plaintext layout:
+     *   timestamp     (4 bytes, LE uint32, Unix seconds)
+     *   flags         (1 byte, 0 = TXT_TYPE_PLAIN)
+     *   text          (variable, "SenderName: message\0", null-terminated)
+     *
+     * @param  string $rawHex    Hex-encoded full packet bytes.
+     * @param  string $path      Normalised routing path.
+     * @param  int    $hashSize  Path-hash byte length.
+     * @param  int    $snr       SNR from meshcoretomqtt.
+     * @param  int    $timestamp Server receive time in milliseconds (fallback).
+     * @param  string $reporter  Reporter public-key string.
+     * @param  array  $data      Decoded meshcoretomqtt JSON.
+     * @param  array  $mqttMeta  MQTT metadata from extractMetadata().
+     * @param  array  $channels  Array of MeshLogChannel objects with PSK set.
+     * @return array|null        PUB data array for insertForReporter(), or null on failure.
+     */
+    private static function decodeGroupPacket($rawHex, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels) {
+        $bytes = hex2bin($rawHex);
+        $payload = static::extractPayloadBytes($bytes);
+        if ($payload === null) return null;
+
+        // Minimum: channel_hash(1) + mac(2) + one AES block(16) = 19 bytes
+        if (strlen($payload) < 19) return null;
+
+        $channelHashByte = ord($payload[0]);
+        $mac             = substr($payload, 1, 2);
+        $ciphertext      = substr($payload, 3);
+
+        // Ciphertext must be a multiple of the AES-128 block size (16 bytes).
+        if (strlen($ciphertext) % 16 !== 0) return null;
+
+        // Deduplication hash from the meshcoretomqtt JSON (same for all reporters of the same flood).
+        $rawHash    = preg_replace('/[^0-9a-fA-F]/', '', $data['hash'] ?? '');
+        $packetHash = strtolower(substr($rawHash, 0, 16));
+
+        foreach ($channels as $channel) {
+            $pskB64 = trim($channel->psk ?? '');
+            if ($pskB64 === '') continue;
+
+            // Decode the base64 PSK → raw bytes (MeshCore accepts 16-byte or 32-byte PSKs).
+            $pskBytes = base64_decode($pskB64, true);
+            if ($pskBytes === false) continue;
+            $pskLen = strlen($pskBytes);
+            if ($pskLen !== 16 && $pskLen !== 32) continue;
+
+            // Channel hash test: SHA256(pskBytes)[0] must equal the header byte.
+            $hashByte = ord(hash('sha256', $pskBytes, true)[0]);
+            if ($hashByte !== $channelHashByte) continue;
+
+            // For HMAC the secret is zero-padded to PUB_KEY_SIZE (32 bytes), matching
+            // MeshCore's Utils::encryptThenMAC(channel.secret, ...) which uses PUB_KEY_SIZE.
+            $secret = str_pad($pskBytes, 32, "\0");
+
+            // Verify HMAC-SHA256(secret, ciphertext) truncated to 2 bytes.
+            $computedMac = substr(hash_hmac('sha256', $ciphertext, $secret, true), 0, 2);
+            if ($computedMac !== $mac) continue;
+
+            // HMAC verified — decrypt with AES-128-ECB using the first 16 bytes of secret.
+            $decrypted = openssl_decrypt(
+                $ciphertext,
+                'AES-128-ECB',
+                substr($secret, 0, 16),
+                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING
+            );
+            if ($decrypted === false || strlen($decrypted) < 6) continue;
+
+            // Decrypted format: [timestamp(4)][flags(1)]["SenderName: message\0"...]
+            $tsArr            = unpack('V', substr($decrypted, 0, 4));
+            $senderTimestampS = intval($tsArr[1]);
+            $txtTypeByte      = ord($decrypted[4]);
+            $txtType          = ($txtTypeByte >> 2) & 0x3F;
+
+            // Only handle plain text (TXT_TYPE_PLAIN = 0).
+            if ($txtType !== 0) continue;
+
+            // Extract null-terminated text, strip trailing zero-padding added by MeshCore.
+            $textRaw = rtrim(substr($decrypted, 5), "\0");
+            if ($textRaw === '') continue;
+
+            // Validate sender clock; fall back to server receive time if unreasonable.
+            $senderTimestampMs = ($senderTimestampS >= static::MIN_VALID_UNIX_TIMESTAMP)
+                ? $senderTimestampS * 1000
+                : $timestamp;
+
+            $serverTimestampMs = intval(floor(microtime(true) * 1000));
+
+            return array(
+                'type'     => 'PUB',
+                'reporter' => $reporter,
+                'hash'     => $packetHash,
+                'hash_size' => $hashSize,
+                'channel'  => array(
+                    'hash' => $channel->hash,
+                    'name' => $channel->name,
+                ),
+                'message'  => array(
+                    'text' => $textRaw,
+                ),
+                'contact' => array(
+                    'pubkey' => '',   // sender pubkey not available in flood packets
+                ),
+                'time' => array(
+                    'sender' => $senderTimestampMs,
+                    'local'  => $serverTimestampMs,
+                    'server' => $serverTimestampMs,
+                ),
+                'snr'   => $snr,
+                '_mqtt' => $mqttMeta,
+            );
+        }
+
+        return null; // no matching channel / MAC verification failed
     }
 }
 

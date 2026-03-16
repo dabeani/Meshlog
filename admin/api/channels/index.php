@@ -17,6 +17,7 @@
         } else {
             $channel->name = trim($_POST['name']);
         }
+        $channel->psk = trim($_POST['psk'] ?? '');
         $channel->enabled = isset($_POST['enabled']) ? intval($_POST['enabled']) : 1;
 
         if (!sizeof($errors)) {
@@ -39,6 +40,7 @@
                 $channel->hash = trim($_POST['hash']);
             }
             $channel->name = $_POST['name'] ?? $channel->name;
+            $channel->psk  = trim($_POST['psk'] ?? $channel->psk ?? '');
             $channel->enabled = isset($_POST['enabled']) ? intval($_POST['enabled']) : $channel->enabled;
 
             if (!sizeof($errors)) {
