@@ -45,7 +45,9 @@ class MeshLogChannel extends MeshLogEntity {
             'hash' => $this->hash,
             'name' => $this->name,
             'enabled' => $this->enabled,
-            'created_at' => $this->created_at
+            'created_at' => $this->created_at,
+            // include message count for admin UI
+            'message_count' => $this->getMessageCount()
         );
     }
 
@@ -58,17 +60,64 @@ class MeshLogChannel extends MeshLogEntity {
     }
 
     public function delete() {
+        return $this->delete(false);
+    }
+
+    public function delete($force = false) {
         if (!$this->getId()) return false;
+
+        try {
+            $this->meshlog->pdo->beginTransaction();
+
+            // Count messages
+            $stmt = $this->meshlog->pdo->prepare("SELECT COUNT(*) AS cnt FROM channel_messages WHERE channel_id = :id");
+            $stmt->bindParam(':id', $this->_id, PDO::PARAM_INT);
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $count = intval($row['cnt'] ?? 0);
+
+            if ($count > 0 && !$force) {
+                $this->meshlog->pdo->rollBack();
+                $this->error = "Channel has $count messages and cannot be deleted without force";
+                return false;
+            }
+
+            if ($count > 0 && $force) {
+                // delete reports for messages
+                $delReports = $this->meshlog->pdo->prepare(
+                    "DELETE r FROM channel_message_reports r JOIN channel_messages m ON r.channel_message_id = m.id WHERE m.channel_id = :id"
+                );
+                $delReports->bindParam(':id', $this->_id, PDO::PARAM_INT);
+                $delReports->execute();
+
+                // delete messages
+                $delMsgs = $this->meshlog->pdo->prepare("DELETE FROM channel_messages WHERE channel_id = :id");
+                $delMsgs->bindParam(':id', $this->_id, PDO::PARAM_INT);
+                $delMsgs->execute();
+            }
+
+            // finally delete channel
+            $stmt = $this->meshlog->pdo->prepare("DELETE FROM channels WHERE id = :id");
+            $stmt->bindParam(':id', $this->_id, PDO::PARAM_INT);
+            $stmt->execute();
+
+            $this->meshlog->pdo->commit();
+            return true;
+        } catch (PDOException $e) {
+            $this->meshlog->pdo->rollBack();
+            $this->error = $e->getMessage();
+            error_log($e->getMessage());
+            return false;
+        }
+    }
+
+    private function getMessageCount() {
+        if (!$this->getId()) return 0;
         $stmt = $this->meshlog->pdo->prepare("SELECT COUNT(*) AS cnt FROM channel_messages WHERE channel_id = :id");
         $stmt->bindParam(':id', $this->_id, PDO::PARAM_INT);
         $stmt->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        $count = intval($row['cnt'] ?? 0);
-        if ($count > 0) {
-            $this->error = "Channel has messages and cannot be deleted";
-            return false;
-        }
-        return parent::delete();
+        return intval($row['cnt'] ?? 0);
     }
 }
 

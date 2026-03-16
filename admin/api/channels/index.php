@@ -54,11 +54,12 @@
         }
     } else if (isset($_POST['delete'])) {
         $id = intval($_POST['id'] ?? 0);
+        $force = isset($_POST['force']) ? boolval(intval($_POST['force'])) : false;
         $channel = MeshLogChannel::findById($id, $meshlog);
-        if ($channel && $channel->delete()) {
+        if ($channel && $channel->delete($force)) {
             $results = array('status' => 'OK');
         } else {
-            $errors[] = 'Failed to delete';
+            $errors[] = 'Failed to delete: ' . ($channel ? $channel->getError() : 'Channel not found');
         }
     } else {
         // Return all channels including disabled ones

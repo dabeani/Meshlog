@@ -498,10 +498,24 @@
                 };
 
                 btnDelete.onclick = () => {
+                    const msgCount = channel['message_count'] ?? 0;
+                    let doForce = false;
+                    if (msgCount > 0) {
+                        const ok = confirm(`Channel has ${msgCount} messages. Delete and remove those messages? Click OK to force delete.`);
+                        if (!ok) return;
+                        doForce = true;
+                    } else {
+                        const ok = confirm('Delete channel?');
+                        if (!ok) return;
+                    }
+
+                    const body = { delete: 1, id: id };
+                    if (doForce) body.force = 1;
+
                     fetch('api/channels/', {
                         method: "POST",
                         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                        body: new URLSearchParams({ delete: 1, id: id })
+                        body: new URLSearchParams(body)
                     })
                     .then(r => r.json())
                     .then(result => {
