@@ -373,6 +373,12 @@ class MeshLog {
             $saved = true;
         } else {
             $saved = $grpmsg->save($this);
+            if (!$saved) {
+                error_log('[PUB insert] channel_message save failed: ' . $grpmsg->getError() .
+                    ' hash=' . $grpmsg->hash . ' name=' . $grpmsg->name .
+                    ' msg=' . substr($grpmsg->message ?? '', 0, 30) .
+                    ' sent_at=' . $grpmsg->sent_at);
+            }
             if ($contact) $contact->updateHeardAt($this);
         }
 
@@ -381,7 +387,12 @@ class MeshLog {
             $rep = MeshLogChannelMessageReport::fromJson($data, $this);
             $rep->object_id = $grpmsg->getId();
             $rep->reporter_id = $reporter->getId();
-            return $rep->save($this);
+            $repSaved = $rep->save($this);
+            if (!$repSaved) {
+                error_log('[PUB insert] report save failed: ' . $rep->getError() .
+                    ' msg_id=' . $grpmsg->getId() . ' reporter_id=' . $reporter->getId());
+            }
+            return $repSaved;
         }
         return $saved;
     }

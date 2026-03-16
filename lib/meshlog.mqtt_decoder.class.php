@@ -594,6 +594,9 @@ class MeshLogMqttDecoder {
 
             $serverTimestampMs = intval(floor(microtime(true) * 1000));
 
+            error_log(sprintf('[GRP_TXT] decoded PUB: channel=%s hash=%s text_len=%d text_preview=%s',
+                $channelName, $packetHash, strlen($textRaw), addcslashes(substr($textRaw, 0, 30), "\0\r\n\x01-\x1f")));
+
             return array(
                 'type'     => 'PUB',
                 'reporter' => $reporter,
