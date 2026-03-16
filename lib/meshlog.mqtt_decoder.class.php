@@ -516,13 +516,22 @@ class MeshLogMqttDecoder {
 
         foreach ($channels as $channel) {
             $pskB64 = trim($channel->psk ?? '');
-            if ($pskB64 === '') continue;
+            $channelName = trim($channel->name ?? '');
 
-            // Decode the base64 PSK → raw bytes (MeshCore accepts 16-byte or 32-byte PSKs).
-            $pskBytes = base64_decode($pskB64, true);
-            if ($pskBytes === false) continue;
-            $pskLen = strlen($pskBytes);
-            if ($pskLen !== 16 && $pskLen !== 32) continue;
+            if ($pskB64 !== '') {
+                // Explicit PSK: decode base64 → raw bytes (MeshCore accepts 16 or 32 bytes).
+                $pskBytes = base64_decode($pskB64, true);
+                if ($pskBytes === false) continue;
+                $pskLen = strlen($pskBytes);
+                if ($pskLen !== 16 && $pskLen !== 32) continue;
+            } elseif ($channelName !== '' && $channelName[0] === '#') {
+                // Public hashtag channel: PSK = SHA-256(channel_name_utf8) → 32 bytes.
+                // The companion derives the same value via addChannel(name, base64(sha256(name))).
+                $pskBytes = hash('sha256', $channelName, true);
+                $pskLen = 32;
+            } else {
+                continue;
+            }
 
             // Channel hash test: SHA256(pskBytes)[0] must equal the header byte.
             $hashByte = ord(hash('sha256', $pskBytes, true)[0]);

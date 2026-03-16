@@ -65,12 +65,14 @@ class MeshLogChannel extends MeshLogEntity {
     }
 
     /**
-     * Returns all enabled channels that have a PSK set (for GRP_TXT decryption).
+     * Returns all enabled channels that can attempt GRP_TXT decryption:
+     * either an explicit PSK is stored, or the channel name starts with '#'
+     * (public hashtag channels whose PSK is derived as SHA-256 of the name).
      */
     public static function getAllWithPsk($meshlog) {
         $channels = array();
         try {
-            $stmt = $meshlog->pdo->prepare("SELECT * FROM channels WHERE enabled = 1 AND psk != '' ORDER BY id");
+            $stmt = $meshlog->pdo->prepare("SELECT * FROM channels WHERE enabled = 1 AND (psk != '' OR name LIKE '#%') ORDER BY id");
             $stmt->execute();
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as $row) {

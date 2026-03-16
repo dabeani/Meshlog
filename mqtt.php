@@ -71,7 +71,8 @@ while (true) {
                 if (isset($payloadArr['type']) && strtoupper($payloadArr['type']) === 'PACKET') {
                     $rawHex = strtoupper(preg_replace('/[^0-9A-Fa-f]/', '', $payloadArr['raw'] ?? ''));
                     $pathStr = $payloadArr['path'] ?? '';
-                    mqttDebug($debug, "PACKET detail packet_type=" . var_export($pktType, true) . " path=$pathStr raw_len=" . strlen($rawHex) . " raw_head=" . substr($rawHex, 0, 64));
+                $rawBytes = intval(strlen($rawHex) / 2);
+                mqttDebug($debug, "PACKET detail packet_type=" . var_export($pktType, true) . " path=$pathStr raw_len=" . $rawBytes . " raw_head=" . substr($rawHex, 0, 64));
                 } elseif (isset($payloadArr['type'])) {
                     $t = strtoupper($payloadArr['type']);
                     if ($t === 'PUB' || $t === 'MSG') {
