@@ -513,9 +513,6 @@ class MeshLogMqttDecoder {
             return null;
         }
 
-        error_log(sprintf('[GRP_TXT] packet channel_hash=%02X mac=%s ciphertext_len=%d num_channels=%d',
-            $channelHashByte, strtoupper(bin2hex($mac)), strlen($ciphertext), count($channels)));
-
         // Deduplication hash from the meshcoretomqtt JSON (same for all reporters of the same flood).
         $rawHash    = preg_replace('/[^0-9a-fA-F]/', '', $data['hash'] ?? '');
         $packetHash = strtolower(substr($rawHash, 0, 16));
@@ -537,41 +534,43 @@ class MeshLogMqttDecoder {
                     continue;
                 }
             } elseif ($channelName !== '' && $channelName[0] === '#') {
-                // Public hashtag channel: PSK = SHA-256(channel_name_utf8) → 32 bytes.
-                // The companion derives the same value via addChannel(name, base64(sha256(name))).
-                $pskBytes = hash('sha256', $channelName, true);
-                $pskLen = 32;
+                // Public hashtag channel: PSK = first 16 bytes of SHA-256(channel_name_utf8).
+                // MeshCore companion protocol: key = sha256(name)[0:16] (128-bit key).
+                // channel.secret = [PSK_16_bytes][zeros_16_bytes] in the firmware.
+                $pskBytes = substr(hash('sha256', $channelName, true), 0, 16);
+                $pskLen = 16;
             } else {
                 error_log('[GRP_TXT] channel "' . $channelName . '": no PSK and name does not start with #, skipping');
                 continue;
             }
 
-            // Channel hash test: SHA256(pskBytes)[0] must equal the header byte.
+            // Channel hash test: SHA256(pskBytes, pskLen)[0] must equal the header byte.
+            // MeshCore BaseChatMesh::addChannel/setChannel: hash = SHA256(secret, len) where
+            // len == 16 for 128-bit keys (e.g. hashtag channels), 32 for 256-bit keys.
             $hashByte = ord(hash('sha256', $pskBytes, true)[0]);
-            error_log(sprintf('[GRP_TXT] channel "%s" (db_hash=%s psk_src=%s): computed_hash=%02X packet_hash=%02X match=%s',
-                $channelName, $channel->hash ?? '?',
-                ($pskB64 !== '' ? 'explicit_psk' : 'sha256_of_name'),
-                $hashByte, $channelHashByte,
-                ($hashByte === $channelHashByte ? 'YES' : 'NO')));
             if ($hashByte !== $channelHashByte) continue;
 
-            // For HMAC the secret is zero-padded to PUB_KEY_SIZE (32 bytes), matching
-            // MeshCore's Utils::encryptThenMAC(channel.secret, ...) which uses PUB_KEY_SIZE.
+            // channel.secret in MeshCore = PSK zero-padded to PUB_KEY_SIZE (32 bytes).
+            // Both HMAC and AES use this 32-byte value (AES uses only the first 16 bytes).
             $secret = str_pad($pskBytes, 32, "\0");
 
-            // Verify HMAC-SHA256(secret, ciphertext) truncated to 2 bytes.
+            // Verify HMAC-SHA256(secret_32, ciphertext) truncated to 2 bytes.
             $computedMac = substr(hash_hmac('sha256', $ciphertext, $secret, true), 0, 2);
-            error_log(sprintf('[GRP_TXT] channel "%s": HMAC computed=%s packet=%s match=%s',
-                $channelName, strtoupper(bin2hex($computedMac)), strtoupper(bin2hex($mac)),
-                ($computedMac === $mac ? 'YES' : 'NO')));
-            if ($computedMac !== $mac) continue;
+            if ($computedMac !== $mac) {
+                error_log(sprintf('[GRP_TXT] channel "%s": HMAC mismatch (computed=%s packet=%s)',
+                    $channelName, strtoupper(bin2hex($computedMac)), strtoupper(bin2hex($mac))));
+                continue;
+            }
 
-            // HMAC verified — decrypt with AES-128-ECB using the first 16 bytes of secret.
+            // HMAC verified — decrypt with AES-128-CBC (zero IV) using the first 16 bytes of secret.
+            // MeshCore Utils::encrypt / MACThenDecrypt use AES-128-CBC per the companion protocol.
+            $iv = str_repeat("\0", 16);
             $decrypted = openssl_decrypt(
                 $ciphertext,
-                'AES-128-ECB',
+                'AES-128-CBC',
                 substr($secret, 0, 16),
-                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING
+                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING,
+                $iv
             );
             if ($decrypted === false || strlen($decrypted) < 6) continue;
 
