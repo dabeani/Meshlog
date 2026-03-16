@@ -59,10 +59,6 @@ class MeshLogChannel extends MeshLogEntity {
         );
     }
 
-    public function delete() {
-        return $this->delete(false);
-    }
-
     public function delete($force = false) {
         if (!$this->getId()) return false;
 
