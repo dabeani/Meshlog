@@ -508,7 +508,13 @@ class MeshLogMqttDecoder {
         $ciphertext      = substr($payload, 3);
 
         // Ciphertext must be a multiple of the AES-128 block size (16 bytes).
-        if (strlen($ciphertext) % 16 !== 0) return null;
+        if (strlen($ciphertext) % 16 !== 0) {
+            error_log(sprintf('[GRP_TXT] ciphertext length %d is not a multiple of 16, raw payload_len=%d', strlen($ciphertext), strlen($payload)));
+            return null;
+        }
+
+        error_log(sprintf('[GRP_TXT] packet channel_hash=%02X mac=%s ciphertext_len=%d num_channels=%d',
+            $channelHashByte, strtoupper(bin2hex($mac)), strlen($ciphertext), count($channels)));
 
         // Deduplication hash from the meshcoretomqtt JSON (same for all reporters of the same flood).
         $rawHash    = preg_replace('/[^0-9a-fA-F]/', '', $data['hash'] ?? '');
@@ -521,20 +527,32 @@ class MeshLogMqttDecoder {
             if ($pskB64 !== '') {
                 // Explicit PSK: decode base64 → raw bytes (MeshCore accepts 16 or 32 bytes).
                 $pskBytes = base64_decode($pskB64, true);
-                if ($pskBytes === false) continue;
+                if ($pskBytes === false) {
+                    error_log('[GRP_TXT] channel "' . $channelName . '": base64_decode of PSK failed');
+                    continue;
+                }
                 $pskLen = strlen($pskBytes);
-                if ($pskLen !== 16 && $pskLen !== 32) continue;
+                if ($pskLen !== 16 && $pskLen !== 32) {
+                    error_log('[GRP_TXT] channel "' . $channelName . '": PSK length ' . $pskLen . ' is not 16 or 32');
+                    continue;
+                }
             } elseif ($channelName !== '' && $channelName[0] === '#') {
                 // Public hashtag channel: PSK = SHA-256(channel_name_utf8) → 32 bytes.
                 // The companion derives the same value via addChannel(name, base64(sha256(name))).
                 $pskBytes = hash('sha256', $channelName, true);
                 $pskLen = 32;
             } else {
+                error_log('[GRP_TXT] channel "' . $channelName . '": no PSK and name does not start with #, skipping');
                 continue;
             }
 
             // Channel hash test: SHA256(pskBytes)[0] must equal the header byte.
             $hashByte = ord(hash('sha256', $pskBytes, true)[0]);
+            error_log(sprintf('[GRP_TXT] channel "%s" (db_hash=%s psk_src=%s): computed_hash=%02X packet_hash=%02X match=%s',
+                $channelName, $channel->hash ?? '?',
+                ($pskB64 !== '' ? 'explicit_psk' : 'sha256_of_name'),
+                $hashByte, $channelHashByte,
+                ($hashByte === $channelHashByte ? 'YES' : 'NO')));
             if ($hashByte !== $channelHashByte) continue;
 
             // For HMAC the secret is zero-padded to PUB_KEY_SIZE (32 bytes), matching
@@ -543,6 +561,9 @@ class MeshLogMqttDecoder {
 
             // Verify HMAC-SHA256(secret, ciphertext) truncated to 2 bytes.
             $computedMac = substr(hash_hmac('sha256', $ciphertext, $secret, true), 0, 2);
+            error_log(sprintf('[GRP_TXT] channel "%s": HMAC computed=%s packet=%s match=%s',
+                $channelName, strtoupper(bin2hex($computedMac)), strtoupper(bin2hex($mac)),
+                ($computedMac === $mac ? 'YES' : 'NO')));
             if ($computedMac !== $mac) continue;
 
             // HMAC verified — decrypt with AES-128-ECB using the first 16 bytes of secret.
