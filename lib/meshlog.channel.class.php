@@ -56,6 +56,20 @@ class MeshLogChannel extends MeshLogEntity {
             "enabled" => array($this->enabled, PDO::PARAM_INT),
         );
     }
+
+    public function delete() {
+        if (!$this->getId()) return false;
+        $stmt = $this->meshlog->pdo->prepare("SELECT COUNT(*) AS cnt FROM channel_messages WHERE channel_id = :id");
+        $stmt->bindParam(':id', $this->_id, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $count = intval($row['cnt'] ?? 0);
+        if ($count > 0) {
+            $this->error = "Channel has messages and cannot be deleted";
+            return false;
+        }
+        return parent::delete();
+    }
 }
 
 ?>
