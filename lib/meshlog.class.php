@@ -103,10 +103,19 @@ class MeshLog {
 
     function authorize($data) {
         if (!isset($_SERVER['HTTP_AUTHORIZATION'])) return false;
-        if (!isset($data['reporter'])) return false;
+        // Accept multiple payload keys used by different firmware versions
+        if (!is_array($data)) return false;
+
+        $pubkey = '';
+        foreach (array('reporter', 'origin_id', 'public_key', 'pubkey') as $k) {
+            if (isset($data[$k]) && is_scalar($data[$k]) && trim($data[$k]) !== '') {
+                $candidate = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper(trim(strval($data[$k]))));
+                if ($candidate !== '') { $pubkey = $candidate; break; }
+            }
+        }
+        if ($pubkey === '') return false;
 
         $count = 1;
-        $pubkey = $data['reporter'];
         $token = $_SERVER['HTTP_AUTHORIZATION'];
         $token = str_replace("Bearer ", "", $token, $count);
 
