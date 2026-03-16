@@ -65,6 +65,23 @@ while (true) {
             $meta = MeshLogMqttDecoder::extractMetadata($topic, $payloadArr);
             $type = strtoupper($payloadArr['type'] ?? (isset($payloadArr['packet_type']) ? 'PACKET' : ''));
 
+            // Add detailed decode logging for debugging encrypted/RAW packets.
+            if ($debug) {
+                $pktType = isset($payloadArr['packet_type']) ? intval($payloadArr['packet_type']) : null;
+                if (isset($payloadArr['type']) && strtoupper($payloadArr['type']) === 'PACKET') {
+                    $rawHex = strtoupper(preg_replace('/[^0-9A-Fa-f]/', '', $payloadArr['raw'] ?? ''));
+                    $pathStr = $payloadArr['path'] ?? '';
+                    mqttDebug($debug, "PACKET detail packet_type=" . var_export($pktType, true) . " path=$pathStr raw_len=" . strlen($rawHex) . " raw_head=" . substr($rawHex, 0, 64));
+                } elseif (isset($payloadArr['type'])) {
+                    $t = strtoupper($payloadArr['type']);
+                    if ($t === 'PUB' || $t === 'MSG') {
+                        $chan = $payloadArr['channel']['hash'] ?? ($payloadArr['contact']['pubkey'] ?? '');
+                        $msg = $payloadArr['message']['text'] ?? $payloadArr['message'] ?? '';
+                        mqttDebug($debug, "$t structured detail channel=$chan msg_len=" . strlen($msg));
+                    }
+                }
+            }
+
             $result = $meshlog->insertMqtt($topic, $payload);
             $mqttMeta = is_array($result) ? ($result['_mqtt'] ?? array()) : array();
 

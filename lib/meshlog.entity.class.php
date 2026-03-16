@@ -2,7 +2,7 @@
 
 class MeshLogEntity {
     protected static $table = null;
-    private $meshlog = null;
+    protected $meshlog = null;
     protected $_id = null;
     protected $error = '';
 
@@ -129,7 +129,7 @@ class MeshLogEntity {
         }
 
         if ($this->isNew() && $result) {
-            $this->_id = $this->pdo->lastInsertId(); 
+            $this->_id = $meshlog->pdo->lastInsertId();
         }
 
         return $result;
