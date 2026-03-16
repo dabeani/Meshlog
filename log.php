@@ -5,8 +5,8 @@ include "lib/meshlog.class.php";
 function dockerLog($level, $message) {
     $ts = date('c');
     $out = "[$ts][$level] $message\n";
-    // write to STDERR so Docker / supervisord capture the message
-    fwrite(STDERR, $out);
+    // Use error_log() which routes to the SAPI error log (captured by Docker)
+    error_log($out);
 }
 
 $raw = file_get_contents("php://input");
