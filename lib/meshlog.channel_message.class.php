@@ -37,16 +37,16 @@ class MeshLogChannelMessage extends MeshLogEntity {
             }
             $msg = substr($text, $bodyStart);
         } else {
-            // No "Name: message" separator — treat the entire text as the message
-            // with an unknown sender name derived from any contact advertisement
-            // that may be set by the caller after fromJson() returns.
-            $name = null;
+            // No "Name: message" separator (e.g. binary MQTT binary packets where
+            // the plaintext is the raw message, not prefixed with a node name).
+            // Store empty string so the NOT-NULL constraint is satisfied.
+            $name = '';
             $msg  = $text;
         }
 
         $m->hash = $data['hash'] ?? null;
         $m->hash_size = $data['hash_size'] ?? 1;
-        $m->name = ($name !== null && $name !== '') ? $name : null;
+        $m->name = ($name !== null && $name !== '') ? $name : '';
         $m->message = $msg;
 
         $m->sent_at = Utils::time2str($data['time']['sender']) ?? null;

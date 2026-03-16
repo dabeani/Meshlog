@@ -516,6 +516,8 @@ class MeshLogMqttDecoder {
         // Deduplication hash from the meshcoretomqtt JSON (same for all reporters of the same flood).
         $rawHash    = preg_replace('/[^0-9a-fA-F]/', '', $data['hash'] ?? '');
         $packetHash = strtolower(substr($rawHash, 0, 16));
+        // $packetHash may be empty when the MQTT bridge omits the hash field; a
+        // content-derived fallback is set after decryption once we have the plaintext.
 
         foreach ($channels as $channel) {
             $pskB64 = trim($channel->psk ?? '');
@@ -583,9 +585,24 @@ class MeshLogMqttDecoder {
             // Only handle plain text (TXT_TYPE_PLAIN = 0).
             if ($txtType !== 0) continue;
 
-            // Extract null-terminated text, strip trailing zero-padding added by MeshCore.
-            $textRaw = rtrim(substr($decrypted, 5), "\0");
+            // Extract text portion after [timestamp(4)][flags(1)].
+            // MeshCore AES-128-CBC uses PKCS7 padding (via mbedTLS);
+            // OPENSSL_ZERO_PADDING suppresses auto-unpadding so we do it manually.
+            $textFull = substr($decrypted, 5);
+            $padLen   = ord($textFull[strlen($textFull) - 1]);
+            if ($padLen >= 1 && $padLen <= 16
+                && substr($textFull, -$padLen) === str_repeat(chr($padLen), $padLen)
+            ) {
+                $textFull = substr($textFull, 0, -$padLen);
+            }
+            // Also strip any residual trailing null bytes (zero-pad convention fallback).
+            $textRaw = rtrim($textFull, "\0");
             if ($textRaw === '') continue;
+
+            // If the MQTT bridge did not supply a hash, derive one from content.
+            if ($packetHash === '') {
+                $packetHash = substr(hash('sha256', $senderTimestampS . ':' . $textRaw), 0, 16);
+            }
 
             // Validate sender clock; fall back to server receive time if unreasonable.
             $senderTimestampMs = ($senderTimestampS >= static::MIN_VALID_UNIX_TIMESTAMP)
@@ -593,9 +610,6 @@ class MeshLogMqttDecoder {
                 : $timestamp;
 
             $serverTimestampMs = intval(floor(microtime(true) * 1000));
-
-            error_log(sprintf('[GRP_TXT] decoded PUB: channel=%s hash=%s text_len=%d text_preview=%s',
-                $channelName, $packetHash, strlen($textRaw), addcslashes(substr($textRaw, 0, 30), "\0\r\n\x01-\x1f")));
 
             return array(
                 'type'     => 'PUB',
