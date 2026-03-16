@@ -59,8 +59,15 @@ while (true) {
 
         $client->loop(function($topic, $payload) use ($meshlog, $debug) {
             mqttDebug($debug, "MQTT message received topic=" . $topic . " bytes=" . strlen($payload));
+
+            // Decode minimal metadata for logging
+            $payloadArr = json_decode($payload, true) ?: array();
+            $meta = MeshLogMqttDecoder::extractMetadata($topic, $payloadArr);
+            $type = strtoupper($payloadArr['type'] ?? (isset($payloadArr['packet_type']) ? 'PACKET' : ''));
+
             $result = $meshlog->insertMqtt($topic, $payload);
             $mqttMeta = is_array($result) ? ($result['_mqtt'] ?? array()) : array();
+
             if ($debug && is_array($mqttMeta)) {
                 mqttDebug(
                     $debug,
@@ -74,6 +81,8 @@ while (true) {
 
             if (is_array($result) && array_key_exists("error", $result)) {
                 mqttLog("WARN", "Skipped MQTT message from topic " . $topic . ": " . $result["error"]);
+            } else {
+                mqttLog("INFO", "Insert OK type={$type} reporter=" . ($meta['attempted_reporter'] ?? '') . " bytes=" . strlen($payload));
             }
         });
 
