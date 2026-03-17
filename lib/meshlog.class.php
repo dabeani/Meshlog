@@ -139,7 +139,8 @@ class MeshLog {
     }
 
     function insertMqtt($topic, $payload) {
-        $data = MeshLogMqttDecoder::decode($topic, $payload);
+        $channels = MeshLogChannel::getAllWithPsk($this);
+        $data = MeshLogMqttDecoder::decode($topic, $payload, $channels);
         if (!$data || !isset($data['reporter'])) {
             return $this->repError(
                 "invalid MQTT payload",

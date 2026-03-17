@@ -63,10 +63,18 @@ class MeshLogMqttDecoder {
                 if ($decoded !== null) return $decoded;
             }
 
-            // Preserve the original MeshLog behavior for binary MQTT packets:
-            // only unencrypted ADVERT packets are promoted into normal feed items.
-            // Encrypted TXT_MSG / GRP_TXT packets remain RAW unless a publisher
-            // sends already-decoded structured JSON (handled below).
+            // GRP_TXT packets (packet_type=5) are AES-128 encrypted group messages.
+            // Attempt decryption using all enabled channels that have a known PSK.
+            // Falls through to RAW if no channel matches or decryption fails.
+            if ($packetType === static::PAYLOAD_TYPE_GRP_TXT && !empty($channels)) {
+                $decoded = static::decodeGroupPacket(
+                    $raw, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
+                );
+                if ($decoded !== null) return $decoded;
+            }
+
+            // TXT_MSG (packet_type=2) is a unicast encrypted direct message;
+            // MeshLog does not attempt decryption — stored as RAW.
 
             // Fall-through: store packet as a RAW entry.
             return array(
