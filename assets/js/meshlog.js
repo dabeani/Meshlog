@@ -610,7 +610,7 @@ class MeshLogContact extends MeshLogObject {
         this.dom.container.dataset.time = this.last.time;
         this.dom.container.dataset.name = this.__removeEmojis(this.adv.data.name).trim();
         this.dom.container.dataset.hash = hashstr;
-        this.dom.container.dataset.first_seen = new Date(this.data.created_at).getTime();
+        this.dom.container.dataset.first_seen = parseMeshlogTimestamp(this.data.created_at);
 
         this.dom.details.hidden = !this.expanded;
 
@@ -1272,7 +1272,7 @@ class MeshLogRawPacket extends MeshLogObject {
     constructor(meshlog, data) {
         super(meshlog, data);
         this.dom = null;
-        this.time = new Date(data.created_at).getTime();
+        this.time = parseMeshlogTimestamp(data.created_at);
     }
 
     getPayloadType() {
@@ -1894,11 +1894,9 @@ class MeshLog {
             this.__addObject(dataset, id, obj);
 
             if (o.created_at) {
-                let created_at = new Date(o.created_at).getTime();
-                if (created_at != 0) {
-                    if (created_at > this.latest) {
-                        this.latest = created_at;
-                    }
+                const created_at = parseMeshlogTimestamp(o.created_at);
+                if (created_at > 0 && !isNaN(created_at) && created_at > this.latest) {
+                    this.latest = created_at;
                 }
             }
         }
