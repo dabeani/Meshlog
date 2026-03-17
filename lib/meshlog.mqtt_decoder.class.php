@@ -564,15 +564,14 @@ class MeshLogMqttDecoder {
                 continue;
             }
 
-            // HMAC verified — decrypt with AES-128-CBC (zero IV) using the first 16 bytes of secret.
-            // MeshCore Utils::encrypt / MACThenDecrypt use AES-128-CBC per the companion protocol.
-            $iv = str_repeat("\0", 16);
+            // HMAC verified — decrypt with AES-128-ECB using the first 16 bytes of secret.
+            // Current MeshCore Utils::encrypt/decrypt are block-wise AES-128 with zero padding,
+            // i.e. ECB semantics with no CBC chaining and no PKCS7 unpadding.
             $decrypted = openssl_decrypt(
                 $ciphertext,
-                'AES-128-CBC',
+                'AES-128-ECB',
                 substr($secret, 0, 16),
-                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING,
-                $iv
+                OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING
             );
             if ($decrypted === false || strlen($decrypted) < 6) continue;
 
@@ -585,18 +584,8 @@ class MeshLogMqttDecoder {
             // Only handle plain text (TXT_TYPE_PLAIN = 0).
             if ($txtType !== 0) continue;
 
-            // Extract text portion after [timestamp(4)][flags(1)].
-            // MeshCore AES-128-CBC uses PKCS7 padding (via mbedTLS);
-            // OPENSSL_ZERO_PADDING suppresses auto-unpadding so we do it manually.
-            $textFull = substr($decrypted, 5);
-            $padLen   = ord($textFull[strlen($textFull) - 1]);
-            if ($padLen >= 1 && $padLen <= 16
-                && substr($textFull, -$padLen) === str_repeat(chr($padLen), $padLen)
-            ) {
-                $textFull = substr($textFull, 0, -$padLen);
-            }
-            // Also strip any residual trailing null bytes (zero-pad convention fallback).
-            $textRaw = rtrim($textFull, "\0");
+            // Extract text portion after [timestamp(4)][flags(1)] and strip trailing zero padding.
+            $textRaw = rtrim(substr($decrypted, 5), "\0");
             if ($textRaw === '') continue;
 
             // If the MQTT bridge did not supply a hash, derive one from content.
