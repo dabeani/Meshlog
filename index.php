@@ -1,9 +1,14 @@
+<?php
+$faviconVersion = @filemtime(__DIR__ . '/assets/favicon/faviconw.ico') ?: time();
+$jsVersion = @filemtime(__DIR__ . '/assets/js/meshlog.js') ?: time();
+$cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: time();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link id="favicon" rel="icon" type="image/x-icon" href="assets/favicon/faviconw.ico">
+    <link id="favicon" rel="icon" type="image/x-icon" href="assets/favicon/faviconw.ico?v=<?= $faviconVersion ?>">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin=""/>
@@ -18,8 +23,8 @@
         integrity="sha256-b6wRq6tXNDnatickDjAMTffu2ZO2lsaV5Aivm+oh2s4="
         crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.min.js"></script>
-    <script src="assets/js/meshlog.js"></script>
-    <link rel="stylesheet" href="assets/css/style.css">
+    <script src="assets/js/meshlog.js?v=<?= $jsVersion ?>"></script>
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= $cssVersion ?>">
     <title>MeshCore Log v1.99.1</title>
 </head>
 <body>
