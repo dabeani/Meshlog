@@ -97,10 +97,12 @@ while (true) {
                 );
             }
 
+            $insertType = is_array($result) ? ($result['insert_type'] ?? $type) : $type;
+
             if (is_array($result) && array_key_exists("error", $result)) {
                 mqttLog("WARN", "Skipped MQTT message from topic " . $topic . ": " . $result["error"]);
             } else {
-                mqttLog("INFO", "Insert OK type={$type} reporter=" . ($meta['attempted_reporter'] ?? '') . " bytes=" . strlen($payload));
+                mqttLog("INFO", "Insert OK type={$insertType} reporter=" . ($meta['attempted_reporter'] ?? '') . " bytes=" . strlen($payload));
             }
         });
 

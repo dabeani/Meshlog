@@ -109,48 +109,6 @@ through `insertForReporter()` identically to the HTTP path.
 
 ## 4. MeshCore Binary Packet Format
 
-### 4a. Packet Layout
-
-```
-[header(1)][transport_codes(4, optional)][path_length(1)][path(N)][payload]
-```
-
-Header byte `0bVVPPPPRR`:
-- bits 0-1 (RR): route type
-  - `0x00` ROUTE_TYPE_TRANSPORT_FLOOD  — has 4-byte transport codes
-  - `0x01` ROUTE_TYPE_FLOOD
-  - `0x02` ROUTE_TYPE_DIRECT
-  - `0x03` ROUTE_TYPE_TRANSPORT_DIRECT — has 4-byte transport codes
-- bits 2-5 (PPPP): payload type
-  - `0x02` PAYLOAD_TYPE_TXT_MSG   — encrypted direct message
-  - `0x04` PAYLOAD_TYPE_ADVERT    — **unencrypted** node advertisement
-  - `0x05` PAYLOAD_TYPE_GRP_TXT   — encrypted group text
-  - other values per MeshCore docs
-- bits 6-7 (VV): payload version (0 = v1)
-
-`packet_type` in the meshcoretomqtt JSON equals `(header >> 2) & 0x0F`.
-
-### 4b. ADVERT Payload (fully decodable, no encryption)
-
-```
-public_key  [32 bytes]  Ed25519 public key of the advertising node
-timestamp   [ 4 bytes]  LE uint32, Unix seconds
-signature   [64 bytes]  Ed25519 signature (skip for parsing)
-flags       [ 1 byte ]  appdata flags (see below)
-latitude    [ 4 bytes]  LE int32, micro-degrees (if has_location)
-longitude   [ 4 bytes]  LE int32, micro-degrees (if has_location)
-feature1    [ 2 bytes]  reserved (if has_feature1)
-feature2    [ 2 bytes]  reserved (if has_feature2)
-name        [variable]  node name, no null terminator (if has_name)
-```
-
-Appdata flags byte:
-- bits 0-3: node type (1=chat, 2=repeater, 3=room_server, 4=sensor)
-- bit 4 (0x10): has_location
-- bit 5 (0x20): has_feature1 (reserved)
-- bit 6 (0x40): has_feature2 (reserved)
-- bit 7 (0x80): has_name
-
 ### 4c. Encrypted Types
 
 `PAYLOAD_TYPE_TXT_MSG` (0x02) and `PAYLOAD_TYPE_GRP_TXT` (0x05) are encrypted

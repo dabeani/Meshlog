@@ -175,11 +175,15 @@ class MeshLog {
 
         $result = $this->insertForReporter($data, $reporter);
         if (is_array($result)) {
+            $result['insert_type'] = $data['type'] ?? null;
             $result['_mqtt'] = $mqttMeta;
             return $result;
         }
         // insertForReporter returned a boolean; wrap it to preserve _mqtt metadata
-        $wrapped = array('_mqtt' => $mqttMeta);
+        $wrapped = array(
+            '_mqtt' => $mqttMeta,
+            'insert_type' => $data['type'] ?? null,
+        );
         if ($result === false) {
             $wrapped['error'] = 'failed to insert packet';
         }
