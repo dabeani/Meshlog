@@ -33,6 +33,9 @@ services:
       DB_NAME: ${DB_NAME:-meshcore}
       DB_USER: ${DB_USER:-meshcore}
       DB_PASS: ${DB_PASS:-meshcore}
+      MAP_LAT: ${MAP_LAT:-51.5074}
+      MAP_LON: ${MAP_LON:--0.1278}
+      MAP_ZOOM: ${MAP_ZOOM:-10}
       MQTT_ENABLED: ${MQTT_ENABLED:-false}
       MQTT_DEBUG: ${MQTT_DEBUG:-false}
       MQTT_TRANSPORT: ${MQTT_TRANSPORT:-tcp}

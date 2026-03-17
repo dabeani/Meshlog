@@ -45,6 +45,9 @@ DB_PASS=meshcore
 DB_ROOT_PASS=meshcore
 TIMEZONE=Europe/Riga
 WEB_PORT=80
+MAP_LAT=51.5074
+MAP_LON=-0.1278
+MAP_ZOOM=10
 MQTT_ENABLED=false
 MQTT_DEBUG=false
 MQTT_TRANSPORT=tcp
@@ -59,6 +62,8 @@ MQTT_QOS=0
 MQTT_PATH=/mqtt
 MQTT_TIMEOUT=5
 ```
+
+`MAP_LAT`, `MAP_LON`, and `MAP_ZOOM` set the default map center written into `config.php` during container startup.
 
 When `MQTT_ENABLED=true`, the backend container automatically runs the MQTT worker on startup.
 Firmware HTTP logging via `log.php` remains available at the same time.
