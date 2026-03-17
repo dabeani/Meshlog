@@ -963,10 +963,27 @@ class MeshLogReportedObject extends MeshLogObject {
         spTag.classList.add(...tag.classList);
         spTag.innerText = tag.text;
 
-        // Check message times
+        // Check message times using the packet/report receive time when available.
+        // created_at is the DB row creation time and can be misleading for deduplicated
+        // packets that are re-reported later, which causes false clock skew warnings.
         let sentAt = new Date(this.data.sent_at).getTime();
-        let createdAt = new Date(this.data.created_at).getTime();
-        if (Math.abs(sentAt - createdAt) > 1000 * 60 * 15) {
+        let receivedAt = NaN;
+        if (this.reports && this.reports.length > 0 && Number.isFinite(sentAt)) {
+            let minDelta = Infinity;
+            for (let i = 0; i < this.reports.length; i++) {
+                let candidate = new Date(this.reports[i].data.received_at).getTime();
+                if (!Number.isFinite(candidate)) continue;
+                let delta = Math.abs(sentAt - candidate);
+                if (delta < minDelta) {
+                    minDelta = delta;
+                    receivedAt = candidate;
+                }
+            }
+        }
+        if (!Number.isFinite(receivedAt)) {
+            receivedAt = new Date(this.data.created_at).getTime();
+        }
+        if (Number.isFinite(sentAt) && Number.isFinite(receivedAt) && Math.abs(sentAt - receivedAt) > 1000 * 60 * 15) {
             spPrefix.textContent = "⚠️";
             spPrefix.classList.add('warn-icon')
             createTooltip(spPrefix, `Clock out of sync. Sender time: ${this.data.sent_at}`);
