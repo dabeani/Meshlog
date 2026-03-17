@@ -2,10 +2,6 @@
 $faviconVersion = @filemtime(__DIR__ . '/assets/favicon/faviconw.ico') ?: time();
 $jsVersion = @filemtime(__DIR__ . '/assets/js/meshlog.js') ?: time();
 $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: time();
-require_once __DIR__ . '/config.php';
-$mapLat  = floatval($config['map']['lat']  ?? 51.5074);
-$mapLon  = floatval($config['map']['lon']  ?? -0.1278);
-$mapZoom = intval($config['map']['zoom'] ?? 10);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -218,31 +214,7 @@ const formatedTimestamp = (d=new Date())=> {
   return `${date} ${time}`
 }
 
-var _mapDefaultLat  = <?= $mapLat ?>;
-var _mapDefaultLon  = <?= $mapLon ?>;
-var _mapDefaultZoom = <?= $mapZoom ?>;
-
-(function() {
-    try {
-        var saved = localStorage.getItem('map.view');
-        if (saved) {
-            var v = JSON.parse(saved);
-            if (v && isFinite(v.lat) && isFinite(v.lon) && isFinite(v.zoom)) {
-                _mapDefaultLat  = v.lat;
-                _mapDefaultLon  = v.lon;
-                _mapDefaultZoom = v.zoom;
-            }
-        }
-    } catch(e) {}
-})();
-
-var map = L.map('map').setView([_mapDefaultLat, _mapDefaultLon], _mapDefaultZoom);
-map.on('moveend zoomend', function() {
-    try {
-        var c = map.getCenter();
-        localStorage.setItem('map.view', JSON.stringify({ lat: c.lat, lon: c.lng, zoom: map.getZoom() }));
-    } catch(e) {}
-});
+var map = L.map('map').setView([56.96894, 24.14520], 10);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
