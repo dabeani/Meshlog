@@ -63,14 +63,10 @@ class MeshLogMqttDecoder {
                 if ($decoded !== null) return $decoded;
             }
 
-            // GRP_TXT packets (packet_type=5) are AES-128 encrypted.
-            // Attempt decryption using channel PSKs supplied by the caller.
-            if ($packetType === static::PAYLOAD_TYPE_GRP_TXT && !empty($channels)) {
-                $decoded = static::decodeGroupPacket(
-                    $raw, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
-                );
-                if ($decoded !== null) return $decoded;
-            }
+            // Preserve the original MeshLog behavior for binary MQTT packets:
+            // only unencrypted ADVERT packets are promoted into normal feed items.
+            // Encrypted TXT_MSG / GRP_TXT packets remain RAW unless a publisher
+            // sends already-decoded structured JSON (handled below).
 
             // Fall-through: store packet as a RAW entry.
             return array(
@@ -429,19 +425,10 @@ class MeshLogMqttDecoder {
             $name = rtrim(substr($payload, $pos), "\0");
         }
 
-        // Deduplication hash: use the meshcoretomqtt "hash" field (16 hex chars = 8 bytes,
-        // fits advertisements.hash varchar(16)).  Fall back to a combination of the first
-        // 4 bytes of the public key and the sender timestamp so that consecutive ADV
-        // broadcasts from the same node produce distinct hashes while multiple reporters
-        // hearing the exact same broadcast still produce the same hash.
-        $rawHash    = preg_replace('/[^0-9a-fA-F]/', '', $data['hash'] ?? '');
-        $packetHash = strtolower(substr($rawHash, 0, 16));
-        if ($packetHash === '') {
-            $packetHash = strtolower(
-                substr(bin2hex(substr($payload, 0, 4)), 0, 8) .
-                sprintf('%08x', $senderTimestampSec)
-            );
-        }
+        // Deduplicate by the decoded ADVERT payload rather than the bridge's outer
+        // packet hash. The payload is stable across repeated receptions of the same
+        // broadcast while still changing when the node emits a new advertisement.
+        $packetHash = strtolower(substr(hash('sha256', $payload), 0, 16));
 
         $serverTimestampMs = intval(floor(microtime(true) * 1000));
 

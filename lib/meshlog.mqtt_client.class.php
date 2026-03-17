@@ -97,6 +97,8 @@ class MeshLogMqttClient {
 
             if ($packetType == 3) {
                 $this->handlePublish($payload, $flags, $onMessage);
+            } else if ($packetType == 6) {
+                $this->handlePubRel($payload);
             } else if ($packetType == 13) {
                 // PINGRESP
             }
@@ -112,13 +114,29 @@ class MeshLogMqttClient {
         $offset += $topicLen;
 
         $qos = ($flags >> 1) & 0x03;
+        $packetId = null;
         if ($qos > 0) {
             if (strlen($payload) < ($offset + 2)) return;
+            $packetId = unpack('n', substr($payload, $offset, 2))[1];
             $offset += 2;
         }
 
         $message = substr($payload, $offset);
         $onMessage($topic, $message);
+
+        if ($packetId !== null) {
+            if ($qos == 1) {
+                $this->sendPubAck($packetId);
+            } else if ($qos == 2) {
+                $this->sendPubRec($packetId);
+            }
+        }
+    }
+
+    private function handlePubRel($payload) {
+        if (strlen($payload) < 2) return;
+        $packetId = unpack('n', substr($payload, 0, 2))[1];
+        $this->sendPubComp($packetId);
     }
 
     private function sendConnect() {
@@ -150,6 +168,18 @@ class MeshLogMqttClient {
         $variable = pack('n', $packetId);
         $packet = chr(0x82) . $this->encodeLength(strlen($variable) + strlen($payload)) . $variable . $payload;
         $this->sendRaw($packet);
+    }
+
+    private function sendPubAck($packetId) {
+        $this->sendRaw(chr(0x40) . chr(0x02) . pack('n', $packetId));
+    }
+
+    private function sendPubRec($packetId) {
+        $this->sendRaw(chr(0x50) . chr(0x02) . pack('n', $packetId));
+    }
+
+    private function sendPubComp($packetId) {
+        $this->sendRaw(chr(0x70) . chr(0x02) . pack('n', $packetId));
     }
 
     private function readPacketHeaderByte($timeoutSeconds = null) {

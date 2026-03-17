@@ -139,17 +139,7 @@ class MeshLog {
     }
 
     function insertMqtt($topic, $payload) {
-        // For GRP_TXT binary packets (packet_type=5), load enabled channels with a PSK
-        // so the decoder can attempt AES-128 decryption.
-        $channels = array();
-        $payloadArr = json_decode($payload, true);
-        if (is_array($payloadArr) &&
-            strtoupper($payloadArr['type'] ?? '') === 'PACKET' &&
-            intval($payloadArr['packet_type'] ?? -1) === MeshLogMqttDecoder::PAYLOAD_TYPE_GRP_TXT) {
-            $channels = MeshLogChannel::getAllWithPsk($this);
-        }
-
-        $data = MeshLogMqttDecoder::decode($topic, $payload, $channels);
+        $data = MeshLogMqttDecoder::decode($topic, $payload);
         if (!$data || !isset($data['reporter'])) {
             return $this->repError(
                 "invalid MQTT payload",
