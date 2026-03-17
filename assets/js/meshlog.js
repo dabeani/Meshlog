@@ -508,11 +508,11 @@ class MeshLogContact extends MeshLogObject {
         let iconUrl = 'assets/img/tower.svg';
         let kl = 'marker-pin';
         let receipt = false;
+        const reporter = this.isReporter();
 
         if (this.isClient()) {
-            const rep = this.isReporter();
-            if (rep) {
-                receipt = rep.getStyle().color;
+            if (reporter) {
+                receipt = reporter.getStyle().color;
             } else {
                 iconUrl = 'assets/img/person.svg';
             }
@@ -524,6 +524,10 @@ class MeshLogContact extends MeshLogObject {
             iconUrl = 'assets/img/sensor.svg';
         } else {
             iconUrl = 'assets/img/unknown.svg';
+        }
+
+        if (reporter) {
+            receipt = reporter.getStyle().color;
         }
 
         const extractEmoji = (str) => {
@@ -1155,8 +1159,8 @@ class MeshLogReportedObject extends MeshLogObject {
     }
 
     isAdvertisement() { return this instanceof MeshLogAdvertisement; }
-    isChannelMessage() { return this instanceof ChannelMessage; }
-    isDirectMessage() { return this instanceof DirectMessage; }
+    isChannelMessage() { return this instanceof MeshLogChannelMessage; }
+    isDirectMessage() { return this instanceof MeshLogDirectMessage; }
 
     static onclick(e) {
         this.expanded = !this.expanded;

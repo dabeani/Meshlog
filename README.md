@@ -5,6 +5,10 @@ Web side for [MeshCore logger firmware](https://github.com/Anrijs/MeshCore/tree/
 - PHP
 - MySQL or MariaDB
 
+## Development
+- PHP syntax check: `find . -name "*.php" | xargs php -l`
+- JavaScript lint: `npm install` then `npm run lint:js`
+
 ## Installation
 1. Setup MySQL database
 2. Open `setup.php`, follow instructions

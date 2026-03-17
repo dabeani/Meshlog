@@ -1,0 +1,12 @@
+{
+  "name": "meshlog",
+  "private": true,
+  "scripts": {
+    "lint:js": "eslint assets/js/meshlog.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "eslint": "^9.22.0",
+    "globals": "^16.0.0"
+  }
+}
