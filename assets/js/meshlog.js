@@ -18,6 +18,29 @@ class Settings {
     }
 }
 
+function parseMeshlogTimestamp(value) {
+    if (!value || typeof value !== 'string') return NaN;
+
+    const match = value.trim().match(
+        /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/
+    );
+    if (!match) {
+        const fallback = new Date(value).getTime();
+        return Number.isFinite(fallback) ? fallback : NaN;
+    }
+
+    const [, year, month, day, hour, minute, second, millis = '0'] = match;
+    return new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+        Number(millis.padEnd(3, '0'))
+    ).getTime();
+}
+
 class MeshLogObject {
     static idPrefix = "";
 
@@ -33,7 +56,7 @@ class MeshLogObject {
     merge(data) {
         // App shouldn't change data. It is updated on new advertisements
         this.data = {...this.data, ...data};
-        this.time = new Date(data.created_at).getTime();
+        this.time = parseMeshlogTimestamp(data.created_at);
     }
 
     // override
@@ -893,7 +916,7 @@ class MeshLogReportedObject extends MeshLogObject {
         super(meshlog, data);
         this.dom = null;
         this.expanded = false;
-        this.time = new Date(data.created_at).getTime();
+        this.time = parseMeshlogTimestamp(data.created_at);
         this.reports = [];
 
         for (let i=0; i<reports.length; i++) {
@@ -926,8 +949,30 @@ class MeshLogReportedObject extends MeshLogObject {
 
     getPathTag() { return "unk"; }
 
+    resolveHashSize() {
+        const dataHashSize = parseInt(this.data.hash_size ?? 0, 10);
+        let derivedHashSize = 0;
+
+        if (this.reports && this.reports.length > 0) {
+            for (let i = 0; i < this.reports.length; i++) {
+                const path = this.reports[i].data.path ?? '';
+                if (!path) continue;
+                const first = path.split(',', 1)[0];
+                const candidate = Math.floor(first.length / 2);
+                if (candidate >= 1 && candidate <= 3) {
+                    derivedHashSize = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (derivedHashSize >= 1 && derivedHashSize <= 3) return derivedHashSize;
+        if (dataHashSize >= 1 && dataHashSize <= 3) return dataHashSize;
+        return 0;
+    }
+
     getHashSizeBadgeText() {
-        const hashSize = parseInt(this.data.hash_size ?? 0, 10);
+        const hashSize = this.resolveHashSize();
         if (hashSize >= 1 && hashSize <= 3) {
             return `(${hashSize}byte)`;
         }
@@ -948,12 +993,12 @@ class MeshLogReportedObject extends MeshLogObject {
             this.dom.prefix.classList.remove('warn-icon');
             this.dom.prefix.removeAttribute('title');
 
-            let sentAt = new Date(this.data.sent_at).getTime();
+            let sentAt = parseMeshlogTimestamp(this.data.sent_at);
             let receivedAt = NaN;
             if (this.reports && this.reports.length > 0 && Number.isFinite(sentAt)) {
                 let minDelta = Infinity;
                 for (let i = 0; i < this.reports.length; i++) {
-                    let candidate = new Date(this.reports[i].data.received_at).getTime();
+                    let candidate = parseMeshlogTimestamp(this.reports[i].data.received_at);
                     if (!Number.isFinite(candidate)) continue;
                     let delta = Math.abs(sentAt - candidate);
                     if (delta < minDelta) {
@@ -963,10 +1008,10 @@ class MeshLogReportedObject extends MeshLogObject {
                 }
             }
             if (!Number.isFinite(receivedAt)) {
-                receivedAt = new Date(this.data.created_at).getTime();
+                receivedAt = parseMeshlogTimestamp(this.data.created_at);
             }
 
-            if (Number.isFinite(sentAt) && Number.isFinite(receivedAt) && Math.abs(sentAt - receivedAt) > 1000 * 60 * 60 * 12) {
+            if (Number.isFinite(sentAt) && Number.isFinite(receivedAt) && Math.abs(sentAt - receivedAt) > 1000 * 60 * 60 * 24 * 7) {
                 this.dom.prefix.textContent = '⚠️';
                 this.dom.prefix.classList.add('warn-icon');
                 createTooltip(this.dom.prefix, `Clock out of sync. Sender time: ${this.data.sent_at}`);
@@ -1219,6 +1264,20 @@ class MeshLogRawPacket extends MeshLogObject {
             return `(${hashSize}byte)`;
         }
         return null;
+    }
+
+    resolveHashSize() {
+        const dataHashSize = parseInt(this.data.hash_size ?? 0, 10);
+        const path = this.data.path ?? '';
+        if (path) {
+            const first = path.split(',', 1)[0];
+            const derivedHashSize = Math.floor(first.length / 2);
+            if (derivedHashSize >= 1 && derivedHashSize <= 3) {
+                return derivedHashSize;
+            }
+        }
+        if (dataHashSize >= 1 && dataHashSize <= 3) return dataHashSize;
+        return 0;
     }
 
     createDom(recreate = false) {
