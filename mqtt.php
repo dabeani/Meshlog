@@ -42,10 +42,14 @@ function mqttGetEffectiveReporter($mqttMeta) {
     return 'unknown';
 }
 
-$meshlog = new MeshLog($config['db']);
-
 while (true) {
     try {
+        // Create a fresh MeshLog (and therefore a fresh PDO connection) on every
+        // reconnect cycle.  If the MySQL connection goes stale (e.g. MySQL
+        // wait_timeout after 8+ hours of inactivity) the old PDO handle throws on
+        // the first query, and a new MeshLog here ensures the next cycle starts
+        // with a healthy connection instead of looping in a permanent error state.
+        $meshlog = new MeshLog($config['db']);
         $client = new MeshLogMqttClient($mqttConfig);
         mqttLog(
             "INFO",

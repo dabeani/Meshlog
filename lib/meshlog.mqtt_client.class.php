@@ -78,29 +78,46 @@ class MeshLogMqttClient {
         }
 
         $keepalive = intval($this->config['keepalive'] ?? 30);
-        $lastPing = time();
+        // $lastReceived tracks the last time any data arrived from the broker.
+        // $pingSent is true once we have fired a PINGREQ and are waiting for a
+        // PINGRESP (or any broker traffic).  If a full 2× keepalive interval
+        // passes from the moment we sent the PINGREQ with no response, the TCP
+        // connection is considered dead and we throw to trigger a reconnect.
+        $lastReceived = time();
+        $pingSent = false;
 
         while (!feof($this->socket)) {
             $headerByte = $this->readPacketHeaderByte(1);
             if ($headerByte === null) {
-                if ((time() - $lastPing) >= $keepalive) {
+                $elapsed = time() - $lastReceived;
+                // Deadline: sent PINGREQ but broker silent for another full
+                // keepalive interval → connection is dead.
+                if ($pingSent && $elapsed >= 2 * $keepalive) {
+                    throw new RuntimeException("MQTT keepalive timeout: no response after PINGREQ");
+                }
+                // Send PINGREQ once after keepalive silence.
+                if (!$pingSent && $elapsed >= $keepalive) {
                     $this->sendRaw(chr(0xC0) . chr(0x00));
-                    $lastPing = time();
+                    $pingSent = true;
                 }
                 continue;
             }
+
+            // Any incoming byte resets the keepalive tracking.
+            $lastReceived = time();
+            $pingSent = false;
+
             $packetType = ($headerByte >> 4) & 0x0F;
             $flags = $headerByte & 0x0F;
 
             $payload = $this->readPacketPayload();
-            $lastPing = time();
 
             if ($packetType == 3) {
                 $this->handlePublish($payload, $flags, $onMessage);
             } else if ($packetType == 6) {
                 $this->handlePubRel($payload);
             } else if ($packetType == 13) {
-                // PINGRESP
+                // PINGRESP — already handled by resetting $pingSent / $lastReceived above.
             }
         }
     }
@@ -269,7 +286,13 @@ class MeshLogMqttClient {
         if ($this->websocket) {
             $bytes = $this->encodeWebSocketFrame($bytes);
         }
-        fwrite($this->socket, $bytes);
+        $len = strlen($bytes);
+        $written = fwrite($this->socket, $bytes);
+        if ($written === false || $written < $len) {
+            throw new RuntimeException(
+                "MQTT write failed: wrote " . ($written === false ? '0' : $written) . "/$len bytes"
+            );
+        }
     }
 
     private function wsHandshake() {
