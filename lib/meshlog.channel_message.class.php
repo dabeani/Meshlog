@@ -45,6 +45,14 @@ class MeshLogChannelMessage extends MeshLogEntity {
         }
 
         $m->hash = $data['hash'] ?? null;
+        // HTTP firmware payloads do not include a top-level 'hash' field.
+        // Derive a deterministic dedup key from the message content so that
+        // isValid() does not reject the record and deduplication still works.
+        if ($m->hash === null || $m->hash === '') {
+            $channelHash = $data['channel']['hash'] ?? '';
+            $senderTs    = $data['time']['sender'] ?? 0;
+            $m->hash = substr(hash('sha256', $channelHash . ':' . intval($senderTs / 1000) . ':' . $text), 0, 16);
+        }
         $m->hash_size = $data['hash_size'] ?? 1;
         $m->name = ($name !== null && $name !== '') ? $name : '';
         $m->message = $msg;

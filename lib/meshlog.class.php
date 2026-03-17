@@ -338,7 +338,7 @@ class MeshLog {
 
         $hash = $data['channel']['hash'] ?? '11';
         $text = $data['message']['text'] ?? null;
-        
+
         if (!$text) return $this->repError('no message');
         $name = explode(':', $text, 2)[0];
 
@@ -346,7 +346,10 @@ class MeshLog {
 
         if (!$channel) {
             $channel = MeshLogChannel::fromJson($data, $this);
-            if (!$channel->save($this)) return $this->repError('failed to save channel');
+            if (!$channel->save($this)) {
+                error_log('[PUB insert] channel save failed: ' . $channel->getError() . ' hash=' . $hash);
+                return $this->repError('failed to save channel');
+            }
         } else {
             // If the channel was previously created without a real name (e.g. from
             // an HTTP firmware payload that omits channel.name), update the stored
