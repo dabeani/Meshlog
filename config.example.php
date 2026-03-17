@@ -7,6 +7,11 @@ $config = array(
         'user' => '%DB_USER%',
         'password' => '%DB_PASSWORD%',
     ),
+    'map' => array(
+        'lat'  => 51.5074,   // default map center latitude
+        'lon'  => -0.1278,   // default map center longitude
+        'zoom' => 10,        // default zoom level
+    ),
     'mqtt' => array(
         'enabled' => false,
         'debug' => false, // true prints detailed MQTT topic/reporter resolution logs
