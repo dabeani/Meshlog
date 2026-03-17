@@ -370,7 +370,7 @@ class MeshLog {
         // Can't use sent_at. Device after reboot might send advert
         // with bad date, making hash duplicate with older messagesq
         $minage = date("Y-m-d H:i:s", time() -  $this->getConfig(MeshlogSetting::KEY_MAX_GROUPING_AGE));
-        $existing = MeshLogChannelMessage::findBy("hash", $grpmsg->hash, $this, array('created_at' => array('operator' => '>', 'value' => $minage)));
+        $existing = MeshLogChannelMessage::findBy("hash", $grpmsg->hash, $this, array('created_at' => array('operator' => '>', 'value' => $minage)), false, true);
 
         if ($existing) {
             $grpmsg = $existing;
@@ -526,6 +526,13 @@ class MeshLog {
 
     // getters
     public function getReporters($params) {
+        // Reporters are reference data for feed entries, not feed entries themselves.
+        // Always return the full authorized reporter set so message/report rendering
+        // can resolve reporter names even when the feed is time-filtered or paged.
+        $params['offset'] = 0;
+        $params['count'] = MAX_COUNT;
+        $params['after_ms'] = 0;
+        $params['before_ms'] = 0;
         $params['where'] = array(
             'authorized = 1'
         );

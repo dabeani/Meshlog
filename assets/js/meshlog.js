@@ -974,7 +974,7 @@ class MeshLogReportedObject extends MeshLogObject {
     getHashSizeBadgeText() {
         const hashSize = this.resolveHashSize();
         if (hashSize >= 1 && hashSize <= 3) {
-            return `(${hashSize}byte)`;
+            return `${hashSize}b`;
         }
         return null;
     }
@@ -1261,7 +1261,7 @@ class MeshLogRawPacket extends MeshLogObject {
     getHashSizeBadgeText() {
         const hashSize = parseInt(this.data.hash_size ?? 0, 10);
         if (hashSize >= 1 && hashSize <= 3) {
-            return `(${hashSize}byte)`;
+            return `${hashSize}b`;
         }
         return null;
     }
@@ -1893,9 +1893,9 @@ class MeshLog {
             if (v instanceof MeshLogAdvertisement) {
                 if (v.time < oldest_adv) oldest_adv = v.time;
             } else if (v instanceof MeshLogChannelMessage) {
-                if (v.time < oldest_grp) oldest_adv = v.time;
+                if (v.time < oldest_grp) oldest_grp = v.time;
             } else if (v instanceof MeshLogDirectMessage) {
-                if (v.time < oldest_dm) oldest_adv = v.time;
+                if (v.time < oldest_dm) oldest_dm = v.time;
             }
         });
 
