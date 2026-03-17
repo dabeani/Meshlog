@@ -513,11 +513,11 @@ class MeshLogMqttDecoder {
             return null;
         }
 
-        // Deduplication hash from the meshcoretomqtt JSON (same for all reporters of the same flood).
-        $rawHash    = preg_replace('/[^0-9a-fA-F]/', '', $data['hash'] ?? '');
-        $packetHash = strtolower(substr($rawHash, 0, 16));
-        // $packetHash may be empty when the MQTT bridge omits the hash field; a
-        // content-derived fallback is set after decryption once we have the plaintext.
+        // meshcoretomqtt exposes the radio's outer packet hash, but for encrypted
+        // group packets the most stable deduplication key is the decrypted plaintext
+        // plus channel identity. That avoids duplicate feed entries when the bridge
+        // reports the same semantic message with different outer packet hashes.
+        $packetHash = '';
 
         foreach ($channels as $channel) {
             $pskB64 = trim($channel->psk ?? '');
@@ -588,10 +588,15 @@ class MeshLogMqttDecoder {
             $textRaw = rtrim(substr($decrypted, 5), "\0");
             if ($textRaw === '') continue;
 
-            // If the MQTT bridge did not supply a hash, derive one from content.
-            if ($packetHash === '') {
-                $packetHash = substr(hash('sha256', $senderTimestampS . ':' . $textRaw), 0, 16);
-            }
+            // Deduplicate decrypted group messages by semantic content rather than
+            // the bridge's outer packet hash. The plaintext contains the sender name
+            // and message body; combining it with the channel hash and sender
+            // timestamp keeps identical repeat receptions grouped together.
+            $packetHash = substr(
+                hash('sha256', $channel->hash . ':' . $senderTimestampS . ':' . $textRaw),
+                0,
+                16
+            );
 
             // Validate sender clock; fall back to server receive time if unreasonable.
             $senderTimestampMs = ($senderTimestampS >= static::MIN_VALID_UNIX_TIMESTAMP)
