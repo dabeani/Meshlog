@@ -269,11 +269,31 @@ class MeshLogMqttClient {
                 break;
             }
 
-            $chunk = $this->websocket ? $this->readWebSocketFrame() : fread($this->socket, static::READ_BUFFER_SIZE);
-            if ($chunk === false || $chunk === '') {
-                usleep(static::POLL_SLEEP_MICROSECONDS);
-                continue;
+            if ($this->websocket) {
+                $chunk = $this->readWebSocketFrame();
+                if ($chunk === false || $chunk === '') {
+                    usleep(static::POLL_SLEEP_MICROSECONDS);
+                    continue;
+                }
+            } else {
+                // Use stream_select for non-blocking poll so that a dead or
+                // half-open TCP connection never causes fread() to block
+                // indefinitely regardless of stream_set_timeout behaviour.
+                $read = [$this->socket];
+                $write = $except = null;
+                $ready = @stream_select($read, $write, $except, 0, static::POLL_SLEEP_MICROSECONDS);
+                if ($ready === false || $ready === 0) {
+                    continue; // nothing ready yet; stream_select already waited POLL_SLEEP_MICROSECONDS
+                }
+                $chunk = fread($this->socket, static::READ_BUFFER_SIZE);
+                if ($chunk === false || $chunk === '') {
+                    if (feof($this->socket)) {
+                        break; // Remote end closed the connection — exit immediately
+                    }
+                    continue;
+                }
             }
+
             $this->buffer .= $chunk;
         }
 
