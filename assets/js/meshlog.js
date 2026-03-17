@@ -912,6 +912,14 @@ class MeshLogReportedObject extends MeshLogObject {
 
     getPathTag() { return "unk"; }
 
+    getHashSizeBadgeText() {
+        const hashSize = parseInt(this.data.hash_size ?? 0, 10);
+        if (hashSize >= 1 && hashSize <= 3) {
+            return `(${hashSize}byte)`;
+        }
+        return null;
+    }
+
     createDom(recreate = false) {
         if (this.dom && !recreate) return this.dom;
 
@@ -959,6 +967,12 @@ class MeshLogReportedObject extends MeshLogObject {
         spDate.classList.add(...date.classList);
         spDate.innerText = date.text;
 
+        let spHashSize = document.createElement("span");
+        let hashSizeBadge = this.getHashSizeBadgeText();
+        spHashSize.classList.add('sp', 'hash-size-badge');
+        spHashSize.innerText = hashSizeBadge ?? '';
+        spHashSize.hidden = !hashSizeBadge;
+
         spTag.classList.add(...['sp', 'tag']);
         spTag.classList.add(...tag.classList);
         spTag.innerText = tag.text;
@@ -1001,6 +1015,7 @@ class MeshLogReportedObject extends MeshLogObject {
         if (text.text) {
             // message
             divLine1.append(spDate);
+            divLine1.append(spHashSize);
             divLine1.append(spPrefix);
             divLine1.append(spTag);
             divLine2.append(spName);
@@ -1008,6 +1023,7 @@ class MeshLogReportedObject extends MeshLogObject {
         } else {
             // advert
             divLine1.append(spDate);
+            divLine1.append(spHashSize);
             // divLine1.append(spPrefix);
             // divLine1.append(spTag);
             divLine1.append(spName);
@@ -1164,6 +1180,14 @@ class MeshLogRawPacket extends MeshLogObject {
         }
     }
 
+    getHashSizeBadgeText() {
+        const hashSize = parseInt(this.data.hash_size ?? 0, 10);
+        if (hashSize >= 1 && hashSize <= 3) {
+            return `(${hashSize}byte)`;
+        }
+        return null;
+    }
+
     createDom(recreate = false) {
         if (this.dom && !recreate) return this.dom;
 
@@ -1188,6 +1212,13 @@ class MeshLogRawPacket extends MeshLogObject {
         spDate.classList.add('sp', 'c');
         spDate.innerText = this.data.created_at;
         divLine.append(spDate);
+
+        let spHashSize = document.createElement("span");
+        let hashSizeBadge = this.getHashSizeBadgeText();
+        spHashSize.classList.add('sp', 'hash-size-badge');
+        spHashSize.innerText = hashSizeBadge ?? '';
+        spHashSize.hidden = !hashSizeBadge;
+        divLine.append(spHashSize);
 
         let spTag = document.createElement("span");
         spTag.classList.add('sp', 'tag');

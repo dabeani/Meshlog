@@ -156,6 +156,19 @@ h2 {
     font-size: 0.9em;
 }
 
+.hash-size-badge {
+    display: inline-block;
+    font-size: 0.85em;
+    color: #c9cdd2;
+    background: #4b5058;
+    border: 1px solid #666e77;
+    border-radius: 10px;
+    padding: 0 6px;
+    line-height: 1.4;
+    margin-right: 6px;
+    white-space: nowrap;
+}
+
 .sm {
     font-size: 0.9em;
 }
