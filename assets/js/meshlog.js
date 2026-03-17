@@ -1120,6 +1120,10 @@ class MeshLogReportedObject extends MeshLogObject {
             container: divContainer,
             log: divLog,
             reports: divReports,
+            date: spDate,
+            tag: spTag,
+            name: spName,
+            text: spText,
             prefix: spPrefix,
             hashSize: spHashSize,
             input: {
@@ -1133,6 +1137,28 @@ class MeshLogReportedObject extends MeshLogObject {
     }
 
     updateDom() {
+        const date = this.getDate();
+        const tag = this.getTag();
+        const name = this.getName();
+        const text = this.getText();
+
+        this.dom.date.className = 'sp c';
+        this.dom.date.classList.add(...date.classList);
+        this.dom.date.innerText = date.text;
+
+        this.dom.tag.className = 'sp tag';
+        this.dom.tag.classList.add(...tag.classList);
+        this.dom.tag.innerText = tag.text;
+
+        this.dom.name.className = 'sp t';
+        this.dom.name.classList.add(...name.classList);
+        this.dom.name.innerText = name.text;
+        this.dom.name.style.background = name.background ?? '';
+
+        this.dom.text.className = 'sp';
+        this.dom.text.classList.add(...text.classList);
+        this.dom.text.innerHTML = text.text.linkify();
+
         if (this.highlight) {
             this.dom.log.classList.add("highlight");
         } else {
