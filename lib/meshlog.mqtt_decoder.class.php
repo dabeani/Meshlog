@@ -611,6 +611,7 @@ class MeshLogMqttDecoder {
                 ),
                 'message'  => array(
                     'text' => $textRaw,
+                    'path' => $path,
                 ),
                 'contact' => array(
                     'pubkey' => '',   // sender pubkey not available in flood packets
