@@ -13,7 +13,11 @@ class MeshLogChannel extends MeshLogEntity {
         $m = new MeshLogChannel($meshlog);
 
         $m->hash = $data['channel']['hash'] ?? '11';
-        $m->name = $data['channel']['name'] ?? 'unknown';
+        // Use the name supplied by the sender (MQTT bridge includes it;
+        // HTTP firmware logger does not). Fall back to '#<hash>' so the UI
+        // shows something meaningful instead of the literal string 'unknown'.
+        $fallbackName = '#' . ($data['channel']['hash'] ?? '?');
+        $m->name = ($data['channel']['name'] ?? '') !== '' ? $data['channel']['name'] : $fallbackName;
         $m->psk = '';
         $m->enabled = true; // default
 

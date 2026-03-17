@@ -346,6 +346,18 @@ class MeshLog {
         if (!$channel) {
             $channel = MeshLogChannel::fromJson($data, $this);
             if (!$channel->save($this)) return $this->repError('failed to save channel');
+        } else {
+            // If the channel was previously created without a real name (e.g. from
+            // an HTTP firmware payload that omits channel.name), update the stored
+            // name when a better one arrives — typically from the MQTT bridge which
+            // always includes the channel name in its pre-decoded JSON.
+            $newName = $data['channel']['name'] ?? '';
+            $isPlaceholder = ($channel->name === '' || $channel->name === 'unknown' ||
+                              $channel->name === ('#' . $hash));
+            if ($newName !== '' && $isPlaceholder && $newName !== $channel->name) {
+                $channel->name = $newName;
+                $channel->save($this);
+            }
         }
 
         $advertisement = MeshLogAdvertisement::findBy("name", $name, $this, array(), true, true);
