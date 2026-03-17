@@ -30,6 +30,8 @@ $response = $meshlog->insert($data);
 if (is_array($response) && array_key_exists("error", $response)) {
     dockerLog('WARN', 'Insert failed: ' . $response["error"]);
     echo $response["error"];
+} else if ($response === false) {
+    dockerLog('WARN', 'Insert returned false type=' . ($data['type'] ?? '') . ' reporter=' . ($data['reporter'] ?? $reporter) . ' (check PHP error log for details)');
 } else {
     dockerLog('INFO', 'Insert OK type=' . ($data['type'] ?? '') . ' reporter=' . ($data['reporter'] ?? $reporter));
 }

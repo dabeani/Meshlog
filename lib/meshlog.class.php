@@ -186,7 +186,7 @@ class MeshLog {
 
         if (!isset($data['type'])) return $this->repError('invalid type');
 
-        $type = $data['type'];
+        $type = strtoupper(trim($data['type']));
 
         try {
             $this->pdo->beginTransaction();
