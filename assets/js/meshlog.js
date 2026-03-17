@@ -1157,7 +1157,7 @@ class MeshLogReportedObject extends MeshLogObject {
 
         this.dom.text.className = 'sp';
         this.dom.text.classList.add(...text.classList);
-        this.dom.text.innerHTML = text.text.linkify();
+        this.dom.text.innerHTML = (text.text ?? '').linkify();
 
         if (this.highlight) {
             this.dom.log.classList.add("highlight");
@@ -2089,7 +2089,10 @@ class MeshLog {
     }
 
     onLoadMessages() {
-        Object.entries(this.messages).forEach(([id, msg]) => { this.addMessage(msg); });
+        Object.entries(this.messages).forEach(([id, msg]) => {
+            try { this.addMessage(msg); }
+            catch (e) { console.error('addMessage failed for', id, e); }
+        });
         this.updateMessagesDom();
     }
 

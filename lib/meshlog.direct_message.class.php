@@ -68,8 +68,8 @@ class MeshLogDirectMessage extends MeshLogEntity {
             'id' => $this->getId(),
             'contact_id' => $cid,
             'hash' => $this->hash,
-            'name' => $this->name,
-            'message' => $this->message,
+            'name' => $this->name ?? '',
+            'message' => $this->message ?? '',
             "hash_size" => $this->hash_size,
             'sent_at' => $this->sent_at,
             'created_at' => $this->created_at

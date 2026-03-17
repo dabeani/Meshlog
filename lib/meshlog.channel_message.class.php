@@ -97,8 +97,8 @@ class MeshLogChannelMessage extends MeshLogEntity {
             'contact_id' => $cid,
             'channel_id' => $this->channel_ref->getId(),
             'hash' => $this->hash,
-            'name' => $this->name,
-            'message' => $this->message,
+            'name' => $this->name ?? '',
+            'message' => $this->message ?? '',
             "hash_size" => $this->hash_size,
             'sent_at' => $this->sent_at,
             'created_at' => $this->created_at
