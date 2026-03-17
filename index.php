@@ -2,6 +2,17 @@
 $faviconVersion = @filemtime(__DIR__ . '/assets/favicon/faviconw.ico') ?: time();
 $jsVersion = @filemtime(__DIR__ . '/assets/js/meshlog.js') ?: time();
 $cssVersion = @filemtime(__DIR__ . '/assets/css/style.css') ?: time();
+
+$config = array();
+$configFile = __DIR__ . '/config.php';
+if (file_exists($configFile)) {
+    require $configFile;
+}
+
+$mapConfig = $config['map'] ?? array();
+$mapLat = floatval($mapConfig['lat'] ?? 51.5074);
+$mapLon = floatval($mapConfig['lon'] ?? -0.1278);
+$mapZoom = intval($mapConfig['zoom'] ?? 10);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -214,7 +225,7 @@ const formatedTimestamp = (d=new Date())=> {
   return `${date} ${time}`
 }
 
-var map = L.map('map').setView([56.96894, 24.14520], 10);
+var map = L.map('map').setView([<?= json_encode($mapLat) ?>, <?= json_encode($mapLon) ?>], <?= json_encode($mapZoom) ?>);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
