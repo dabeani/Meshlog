@@ -1242,7 +1242,7 @@ class MeshLogRawPacket extends MeshLogObject {
     constructor(meshlog, data) {
         super(meshlog, data);
         this.dom = null;
-        this.time = new Date(data.created_at).getTime();
+        this.time = parseMeshlogTimestamp(data.created_at);
     }
 
     getPayloadType() {
@@ -1259,7 +1259,7 @@ class MeshLogRawPacket extends MeshLogObject {
     }
 
     getHashSizeBadgeText() {
-        const hashSize = parseInt(this.data.hash_size ?? 0, 10);
+        const hashSize = this.resolveHashSize();
         if (hashSize >= 1 && hashSize <= 3) {
             return `(${hashSize}byte)`;
         }
@@ -1859,13 +1859,19 @@ class MeshLog {
 
         for (let i=0;i<data.objects.length;i++) {
             const o = data.objects[i];
-            const obj = new klass(this, o);
             const id = klass.idPrefix + o.id;
-            this.__addObject(dataset, id, obj);
+
+            if (dataset.hasOwnProperty(id)) {
+                // Pass original API data (with reports intact) BEFORE the constructor
+                // would strip the reports key, so merge() can refresh this.reports.
+                dataset[id].merge(o);
+            } else {
+                dataset[id] = new klass(this, o);
+            }
 
             if (o.created_at) {
-                let created_at = new Date(o.created_at).getTime();
-                if (created_at != 0) {
+                let created_at = parseMeshlogTimestamp(o.created_at);
+                if (Number.isFinite(created_at) && created_at > 0) {
                     if (created_at > this.latest) {
                         this.latest = created_at;
                     }

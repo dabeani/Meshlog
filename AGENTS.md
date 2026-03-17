@@ -109,11 +109,92 @@ through `insertForReporter()` identically to the HTTP path.
 
 ## 4. MeshCore Binary Packet Format
 
-### 4c. Encrypted Types
+### 4a. Outer Packet Layout
 
-`PAYLOAD_TYPE_TXT_MSG` (0x02) and `PAYLOAD_TYPE_GRP_TXT` (0x05) are encrypted
-with AES-128 and cannot be decoded without the shared channel or node keys.
-These are stored as RAW packets.
+```
+[header (1 B)][transport_codes (4 B, optional)][path_len (1 B)][path (N B)][payload]
+```
+
+**Header byte** (bits inside one byte):
+
+| Bits | Field | Meaning |
+|------|-------|---------|
+| 7–6 | — | unused |
+| 5–2 | `payload_type` | `(header >> 2) & 0x0F` — see table below |
+| 1–0 | `route_type` | 0x00 TRANSPORT_FLOOD, 0x01 FLOOD, 0x02 DIRECT, 0x03 TRANSPORT_DIRECT |
+
+**Transport codes** (4 bytes) are present only for `ROUTE_TYPE_TRANSPORT_FLOOD` (0x00)
+and `ROUTE_TYPE_TRANSPORT_DIRECT` (0x03). They are skipped during decode.
+
+**`path_len` byte** (immediately after header or transport codes):
+
+| Bits | Field | Meaning |
+|------|-------|---------|
+| 7–6 | `hash_size - 1` | 00 = 1-byte hashes, 01 = 2-byte, 10 = 3-byte; value 11 is reserved |
+| 5–0 | `hop_count` | number of relay nodes in the path |
+
+Actual path byte length = `hop_count × hash_size`.
+Each hop hash is stored as raw bytes (not hex); decoded to lowercase hex string in MeshLog.
+
+**Payload type constants** (defined in `MeshLogMqttDecoder`):
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `PAYLOAD_TYPE_TXT_MSG` | 2 | Direct text message (AES-128 encrypted) |
+| `PAYLOAD_TYPE_ADVERT` | 4 | Node advertisement (unencrypted) |
+| `PAYLOAD_TYPE_GRP_TXT` | 5 | Group/channel text (AES-128 encrypted) |
+
+### 4b. ADVERT Payload (`payload_type = 4`)
+
+Minimum 101 bytes. Layout:
+
+```
+[pubkey (32 B)] [timestamp (4 B, LE uint32, Unix s)] [signature (64 B, Ed25519)]
+[appdata_flags (1 B)]
+  [latitude  (4 B, LE int32, micro-degrees)]   ← only if flags bit 4 set
+  [longitude (4 B, LE int32, micro-degrees)]   ← only if flags bit 4 set
+  [feature1  (2 B)]                             ← only if flags bit 5 set (reserved)
+  [feature2  (2 B)]                             ← only if flags bit 6 set (reserved)
+  [name      (variable, rest of appdata)]       ← only if flags bit 7 set
+```
+
+**`appdata_flags` byte**:
+
+| Bit(s) | Field | Meaning |
+|--------|-------|---------|
+| 3–0 | `node_type` | 1=chat, 2=repeater, 3=room_server, 4=sensor |
+| 4 | `has_location` | lat/lon fields follow |
+| 5 | `has_feature1` | reserved 2-byte field follows |
+| 6 | `has_feature2` | reserved 2-byte field follows |
+| 7 | `has_name` | name string follows (to end of payload, strip trailing `\0`) |
+
+The `pubkey` becomes the contact's `public_key` (uppercase hex, 64 chars).
+Latitude/longitude are divided by 1 000 000 to get decimal degrees.
+
+### 4c. GRP_TXT Payload (`payload_type = 5`, AES-128 encrypted)
+
+Outer structure (plaintext header + ciphertext):
+
+```
+[channel_hash (1 B)]   SHA256(PSK_bytes)[0] — plaintext channel identifier
+[mac          (2 B)]   HMAC-SHA256(secret_32, ciphertext) truncated to 2 bytes
+[ciphertext   (N×16 B)] AES-128-ECB( secret[0:16], plaintext_zero_padded )
+```
+
+Decrypted plaintext layout:
+
+```
+[timestamp (4 B, LE uint32, Unix s)] [flags (1 B, 0=plain)] [text (variable, "Name: msg\0")]
+```
+
+Decryption uses channel PSKs from the `channels` table; only enabled channels
+with a known PSK are attempted.  If decryption fails or no matching channel is
+found the packet is stored as a RAW entry.
+
+### 4d. TXT_MSG (`payload_type = 2`, AES-128 encrypted)
+
+`PAYLOAD_TYPE_TXT_MSG` is a direct (unicast) encrypted message.
+MeshLog does **not** attempt decryption — it is always stored as a RAW packet.
 
 ---
 
@@ -185,22 +266,26 @@ schema for its type.
 
 ---
 
-## 8. Database Schema (current, post-migration-007)
+## 8. Database Schema (current, post-migration-008)
 
 | Table | Key Columns |
 |-------|-------------|
 | `reporters` | `id`, `public_key varchar(200)`, `authorized tinyint`, `auth varchar(200)` |
 | `contacts` | `id`, `public_key varchar(64) UNIQUE`, `name`, `hash_size`, `last_heard_at` |
-| `advertisements` | `id`, `contact_id`, `hash varchar(16)`, `name`, `lat`, `lon`, `type`, `flags`, `hash_size`, `sent_at` |
+| `advertisements` | `id`, `contact_id`, `hash varchar(16)`, `name`, `lat`, `lon`, `type`, `flags`, `hash_size TINYINT DEFAULT 1`, `sent_at` |
 | `advertisement_reports` | `id`, `advertisement_id`, `reporter_id`, `path`, `snr`, `received_at` |
-| `direct_messages` | `id`, `contact_id`, `hash varchar(16)`, `name`, `message`, `hash_size`, `sent_at` |
+| `direct_messages` | `id`, `contact_id`, `hash varchar(16)`, `name`, `message`, `hash_size TINYINT DEFAULT 1`, `sent_at` |
 | `direct_message_reports` | `id`, `direct_message_id`, `reporter_id`, `path`, `snr`, `received_at` |
-| `channel_messages` | `id`, `contact_id`, `channel_id`, `hash varchar(16)`, `name`, `message`, `hash_size`, `sent_at` |
+| `channel_messages` | `id`, `contact_id`, `channel_id`, `hash varchar(16)`, `name`, `message`, `hash_size TINYINT DEFAULT 1`, `sent_at` |
 | `channel_message_reports` | `id`, `channel_message_id`, `reporter_id`, `path`, `snr`, `received_at` |
-| `channels` | `id`, `hash varchar(16) UNIQUE`, `name`, `enabled` |
+| `channels` | `id`, `hash varchar(64) UNIQUE`, `name`, `enabled` |
 | `telemetry` | `id`, `contact_id`, `reporter_id`, `data json`, `sent_at`, `received_at` |
-| `raw_packets` | `id`, `reporter_id`, `header`, `path`, `payload varbinary(256)`, `snr`, `decoded`, `hash_size`, `received_at` |
+| `raw_packets` | `id`, `reporter_id`, `header`, `path`, `payload varbinary(256)`, `snr`, `decoded`, `hash_size TINYINT DEFAULT 1`, `received_at` |
 | `settings` | `id`, `name`, `value` |
+
+`hash_size` defaults to `1` for all pre-migration-007 rows and all firmware paths
+that do not encode MultiByte hashes.  The `channels.hash` column was widened from
+`varchar(16)` to `varchar(64)` in migration-008 to accomodate longer PSK hashes.
 
 Deduplication of ADV/MSG/PUB is done in code via
 `findBy("hash", ..., extra_constraint 'created_at > minage')`.
