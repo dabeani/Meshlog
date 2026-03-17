@@ -902,6 +902,20 @@ class MeshLogReportedObject extends MeshLogObject {
         }
     }
 
+    merge(data) {
+        let reports = data.reports ?? null;
+        if (reports) delete data.reports;
+
+        super.merge(data);
+
+        if (reports) {
+            this.reports = [];
+            for (let i = 0; i < reports.length; i++) {
+                this.reports.push(new MeshLogReport(this._meshlog, reports[i], this.data.contact_id, this));
+            }
+        }
+    }
+
     // Override!
     getId()   { return `?_${this.data.id}`; }
     getDate() { return {text: "Not Implemented", classList: []}; } // date - 2025-10-10 10:00:00
@@ -918,6 +932,46 @@ class MeshLogReportedObject extends MeshLogObject {
             return `(${hashSize}byte)`;
         }
         return null;
+    }
+
+    updateMetaIndicators() {
+        if (!this.dom) return;
+
+        const hashSizeBadge = this.getHashSizeBadgeText();
+        if (this.dom.hashSize) {
+            this.dom.hashSize.innerText = hashSizeBadge ?? '';
+            this.dom.hashSize.hidden = !hashSizeBadge;
+        }
+
+        if (this.dom.prefix) {
+            this.dom.prefix.textContent = '';
+            this.dom.prefix.classList.remove('warn-icon');
+            this.dom.prefix.removeAttribute('title');
+
+            let sentAt = new Date(this.data.sent_at).getTime();
+            let receivedAt = NaN;
+            if (this.reports && this.reports.length > 0 && Number.isFinite(sentAt)) {
+                let minDelta = Infinity;
+                for (let i = 0; i < this.reports.length; i++) {
+                    let candidate = new Date(this.reports[i].data.received_at).getTime();
+                    if (!Number.isFinite(candidate)) continue;
+                    let delta = Math.abs(sentAt - candidate);
+                    if (delta < minDelta) {
+                        minDelta = delta;
+                        receivedAt = candidate;
+                    }
+                }
+            }
+            if (!Number.isFinite(receivedAt)) {
+                receivedAt = new Date(this.data.created_at).getTime();
+            }
+
+            if (Number.isFinite(sentAt) && Number.isFinite(receivedAt) && Math.abs(sentAt - receivedAt) > 1000 * 60 * 60 * 12) {
+                this.dom.prefix.textContent = '⚠️';
+                this.dom.prefix.classList.add('warn-icon');
+                createTooltip(this.dom.prefix, `Clock out of sync. Sender time: ${this.data.sent_at}`);
+            }
+        }
     }
 
     createDom(recreate = false) {
@@ -977,32 +1031,6 @@ class MeshLogReportedObject extends MeshLogObject {
         spTag.classList.add(...tag.classList);
         spTag.innerText = tag.text;
 
-        // Check message times using the packet/report receive time when available.
-        // created_at is the DB row creation time and can be misleading for deduplicated
-        // packets that are re-reported later, which causes false clock skew warnings.
-        let sentAt = new Date(this.data.sent_at).getTime();
-        let receivedAt = NaN;
-        if (this.reports && this.reports.length > 0 && Number.isFinite(sentAt)) {
-            let minDelta = Infinity;
-            for (let i = 0; i < this.reports.length; i++) {
-                let candidate = new Date(this.reports[i].data.received_at).getTime();
-                if (!Number.isFinite(candidate)) continue;
-                let delta = Math.abs(sentAt - candidate);
-                if (delta < minDelta) {
-                    minDelta = delta;
-                    receivedAt = candidate;
-                }
-            }
-        }
-        if (!Number.isFinite(receivedAt)) {
-            receivedAt = new Date(this.data.created_at).getTime();
-        }
-        if (Number.isFinite(sentAt) && Number.isFinite(receivedAt) && Math.abs(sentAt - receivedAt) > 1000 * 60 * 15) {
-            spPrefix.textContent = "⚠️";
-            spPrefix.classList.add('warn-icon')
-            createTooltip(spPrefix, `Clock out of sync. Sender time: ${this.data.sent_at}`);
-        }
-
         spName.classList.add(...['sp', 't']);
         spName.classList.add(...name.classList);
         spName.innerText = name.text;
@@ -1043,10 +1071,14 @@ class MeshLogReportedObject extends MeshLogObject {
             container: divContainer,
             log: divLog,
             reports: divReports,
+            prefix: spPrefix,
+            hashSize: spHashSize,
             input: {
                 show: inputShow
             }
         };
+
+        this.updateMetaIndicators();
 
         return this.dom;
     }
@@ -1060,6 +1092,7 @@ class MeshLogReportedObject extends MeshLogObject {
 
         this.dom.container.hidden = !this.isVisible();
         this.dom.reports.hidden = !this.expanded;
+        this.updateMetaIndicators();
 
         if (this.expanded) {
             for (let i=0; i<this.reports.length; i++) {
