@@ -26,7 +26,7 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossorigin=""></script>
-    <script src=" https://cdn.jsdelivr.net/npm/leaflet-polylineoffset@1.1.1/leaflet.polylineoffset.min.js "></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-polylineoffset@1.1.1/leaflet.polylineoffset.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/linkifyjs@4.3.2/dist/linkify.min.js"
         integrity="sha256-3RgHec0J2nciPAIndkHOdN/WMH98UhLzLRsf+2MOiiY="
         crossorigin="anonymous"></script>
@@ -226,7 +226,7 @@ const formatedTimestamp = (d=new Date())=> {
 }
 
 var map = L.map('map').setView([<?= json_encode($mapLat) ?>, <?= json_encode($mapLon) ?>], <?= json_encode($mapZoom) ?>);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png', {
     maxZoom: 19,
     subdomains: 'abcd',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
