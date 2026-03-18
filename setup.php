@@ -123,7 +123,7 @@
 
     // TOOD cehck admin
     if ($hasConfig && $hasAdmin && $hasMigrated) {
-        echo "Already set up"; // TODO: reditect.
+        header("Location: admin/");
         exit;
     }
 

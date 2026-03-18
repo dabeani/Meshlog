@@ -30,11 +30,6 @@
                 'permissions' => $login->permissions
             );
             $_SESSION['user'] = $login;
-
-            if (isset($_GET['setup']) || isset($_POST['setup'])) {
-                header("Location: ../setup.php");
-                exit;
-            }
         }
     }
 ?>
@@ -43,21 +38,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meshlog Login</title>
+    <title>MeshLog Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css">
     <style>
+        body { display: flex; flex-direction: column; min-height: 100vh; }
+        .admin-header {
+            background: #1a1a1a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            border-bottom: 1px solid #444;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .admin-header .admin-title { font-size: 1.2em; color: #ccc; letter-spacing: 0.05em; }
+        .admin-header a { color: #888; text-decoration: none; }
+        .admin-header a:hover { color: #fff; }
+        .admin-body { padding: 20px 24px; max-width: 1400px; width: 100%; box-sizing: border-box; }
+        .admin-section {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 6px;
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .admin-section .section-title {
+            padding: 10px 16px;
+            background: #252525;
+            border-bottom: 1px solid #333;
+            color: #bbb;
+            font-size: 1.1em;
+        }
+        .admin-section .section-body { padding: 12px 16px; overflow-x: auto; }
+        table { border-collapse: collapse; width: 100%; }
+        th {
+            text-align: left;
+            color: #999;
+            border-bottom: 1px solid #333;
+            padding: 6px 8px;
+            white-space: nowrap;
+        }
+        td { padding: 4px 8px; vertical-align: middle; }
+        tbody tr:hover { background: #252525; }
+        tr.disabled td { opacity: 0.5; text-decoration: line-through; }
+        input[type=text], input[type=password] {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #ccc;
+            padding: 3px 6px;
+            border-radius: 3px;
+            box-sizing: border-box;
+        }
+        input[type=text]:focus, input[type=password]:focus { border-color: #888; outline: none; }
+        button {
+            background: #2e2e2e;
+            border: 1px solid #555;
+            color: #ccc;
+            padding: 3px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-left: 4px;
+        }
+        button:hover { background: #444; color: #fff; }
         .rcolor {
             display: inline-block;
             height: 1rem;
             width: 1rem;
             border: solid 1px #222;
             border-radius: 1rem;
-        }
-        td, th {
-            padding: 2px 4px;
-        }
-        tr.disabled {
-            text-decoration: line-through;
         }
         input[type=color] {
             -webkit-appearance: none;
@@ -73,22 +123,19 @@
             vertical-align: bottom;
             margin-left: 8px;
         }
-        input[type="color"]::-webkit-color-swatch-wrapper {
-            padding: 0;
-        }
-        input[type="color"]::-webkit-color-swatch {
-            border: none;
-            border-radius: 0;
-        }
-        input[type="color"]::-moz-color-swatch {
-            border: none;
-        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0; }
+        input[type="color"]::-moz-color-swatch { border: none; }
         .logger-name {
             margin-left: 8px;
             padding: 2px;
             font-size: 0.8rem;
             border-radius: 0.35rem;
         }
+        .setting-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #2a2a2a; }
+        .setting-row:last-child { border-bottom: none; }
+        .setting-label { min-width: 220px; color: #aaa; }
+        .setting-desc { color: #666; font-size: 0.9em; flex: 1; }
     </style>
 </head>
 <body>
@@ -108,27 +155,36 @@
                 <div class="form-group right">
                     <input type="submit" name="login" value="Login">
                 </div>
-                <input type="hidden" name="setup" value="1">
             </form>
         </section>
     </div>
 <?php else: ?>
-    <a href="?logout">Log out</a>
-    <h1>Reporters</h1>
-    <table >
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Name</th>
-                <th>Public Key</th>
-                <th colspan="2">Location</th>
-                <th>Auth</th>
-                <td></td>
-                <td></td>
-            </tr>
-        </thead>
-        <tbody id="reporters"></tbody>
-    </table>
+    <header class="admin-header">
+        <span class="admin-title">MeshLog Admin</span>
+        <a href="?logout">Log out</a>
+    </header>
+    <div class="admin-body">
+    <div class="admin-section">
+        <div class="section-title">Reporters</div>
+        <div class="section-body">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Public Key</th>
+                    <th>Lat</th>
+                    <th>Lon</th>
+                    <th>Auth</th>
+                    <th>Style</th>
+                    <th>Auth?</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="reporters"></tbody>
+        </table>
+        </div>
+    </div>
 
     <script>
         const reporters = document.getElementById("reporters");
@@ -374,20 +430,24 @@
         loadReporters();
     </script>
 
-    <h1>Channels</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Hash</th>
-                <th>Name</th>
-                <th title="Base64-encoded PSK used by MeshCore for AES-128 group channel decryption">PSK (base64)</th>
-                <th>Enabled</th>
-                <td></td>
-            </tr>
-        </thead>
-        <tbody id="channels"></tbody>
-    </table>
+    <div class="admin-section">
+        <div class="section-title">Channels</div>
+        <div class="section-body">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Hash</th>
+                    <th>Name</th>
+                    <th title="Base64-encoded PSK used by MeshCore for AES-128 group channel decryption">PSK (base64)</th>
+                    <th>Enabled</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="channels"></tbody>
+        </table>
+        </div>
+    </div>
 
     <script>
         const channelsTable = document.getElementById("channels");
@@ -541,21 +601,20 @@
         loadChannels();
     </script>
 
-    <h1>Settings</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>Setting</th>
-                <th>Value</th>
-                <td></td>
-            </tr>
-        </thead>
-        <tbody id="settings"></tbody>
-    </table>
+    <div class="admin-section">
+        <div class="section-title">Settings</div>
+        <div class="section-body" id="settings-body">
+            <div class="setting-row">
+                <span class="setting-label">Anonymize Usernames</span>
+                <span class="setting-desc">Replace usernames and @mentions in channel &amp; direct messages with XXXXXX</span>
+                <input type="checkbox" id="setting-anonymize">
+                <button id="setting-save-btn" onclick="saveSettings()">Save</button>
+            </div>
+        </div>
+    </div>
+    </div>
 
     <script>
-        const settingsTable = document.getElementById("settings");
-
         function loadSettings() {
             fetch('api/settings/', {
                 method: "GET",
@@ -563,40 +622,29 @@
             })
             .then(response => response.json())
             .then(result => {
-                settingsTable.innerHTML = '';
-                addSettingRow(settingsTable, 'Anonymize Usernames', 'anonymize_usernames', result.settings.anonymize_usernames == 1);
+                document.getElementById('setting-anonymize').checked = result.settings.anonymize_usernames == 1;
             });
         }
 
-        function addSettingRow(table, label, key, value) {
-            let row = table.insertRow();
-
-            let labelCell = row.insertCell();
-            labelCell.innerText = label;
-
-            let valueCell = row.insertCell();
-            let checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.checked = value;
-            valueCell.append(checkbox);
-
-            let actionCell = row.insertCell();
-            let btnSave = document.createElement("button");
-            btnSave.innerText = "Save";
-            btnSave.onclick = () => {
-                const data = { save: 1, anonymize_usernames: checkbox.checked ? 1 : 0 };
-                fetch('api/settings/', {
-                    method: "POST",
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    body: new URLSearchParams(data)
-                })
-                .then(r => r.json())
-                .then(result => {
-                    if (getError(result)) { alert(getError(result)); }
-                    else { alert('Settings saved'); }
-                });
-            };
-            actionCell.append(btnSave);
+        function saveSettings() {
+            const btn = document.getElementById('setting-save-btn');
+            const checked = document.getElementById('setting-anonymize').checked;
+            btn.disabled = true;
+            fetch('api/settings/', {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ save: 1, anonymize_usernames: checked ? 1 : 0 })
+            })
+            .then(r => r.json())
+            .then(result => {
+                btn.disabled = false;
+                if (getError(result)) { alert(getError(result)); }
+                else {
+                    btn.innerText = 'Saved ✓';
+                    setTimeout(() => { btn.innerText = 'Save'; }, 1500);
+                }
+            })
+            .catch(() => { btn.disabled = false; });
         }
 
         loadSettings();
