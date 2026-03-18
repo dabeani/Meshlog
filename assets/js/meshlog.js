@@ -41,6 +41,17 @@ function parseMeshlogTimestamp(value) {
     ).getTime();
 }
 
+/**
+ * Parse a routing path string into an array of lowercase hex hash strings.
+ * Handles both comma-separated MQTT binary format ("ab,cd") and the
+ * arrow-separated HTTP firmware format ("AB->CD->EF").
+ */
+function parsePath(pathStr) {
+    if (!pathStr) return [];
+    const parts = pathStr.includes('->') ? pathStr.split('->') : pathStr.split(',');
+    return parts.map(h => h.trim().replace(/[^0-9a-fA-F]/g, '').toLowerCase()).filter(Boolean);
+}
+
 class MeshLogObject {
     static idPrefix = "";
 
@@ -164,6 +175,14 @@ class MeshLogContact extends MeshLogObject {
         if (data.telemetry) {
             this.telemetry = data.telemetry; // todo: use object
             delete data.telemetry;
+        }
+    }
+
+    merge(data) {
+        super.merge(data);
+        // Recompute this.hash whenever hash_size changes so all displays stay in sync.
+        if (data.hash_size !== undefined) {
+            this.hash = this.data.public_key.substr(0, 2 * this.data.hash_size).toLowerCase();
         }
     }
 
@@ -296,7 +315,7 @@ class MeshLogContact extends MeshLogObject {
             m.reports.forEach(r => {
                 let path = r.data.path ?? undefined;
                 if (path == undefined) return; 
-                let hashes = path ? path.split(",") : [];
+                let hashes = parsePath(path);
 
                 let reporter = this._meshlog.reporters[r.data.reporter_id] ?? false;
                 if (!reporter) return;
@@ -849,7 +868,7 @@ class MeshLogReport {
     getPreviewData() {
         const sender = this._meshlog.contacts[this.contact_id] ?? false;
         const reporter = this._meshlog.reporters[this.data.reporter_id] ?? false;
-        const hops = this.data.path ? this.data.path.split(',').filter(Boolean).length : 0;
+        const hops = parsePath(this.data.path).length;
         const packetType = this.parent?.getPathTag ? this.parent.getPathTag() : 'PKT';
 
         return {
@@ -1034,7 +1053,7 @@ class MeshLogReportedObject extends MeshLogObject {
             for (let i = 0; i < this.reports.length; i++) {
                 const path = this.reports[i].data.path ?? '';
                 if (!path) continue;
-                const first = path.split(',', 1)[0];
+                const first = parsePath(path)[0] ?? '';
                 const candidate = Math.floor(first.length / 2);
                 if (candidate >= 1 && candidate <= 3) {
                     derivedHashSize = candidate;
@@ -1399,7 +1418,7 @@ class MeshLogRawPacket extends MeshLogObject {
         const dataHashSize = parseInt(this.data.hash_size ?? 0, 10);
         const path = this.data.path ?? '';
         if (path) {
-            const first = path.split(',', 1)[0];
+            const first = parsePath(path)[0] ?? '';
             const derivedHashSize = Math.floor(first.length / 2);
             if (derivedHashSize >= 1 && derivedHashSize <= 3) {
                 return derivedHashSize;
@@ -2752,7 +2771,7 @@ class MeshLog {
         msg.reports.forEach(report => {
             const reporter = this.reporters[report.data.reporter_id];
             if (!reporter) return;
-            const hashes    = report.data.path ? report.data.path.split(',') : [];
+            const hashes    = parsePath(report.data.path);
             const waypoints = this._buildPathWaypoints(hashes, srcContact, reporter);
             const color     = reporter.getStyle().color ?? '#4eb8d0';
             this._runPathAnimation(waypoints, color);
@@ -2788,7 +2807,7 @@ class MeshLog {
         const reporterAnchor = this._getReporterAnchor(reporter);
         if (!reporterAnchor) return;
 
-        let hashes = path ? path.split(',') : [];
+        let hashes = parsePath(path);
         let prev = { ...reporterAnchor };
 
         let addCircle = false;

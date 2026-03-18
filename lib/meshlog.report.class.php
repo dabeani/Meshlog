@@ -16,11 +16,31 @@ class MeshLogReport extends MeshLogEntity {
     public static function fromJson($data, $meshlog) {
         $m = new static($meshlog);
 
-        $m->path = $data['message']['path'] ?? null;
+        $m->path = static::normalizePath($data['message']['path'] ?? null);
         $m->snr = $data['snr'] ?? null;
         $m->received_at = Utils::time2str($data['time']['local']) ?? null;
 
         return $m;
+    }
+
+    /**
+     * Normalise a routing path to comma-separated lowercase hex.
+     * The HTTP firmware logger sends "AB->CD->EF" style paths; MQTT binary
+     * decoding already produces "ab,cd,ef". Both forms are stored consistently
+     * as comma-separated lowercase hex after this normalisation.
+     */
+    private static function normalizePath($rawPath) {
+        if ($rawPath === null || $rawPath === '') return $rawPath;
+        if (strpos($rawPath, '->') !== false) {
+            $parts = preg_split('/\s*->\s*/', trim($rawPath));
+            $hashes = array();
+            foreach ($parts as $part) {
+                $hash = preg_replace('/[^0-9A-Fa-f]/', '', strtolower($part));
+                if ($hash !== '') $hashes[] = $hash;
+            }
+            return implode(',', $hashes);
+        }
+        return $rawPath;
     }
 
     public static function fromDb($data, $meshlog) {
