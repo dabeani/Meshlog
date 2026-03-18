@@ -1114,6 +1114,16 @@ class MeshLogReportedObject extends MeshLogObject {
 
         inputShow.onclick = (e) => {
             e.stopPropagation();
+            if (e.target.checked) {
+                for (let i=0;i<this.reports.length;i++) {
+                    this.reports[i].showPath();
+                }
+            } else {
+                for (let i=0;i<this.reports.length;i++) {
+                    this.reports[i].hidePath();
+                }
+            }
+            this._meshlog.updatePaths();
         }
 
         this.dom = {
