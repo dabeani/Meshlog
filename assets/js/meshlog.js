@@ -613,6 +613,23 @@ class MeshLogContact extends MeshLogObject {
         }
     }
 
+    showLabel(show) {
+        if (!this.marker || !this.adv) return;
+        if (show) {
+            const name = this.adv.data.name ?? '';
+            this.marker.unbindTooltip();
+            this.marker.bindTooltip(name, {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -44],
+                className: 'route-label'
+            });
+            this.marker.openTooltip();
+        } else {
+            this.updateTooltip();
+        }
+    }
+
     __removeEmojis(str) {
             return str.replace(
                 /([\u200D\uFE0F]|[\u2600-\u27BF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDD00-\uDFFF])/g,
@@ -1485,6 +1502,7 @@ class MeshLog {
         this.layer_descs = {};
         this.link_layers = L.layerGroup([]);
         this.visible_markers = new Set();
+        this._initialLoad = true;
         this.visible_contacts = {};
         this.links = {};
         this.canvas_renderer = L.canvas({ padding: 0.5 });
@@ -2205,6 +2223,7 @@ class MeshLog {
 
             this.__init_reporters();
             this.onLoadAll();
+            this._initialLoad = false;
 
             if (onload) {
                 onload({
@@ -2382,10 +2401,14 @@ class MeshLog {
         const empty = this.visible_markers.size < 1;
         Object.entries(this.contacts).forEach(([k,v]) => {
             if (!v.marker) return;
-            if (empty || this.visible_markers.has(v.data.id)) {
+            if (empty) {
                 v.marker.setOpacity(1);
                 v.marker.setZIndexOffset(1000);
-                v.updateTooltip();
+                v.showLabel(false);
+            } else if (this.visible_markers.has(v.data.id)) {
+                v.marker.setOpacity(1);
+                v.marker.setZIndexOffset(1000);
+                v.showLabel(true);
             } else {
                 v.marker.setOpacity(opacity);
                 v.marker.setZIndexOffset(2);
@@ -2717,8 +2740,11 @@ class MeshLog {
     }
 
     _animateNewPacketPath(msg) {
+        if (this._initialLoad) return;
         if (!msg.reports || msg.reports.length === 0) return;
         const srcContact = this.contacts[msg.data.contact_id] ?? null;
+        const labelContacts = new Set();
+
         msg.reports.forEach(report => {
             const reporter = this.reporters[report.data.reporter_id];
             if (!reporter) return;
@@ -2726,7 +2752,25 @@ class MeshLog {
             const waypoints = this._buildPathWaypoints(hashes, srcContact, reporter);
             const color     = reporter.getStyle().color ?? '#4eb8d0';
             this._runPathAnimation(waypoints, color);
+
+            // Collect contacts on this path for label display
+            const anchor = this._getReporterAnchor(reporter);
+            const reporterContact = anchor?.contact_id ? this.contacts[anchor.contact_id] : null;
+            if (reporterContact) labelContacts.add(reporterContact);
+            let prev = anchor;
+            for (let i = hashes.length - 1; i >= 0; i--) {
+                const nearest = this.findNearestContact(prev?.lat ?? 0, prev?.lon ?? 0, hashes[i], true);
+                if (nearest?.result) {
+                    labelContacts.add(nearest.result);
+                    prev = { lat: nearest.result.adv.data.lat, lon: nearest.result.adv.data.lon };
+                }
+            }
+            if (srcContact?.adv) labelContacts.add(srcContact);
         });
+
+        labelContacts.forEach(c => c.showLabel(true));
+        const self = this;
+        setTimeout(() => { labelContacts.forEach(c => { if (self.visible_markers.size < 1) c.showLabel(false); }); }, 5000);
     }
 
     // Only adds descriptors, not layers
