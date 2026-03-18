@@ -2585,7 +2585,10 @@ class MeshLog {
     // Build ordered [lat,lon] waypoints for a path: sender → hops → reporter
     _buildPathWaypoints(hashes, src, reporter) {
         const waypoints = [];
-        let prev = { lat: reporter.data.lat, lon: reporter.data.lon };
+        const reporterAnchor = this._getReporterAnchor(reporter);
+        if (!reporterAnchor) return waypoints;
+
+        let prev = { lat: reporterAnchor.lat, lon: reporterAnchor.lon };
         waypoints.push([prev.lat, prev.lon]);
         for (let i = hashes.length - 1; i >= 0; i--) {
             const nearest = this.findNearestContact(prev.lat, prev.lon, hashes[i], true);
@@ -2598,6 +2601,28 @@ class MeshLog {
             waypoints.push([src.adv.data.lat, src.adv.data.lon]);
         }
         return waypoints.reverse(); // sender → reporter
+    }
+
+    _getReporterAnchor(reporter) {
+        if (!reporter) return null;
+
+        const lat = Number(reporter?.data?.lat);
+        const lon = Number(reporter?.data?.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0)) {
+            return { lat, lon, contact_id: reporter.getContactId() };
+        }
+
+        const reporterContactId = reporter.getContactId();
+        const reporterContact = this.contacts[reporterContactId] ?? null;
+        if (reporterContact?.adv && (reporterContact.adv.data.lat !== 0 || reporterContact.adv.data.lon !== 0)) {
+            return {
+                lat: Number(reporterContact.adv.data.lat),
+                lon: Number(reporterContact.adv.data.lon),
+                contact_id: reporterContactId
+            };
+        }
+
+        return null;
     }
 
     _calcPathLength(waypoints) {
@@ -2705,12 +2730,11 @@ class MeshLog {
             return;
         }
 
+        const reporterAnchor = this._getReporterAnchor(reporter);
+        if (!reporterAnchor) return;
+
         let hashes = path ? path.split(',') : [];
-        let prev = {
-            lat: reporter.data.lat,
-            lon: reporter.data.lon,
-            contact_id: reporter.getContactId()
-        };
+        let prev = { ...reporterAnchor };
 
         let addCircle = false;
 
@@ -2749,6 +2773,20 @@ class MeshLog {
             } else {
                 console.log('no nearest: ');
             }
+        }
+
+        // Show at least one direct line when no hop could be resolved.
+        if (desc.paths.length < 1 && src && src.adv && (src.adv.data.lat !== 0 || src.adv.data.lon !== 0)) {
+            const senderPoint = {
+                lat: Number(src.adv.data.lat),
+                lon: Number(src.adv.data.lon),
+                contact_id: src.data.id
+            };
+            desc.markers.add(src.data.id);
+            if (reporterAnchor.contact_id) {
+                desc.markers.add(reporterAnchor.contact_id);
+            }
+            desc.paths.push(new MeshLogLinkLayer(prev, senderPoint, reporter, addCircle));
         }
 
         this.layer_descs[id] = desc;
