@@ -374,30 +374,63 @@ h2 {
     border-top-color: #444;
 }
 
-/* Repeater name label embedded in the divIcon — always exactly above the bubble */
+/* Repeater info card embedded in the divIcon — always exactly above the bubble */
 .custom-div-icon .marker-label-text {
     position: absolute;
-    bottom: 46px;        /* sits above the 42px tall icon */
+    bottom: 48px;
     left: 50%;
     transform: translateX(-50%);
-    white-space: nowrap;
-    background: rgba(10, 10, 14, 0.82);
+    min-width: 140px;
+    max-width: 220px;
+    background: rgba(10, 10, 14, 0.88);
     border: 1px solid rgba(255,255,255,0.15);
     color: #fff;
     font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    padding: 2px 8px;
-    border-radius: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.7);
+    padding: 6px 10px 5px;
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.75);
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.22s ease, transform 0.22s ease;
     z-index: 900;
+    white-space: nowrap;
+    text-align: left;
+}
+.custom-div-icon .marker-label-text::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(255,255,255,0.15);
 }
 .custom-div-icon .marker-label-text.visible {
     opacity: 1;
-    transform: translateX(-50%) translateY(-2px);
+    transform: translateX(-50%) translateY(-3px);
+}
+
+/* Rich content inside the embedded label */
+.mlabel-title {
+    font-weight: 700;
+    font-size: 0.76rem;
+    color: #fff;
+    margin: 0 0 3px;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+.mlabel-hash {
+    font-weight: 400;
+    font-size: 0.68rem;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.02em;
+}
+.mlabel-detail {
+    font-size: 0.67rem;
+    color: rgba(255,255,255,0.55);
+    margin: 0;
+    line-height: 1.3;
+    white-space: nowrap;
 }
 
 

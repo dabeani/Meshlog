@@ -623,10 +623,16 @@ class MeshLogContact extends MeshLogObject {
     showLabel(show) {
         if (!this._labelEl) return;
         if (show) {
-            this._labelEl.textContent = this.adv?.data?.name ?? '';
+            const name    = this.adv?.data?.name ?? '';
+            const hash    = this.hash ?? '';
+            const heard   = this.last?.data?.created_at ?? '';
+            this._labelEl.innerHTML =
+                `<p class="mlabel-title">${name} <span class="mlabel-hash">[${hash}]</span></p>` +
+                (heard ? `<p class="mlabel-detail">Last heard: ${heard}</p>` : '');
             this._labelEl.classList.add('visible');
         } else {
             this._labelEl.classList.remove('visible');
+            this._labelEl.innerHTML = '';
         }
     }
 
