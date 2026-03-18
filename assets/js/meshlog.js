@@ -808,10 +808,10 @@ class MeshLogReport {
         this.parent = parent;
     }
 
-    showPath() {
+    showPath(animated = false) {
         let sender = this._meshlog.contacts[this.contact_id] ?? false;
         let receiver = this._meshlog.reporters[this.data.reporter_id];
-        this._meshlog.showPath(this.data.id, this.data.path, sender, receiver, this.getPreviewData());
+        this._meshlog.showPath(this.data.id, this.data.path, sender, receiver, this.getPreviewData(), animated);
     }
 
     hidePath() {
@@ -885,13 +885,14 @@ class MeshLogReport {
 
     static onmouseover(e) {
         if (this.parent) this.parent.setHighlight(true);
-        this.showPath();
+        this.showPath(true);
         this._meshlog.updatePaths();
     }
 
     static onmouseout(e) {
         if (this.parent) this.parent.setHighlight(false);
         if (this.parent.dom.input.show.checked) {
+            this.showPath(false);
             this._meshlog.updatePaths();
             return;
         }
@@ -1160,7 +1161,7 @@ class MeshLogReportedObject extends MeshLogObject {
             e.stopPropagation();
             if (e.target.checked) {
                 for (let i=0;i<this.reports.length;i++) {
-                    this.reports[i].showPath();
+                    this.reports[i].showPath(false);
                 }
             } else {
                 for (let i=0;i<this.reports.length;i++) {
@@ -1251,7 +1252,7 @@ class MeshLogReportedObject extends MeshLogObject {
         this.setHighlight(true);
         // show paths
         for (let i=0;i<this.reports.length;i++) {
-            this.reports[i].showPath();
+            this.reports[i].showPath(true);
         }
         this._meshlog.updatePaths();
     }
@@ -1260,6 +1261,9 @@ class MeshLogReportedObject extends MeshLogObject {
         this.setHighlight(false);
         // hide path
         if (this.dom.input.show.checked) {
+            for (let i=0;i<this.reports.length;i++) {
+                this.reports[i].showPath(false);
+            }
             this._meshlog.updatePaths();
             return;
         }
@@ -1471,6 +1475,7 @@ class MeshLog {
         this.visible_contacts = {};
         this.links = {};
         this.canvas_renderer = L.canvas({ padding: 0.5 });
+        this.routeAnimationFrames = [];
         this.dom_logs = document.getElementById(logsid);
         this.dom_contacts = document.getElementById(contactsid);
         this.dom_warning = document.getElementById(warningid);
@@ -1526,6 +1531,32 @@ class MeshLog {
         this.link_layers.addTo(this.map);
 
         this.last = '2025-01-01 00:00:00';
+    }
+
+    _stopRouteLineAnimations() {
+        for (let i = 0; i < this.routeAnimationFrames.length; i++) {
+            cancelAnimationFrame(this.routeAnimationFrames[i].id);
+        }
+        this.routeAnimationFrames = [];
+    }
+
+    _startRouteLineAnimation(lineGlow, line2, baseWeight) {
+        const start = performance.now();
+        const handle = { id: 0 };
+        this.routeAnimationFrames.push(handle);
+
+        const animate = (now) => {
+            const elapsed = now - start;
+            const pulse = 0.45 + (Math.sin(elapsed / 240) * 0.15);
+            const width = baseWeight + (Math.sin(elapsed / 190) * 0.9);
+
+            lineGlow.setStyle({ opacity: Math.max(0.28, pulse) });
+            line2.setStyle({ weight: Math.max(2.5, width) });
+
+            handle.id = requestAnimationFrame(animate);
+        };
+
+        handle.id = requestAnimationFrame(animate);
     }
 
     handleMouseEvent(e) {
@@ -2380,6 +2411,8 @@ class MeshLog {
     }
 
     updatePaths() {
+        this._stopRouteLineAnimations();
+
         // remove all layers
         const self = this;
         this.link_layers.eachLayer(function (layer) {
@@ -2406,6 +2439,8 @@ class MeshLog {
         const linkStrokeColor  = '#fff';
 
         Object.entries(this.layer_descs).forEach(([k,desc]) => {
+            const animatedRoute = !!desc.animated;
+
             for (const cid of desc.markers) {
                 this.visible_markers.add(cid);
             }
@@ -2423,11 +2458,14 @@ class MeshLog {
                 ];
 
                 const reporterColor = path.reporter.getStyle().color ?? '#4ea4c4';
+                const glowOpacity = animatedRoute ? 0.5 : 0.22;
+                const innerWeight = animatedRoute ? ln_weight + 1 : ln_weight;
+                const dashArray = animatedRoute ? '10 10' : null;
 
                 // Three-layer rendering: wide semi-transparent glow → dark outline → colored inner
-                let lineGlow = L.polyline(linePath, {renderer: this.canvas_renderer, color: reporterColor, weight: ln_glow,    opacity: 0.22});
-                let line1    = L.polyline(linePath, {renderer: this.canvas_renderer, color: linkOutlineColor, weight: ln_outline});
-                let line2    = L.polyline(linePath, {renderer: this.canvas_renderer, color: reporterColor,    weight: ln_weight});
+                let lineGlow = L.polyline(linePath, {color: reporterColor, weight: ln_glow, opacity: glowOpacity});
+                let line1    = L.polyline(linePath, {color: linkOutlineColor, weight: ln_outline});
+                let line2    = L.polyline(linePath, {color: reporterColor, weight: innerWeight, dashArray: dashArray});
 
                 if (!links.includes(line_id)) {
                     links.push(line_id);
@@ -2468,6 +2506,10 @@ class MeshLog {
                 line1.on('mouseout',     mouseout.bind(line1));
                 line2.on('mouseover',    mouseover.bind(line2));
                 line2.on('mouseout',     mouseout.bind(line2));
+
+                if (animatedRoute) {
+                    this._startRouteLineAnimation(lineGlow, line2, innerWeight);
+                }
 
                 // Circle for client-origin unknowns
                 if (path.circle && !circles.includes(circle_id)) {
@@ -2651,8 +2693,12 @@ class MeshLog {
     }
 
     // Only adds descriptors, not layers
-    showPath(id, path, src, reporter, preview = null) {
-        if (this.layer_descs.hasOwnProperty(id)) return;
+    showPath(id, path, src, reporter, preview = null, animated = false) {
+        if (this.layer_descs.hasOwnProperty(id)) {
+            this.layer_descs[id].preview = preview;
+            this.layer_descs[id].animated = animated;
+            return;
+        }
 
         let hashes = path ? path.split(',') : [];
         let prev = {
@@ -2673,7 +2719,8 @@ class MeshLog {
             paths: [],
             markers: new Set(),
             warnings: [],
-            preview: preview
+            preview: preview,
+            animated: animated
         }
 
         for (let i=hashes.length-1;i>=0;i--) {
