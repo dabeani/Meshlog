@@ -324,6 +324,20 @@ h2 {
     flex: auto;
 }
 
+/* Dark-themed distance tooltip on hop lines */
+.leaflet-tooltip.hop-tooltip {
+    background: rgba(12, 12, 14, 0.88);
+    border: 1px solid #444;
+    color: #e8e8e8;
+    font-size: 0.72rem;
+    padding: 3px 7px;
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+}
+.leaflet-tooltip.hop-tooltip::before {
+    border-top-color: #444;
+}
+
 #warning {
     background: #262626;
     position: absolute;

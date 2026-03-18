@@ -2208,15 +2208,16 @@ class MeshLog {
         let decors = {};
         let warnings = [];
 
-        const ln_weight = 2;
-        const ln_outline = 4;
-        const ln_decor_weight = 3;
-        const ln_decor_outline = 5;
-        const ln_offset = 8;
-        const ln_repeat = 150;
+        const ln_weight        = 3;
+        const ln_glow          = 16;
+        const ln_outline       = 5;
+        const ln_decor_weight  = 4;
+        const ln_decor_outline = 7;
+        const ln_offset        = 10;
+        const ln_repeat        = 120;
 
-        const linkColor =  '#555';
-        const linkStrokeColor = '#fff';
+        const linkOutlineColor = '#0d0d0d';
+        const linkStrokeColor  = '#fff';
 
         Object.entries(this.layer_descs).forEach(([k,desc]) => {
             for (const cid of desc.markers) {
@@ -2225,9 +2226,9 @@ class MeshLog {
 
             for (let i=0;i<desc.paths.length;i++) {
                 let path = desc.paths[i];
-                let line_uid = [path.from.contact_id, path.to.contact_id].join('_');
-                let line_id = [path.from.contact_id, path.to.contact_id].sort((a, b) => a - b).join('_');
-                let decor_id = `${path.reporter.data.id}`;
+                let line_uid  = [path.from.contact_id, path.to.contact_id].join('_');
+                let line_id   = [path.from.contact_id, path.to.contact_id].sort((a, b) => a - b).join('_');
+                let decor_id  = `${path.reporter.data.id}`;
                 let circle_id = `${path.to.contact_id}`;
 
                 let linePath = [
@@ -2235,11 +2236,16 @@ class MeshLog {
                     [path.from.lat, path.from.lon]
                 ];
 
-                let line1 = L.polyline(linePath, {renderer: this.canvas_renderer, color: linkStrokeColor, weight: ln_outline});
-                let line2 = L.polyline(linePath, {renderer: this.canvas_renderer, color: linkColor, weight: ln_weight});
+                const reporterColor = path.reporter.getStyle().color ?? '#4ea4c4';
+
+                // Three-layer rendering: wide semi-transparent glow → dark outline → colored inner
+                let lineGlow = L.polyline(linePath, {renderer: this.canvas_renderer, color: reporterColor, weight: ln_glow,    opacity: 0.22});
+                let line1    = L.polyline(linePath, {renderer: this.canvas_renderer, color: linkOutlineColor, weight: ln_outline});
+                let line2    = L.polyline(linePath, {renderer: this.canvas_renderer, color: reporterColor,    weight: ln_weight});
 
                 if (!links.includes(line_id)) {
                     links.push(line_id);
+                    lineGlow.addTo(this.link_layers);
                     line1.addTo(this.link_layers);
                     line2.addTo(this.link_layers);
                 }
@@ -2251,54 +2257,51 @@ class MeshLog {
                     dist = `${Math.round(dist * 100) / 100} km`;
                 }
 
-                line1.bindTooltip(dist, {
-                    sticky: true,     // follows mouse
-                    direction: 'top'  // optional, tooltip position
-                });
-
-                line2.bindTooltip(dist, {
-                    sticky: true,     // follows mouse
-                    direction: 'top'  // optional, tooltip position
-                });
+                const tooltipOpts = { sticky: true, direction: 'top', className: 'hop-tooltip' };
+                lineGlow.bindTooltip(dist, tooltipOpts);
+                line1.bindTooltip(dist, tooltipOpts);
+                line2.bindTooltip(dist, tooltipOpts);
 
                 const mouseover = function(e) {
-                    line1.setStyle({ color: 'yellow' });
-                    this.openTooltip(); // show tooltip manually
-                }
+                    lineGlow.setStyle({ opacity: 0.6, weight: ln_glow + 8 });
+                    line1.setStyle({ color: '#ffea00' });
+                    line2.setStyle({ color: '#ffef80', weight: ln_weight + 2 });
+                    this.openTooltip();
+                };
 
                 const mouseout = function(e) {
-                    line1.setStyle({ color: linkStrokeColor });
+                    lineGlow.setStyle({ opacity: 0.22, weight: ln_glow });
+                    line1.setStyle({ color: linkOutlineColor });
+                    line2.setStyle({ color: reporterColor, weight: ln_weight });
                     this.closeTooltip();
-                }
+                };
 
-                line1.on('mouseover', mouseover.bind(line1));
-                line1.on('mouseout', mouseout.bind(line1));
-                line2.on('mouseover', mouseover.bind(line2));
-                line2.on('mouseout', mouseout.bind(line2));
+                lineGlow.on('mouseover', mouseover.bind(lineGlow));
+                lineGlow.on('mouseout',  mouseout.bind(lineGlow));
+                line1.on('mouseover',    mouseover.bind(line1));
+                line1.on('mouseout',     mouseout.bind(line1));
+                line2.on('mouseover',    mouseover.bind(line2));
+                line2.on('mouseout',     mouseout.bind(line2));
 
-                // Circle
+                // Circle for client-origin unknowns
                 if (path.circle && !circles.includes(circle_id)) {
                     circles.push(circle_id);
-
-                    let r = 1000;
-                    let op = .2;
-
                     let circle = L.circle(linePath[0], {
-                        color: linkColor,
-                        fillColor: linkColor,
-                        fillOpacity: op,
-                        radius: r
+                        color: reporterColor,
+                        fillColor: reporterColor,
+                        fillOpacity: 0.2,
+                        radius: 1000
                     });
                     circle.addTo(this.link_layers);
                 }
 
-                // Decoratinos
+                // Arrow decorators — show hop direction
                 if (!decors.hasOwnProperty(line_uid)) {
                     decors[line_uid] = [];
                 }
 
                 if (!decors[line_uid].includes(decor_id)) {
-                    const offset = ln_offset * decors[line_uid].length; // TODO - should increase per 
+                    const offset = ln_offset * decors[line_uid].length;
                     decors[line_uid].push(decor_id);
 
                     const strokeColor = path.reporter.getStyle().stroke ?? linkStrokeColor;
@@ -2309,7 +2312,7 @@ class MeshLog {
                             offset: offset,
                             repeat: ln_repeat,
                             symbol: L.Symbol.arrowHead({
-                                pixelSize: 10,
+                                pixelSize: 14,
                                 polygon: false,
                                 pathOptions: { renderer: this.canvas_renderer, stroke: true, color: strokeColor, weight: ln_decor_outline }
                             })
@@ -2318,12 +2321,12 @@ class MeshLog {
                             offset: offset,
                             repeat: ln_repeat,
                             symbol: L.Symbol.arrowHead({
-                                pixelSize: 10,
+                                pixelSize: 14,
                                 polygon: false,
                                 pathOptions: { renderer: this.canvas_renderer, stroke: true, color: path.reporter.getStyle().color, weight: ln_decor_weight }
                             })
                         }
-                    ]
+                        ]
                     });
 
                     if (this.decor) {
@@ -2343,6 +2346,121 @@ class MeshLog {
         }
         this.showWarning(warningsStr);
         this.fadeMarkers();
+    }
+
+    // Build ordered [lat,lon] waypoints for a path: sender → hops → reporter
+    _buildPathWaypoints(hashes, src, reporter) {
+        const waypoints = [];
+        let prev = { lat: reporter.data.lat, lon: reporter.data.lon };
+        waypoints.push([prev.lat, prev.lon]);
+        for (let i = hashes.length - 1; i >= 0; i--) {
+            const nearest = this.findNearestContact(prev.lat, prev.lon, hashes[i], true);
+            if (nearest && nearest.result.adv) {
+                prev = { lat: nearest.result.adv.data.lat, lon: nearest.result.adv.data.lon };
+                waypoints.push([prev.lat, prev.lon]);
+            }
+        }
+        if (src && src.adv && (src.adv.data.lat !== 0 || src.adv.data.lon !== 0)) {
+            waypoints.push([src.adv.data.lat, src.adv.data.lon]);
+        }
+        return waypoints.reverse(); // sender → reporter
+    }
+
+    _calcPathLength(waypoints) {
+        let total = 0;
+        for (let i = 1; i < waypoints.length; i++) {
+            total += haversineDistance(waypoints[i-1][0], waypoints[i-1][1], waypoints[i][0], waypoints[i][1]);
+        }
+        return total || 0.001;
+    }
+
+    // Animate a traveling dot + glow line from waypoints[0] to waypoints[last]
+    _runPathAnimation(waypoints, color) {
+        const validWpts = waypoints.filter(w => w[0] !== 0 || w[1] !== 0);
+        if (validWpts.length < 2) return;
+
+        const animLayer = L.layerGroup().addTo(this.map);
+        const cr = this.canvas_renderer;
+
+        const glowLine  = L.polyline(waypoints, { renderer: cr, color: color,     weight: 14, opacity: 0 }).addTo(animLayer);
+        const innerLine = L.polyline(waypoints, { renderer: cr, color: '#ffffff', weight: 2,  opacity: 0 }).addTo(animLayer);
+        const dot = L.circleMarker(waypoints[0], {
+            renderer: cr, radius: 7, color: '#ffffff', fillColor: color, fillOpacity: 1, weight: 2, opacity: 1
+        }).addTo(animLayer);
+        const pulse = L.circleMarker(waypoints[waypoints.length - 1], {
+            renderer: cr, radius: 0, color: color, fillColor: color, fillOpacity: 0.35, weight: 2, opacity: 0
+        }).addTo(animLayer);
+
+        const totalLen     = this._calcPathLength(waypoints);
+        const travelMs     = Math.min(3200, Math.max(1000, totalLen * 350));
+        const glowInMs     = travelMs * 0.12;
+        const glowOutMs    = travelMs * 0.65;
+        const totalMs      = travelMs + 900;
+        const startTime    = performance.now();
+        const self         = this;
+
+        const ptAlongPath = (t) => {
+            const target = t * totalLen;
+            let dist = 0;
+            for (let i = 1; i < waypoints.length; i++) {
+                const seg = haversineDistance(waypoints[i-1][0], waypoints[i-1][1], waypoints[i][0], waypoints[i][1]);
+                if (dist + seg >= target || i === waypoints.length - 1) {
+                    const st = seg > 0 ? Math.min(1, (target - dist) / seg) : 0;
+                    return [
+                        waypoints[i-1][0] + (waypoints[i][0] - waypoints[i-1][0]) * st,
+                        waypoints[i-1][1] + (waypoints[i][1] - waypoints[i-1][1]) * st
+                    ];
+                }
+                dist += seg;
+            }
+            return waypoints[waypoints.length - 1];
+        };
+
+        const animate = (now) => {
+            const t = now - startTime;
+            if (t > totalMs) { self.map.removeLayer(animLayer); return; }
+
+            // Glow envelope
+            let gOp;
+            if      (t < glowInMs)  { gOp = (t / glowInMs) * 0.55; }
+            else if (t < glowOutMs) { gOp = 0.55; }
+            else                    { gOp = 0.55 * (1 - (t - glowOutMs) / (totalMs - glowOutMs)); }
+            glowLine.setStyle({ opacity: gOp });
+            innerLine.setStyle({ opacity: Math.min(gOp * 1.5, 0.85) });
+
+            // Traveling dot with ease-in-out
+            const rawT  = Math.min(t / travelMs, 1);
+            const eased = rawT < 0.5 ? 2 * rawT * rawT : -1 + (4 - 2 * rawT) * rawT;
+            dot.setLatLng(ptAlongPath(eased));
+
+            if (t > glowOutMs) {
+                const ft = (t - glowOutMs) / (totalMs - glowOutMs);
+                dot.setStyle({ opacity: 1 - ft, fillOpacity: 1 - ft });
+            }
+
+            // Expanding ring at destination once dot arrives
+            if (rawT >= 1) {
+                const pt = Math.min((t - travelMs) / 700, 1);
+                pulse.setStyle({ opacity: 1 - pt, fillOpacity: 0.35 * (1 - pt) });
+                pulse.setRadius(pt * 22);
+            }
+
+            requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+    }
+
+    _animateNewPacketPath(msg) {
+        if (!msg.reports || msg.reports.length === 0) return;
+        const srcContact = this.contacts[msg.data.contact_id] ?? null;
+        msg.reports.forEach(report => {
+            const reporter = this.reporters[report.data.reporter_id];
+            if (!reporter) return;
+            const hashes    = report.data.path ? report.data.path.split(',') : [];
+            const waypoints = this._buildPathWaypoints(hashes, srcContact, reporter);
+            const color     = reporter.getStyle().color ?? '#4eb8d0';
+            this._runPathAnimation(waypoints, color);
+        });
     }
 
     // Only adds descriptors, not layers
@@ -2442,6 +2560,8 @@ class MeshLog {
             };
             this.new_messages[hash].push(msg);
         }
+        // Animate the path of any newly received packet on the map
+        this._animateNewPacketPath(msg);
     }
 
     clearNotifications() {
