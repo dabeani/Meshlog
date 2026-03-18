@@ -395,7 +395,7 @@ h2 {
     opacity: 0;
     transition: opacity 0.22s ease, transform 0.22s ease;
     z-index: 900;
-    white-space: nowrap;
+    white-space: normal;
     text-align: left;
 }
 .custom-div-icon .marker-label-text::after {
@@ -667,20 +667,19 @@ h2 {
 
 .tooltip-hash {
     color: #444;
-    font-weight: normal;
-    font-family: "Fira Mono", "Menlo", "Consolas", monospace;
-    font-size: 0.95em;
-    background: #f6f6f6;
-    border-radius: 3px;
-    padding: 0 3px;
-    letter-spacing: 0.04em;
-    vertical-align: middle;
-    display: inline-block;
-    line-height: 1.1;
-    margin-left: 2px;
-    margin-right: 2px;
-    min-width: 2.2em;
-    text-align: center;
+    font-weight: bold;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.01em;
+    background: none;
+    border-radius: 0;
+    padding: 0;
+    vertical-align: baseline;
+    display: inline;
+    line-height: inherit;
+    margin: 0 1px;
+    min-width: 0;
+    text-align: left;
 }
 
 #login {
