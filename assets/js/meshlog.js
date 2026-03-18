@@ -49,6 +49,7 @@ class MeshLogObject {
         this.data = {}; // db data
         this.flags = {};
         this.dom = null;
+        this.highlight = false;
         this.time = 0; // created_at
         this.merge(data);
     }
@@ -62,6 +63,12 @@ class MeshLogObject {
     // override
     createDom(recreate = false) {}
     updateDom() {}
+
+    setHighlight(highlight) {
+        if (this.highlight === highlight) return;
+        this.highlight = highlight;
+        if (this.dom) this.updateDom();
+    }
 
     static onclick(e) {}
     static onmouseover(e) {}
@@ -166,17 +173,30 @@ class MeshLogContact extends MeshLogObject {
     }
 
     static onmouseover(e) {
+        this.setHighlight(true);
+        const reporter = this.isReporter();
         // Show marker
         const descid = `c_${this.data.id}`;
         this._meshlog.layer_descs[descid] = {
             paths: [],
             markers: new Set().add(this.data.id),
-            warnings: []
+            warnings: [],
+            preview: {
+                title: this.adv?.data?.name ?? this.data.public_key,
+                subtitle: 'Live node focus',
+                accent: reporter ? (reporter.getStyle().color ?? '#d87dff') : '#d87dff',
+                chips: [
+                    `[${this.hash}]`,
+                    this.isRepeater() ? 'Repeater' : this.isRoom() ? 'Room' : this.isSensor() ? 'Sensor' : 'Chat'
+                ],
+                footer: this.last?.data?.created_at ? `Last heard ${this.last.data.created_at}` : ''
+            }
         }
         this._meshlog.updatePaths();
     }
 
     static onmouseout(e) {
+        this.setHighlight(false);
         const descid = `c_${this.data.id}`;
         delete this._meshlog.layer_descs[descid];
         this._meshlog.updatePaths();
@@ -791,11 +811,29 @@ class MeshLogReport {
     showPath() {
         let sender = this._meshlog.contacts[this.contact_id] ?? false;
         let receiver = this._meshlog.reporters[this.data.reporter_id];
-        this._meshlog.showPath(this.data.id, this.data.path, sender, receiver);
+        this._meshlog.showPath(this.data.id, this.data.path, sender, receiver, this.getPreviewData());
     }
 
     hidePath() {
         this._meshlog.hidePath(this.data.id);
+    }
+
+    getPreviewData() {
+        const sender = this._meshlog.contacts[this.contact_id] ?? false;
+        const reporter = this._meshlog.reporters[this.data.reporter_id] ?? false;
+        const hops = this.data.path ? this.data.path.split(',').filter(Boolean).length : 0;
+        const packetType = this.parent?.getPathTag ? this.parent.getPathTag() : 'PKT';
+
+        return {
+            title: `${packetType} live route`,
+            subtitle: `${sender?.data?.name ?? this.parent?.data?.name ?? 'Unknown sender'} → ${reporter?.data?.name ?? 'Unknown reporter'}`,
+            accent: reporter ? (reporter.getStyle().color ?? '#4ea4c4') : '#4ea4c4',
+            chips: [
+                hops > 0 ? `${hops} hop${hops === 1 ? '' : 's'}` : 'Direct',
+                this.data.snr ? `SNR ${this.data.snr}` : null
+            ].filter(Boolean),
+            footer: this.data.path ? `Path ${this.data.path}` : 'Path direct'
+        };
     }
 
     createDom(recreate = false) {
@@ -846,13 +884,19 @@ class MeshLogReport {
     }
 
     static onmouseover(e) {
+        if (this.parent) this.parent.setHighlight(true);
         this.showPath();
         this._meshlog.updatePaths();
     }
 
     static onmouseout(e) {
-        if (this.parent.dom.input.show.checked) return;
+        if (this.parent) this.parent.setHighlight(false);
+        if (this.parent.dom.input.show.checked) {
+            this._meshlog.updatePaths();
+            return;
+        }
         this.hidePath();
+        this._meshlog.updatePaths();
     }
 
     static oncontextmenu(e) {
@@ -1204,6 +1248,7 @@ class MeshLogReportedObject extends MeshLogObject {
     }
 
     static onmouseover(e) {
+        this.setHighlight(true);
         // show paths
         for (let i=0;i<this.reports.length;i++) {
             this.reports[i].showPath();
@@ -1212,8 +1257,12 @@ class MeshLogReportedObject extends MeshLogObject {
     }
 
     static onmouseout(e) {
+        this.setHighlight(false);
         // hide path
-        if (this.dom.input.show.checked) return;
+        if (this.dom.input.show.checked) {
+            this._meshlog.updatePaths();
+            return;
+        }
         for (let i=0;i<this.reports.length;i++) {
             this.reports[i].hidePath();
         }
@@ -1470,6 +1519,7 @@ class MeshLog {
         this.__init_contact_order();
         this.__init_contact_types();
         this.__init_warnings();
+        this.__init_route_preview();
 
         this.link_layers.addTo(this.map);
 
@@ -1815,6 +1865,13 @@ class MeshLog {
         this.dom_warning.append(this.dom_warning_messages_btn);
     }
 
+    __init_route_preview() {
+        this.dom_route_preview = document.createElement("div");
+        this.dom_route_preview.classList.add("map-route-preview");
+        this.dom_route_preview.hidden = true;
+        this.map.getContainer().append(this.dom_route_preview);
+    }
+
     __addObject(dataset, id, obj) {
         if (dataset.hasOwnProperty(id)) {
             dataset[id].merge(obj.data);
@@ -1875,6 +1932,119 @@ class MeshLog {
         } else {
             this.dom_warning.hidden = true;
         }
+    }
+
+    getContactLabel(contactId) {
+        const contact = this.contacts[contactId] ?? false;
+        if (!contact) return null;
+        return contact.adv?.data?.name ?? contact.data?.name ?? `Node ${contactId}`;
+    }
+
+    getRouteSequence(desc) {
+        if (!desc) return [];
+
+        if (desc.paths && desc.paths.length > 0) {
+            const reversed = [...desc.paths].reverse();
+            const ids = [];
+
+            if (reversed[0]?.to?.contact_id) {
+                ids.push(reversed[0].to.contact_id);
+            }
+
+            reversed.forEach(segment => {
+                if (segment.from?.contact_id) {
+                    ids.push(segment.from.contact_id);
+                }
+            });
+
+            return ids
+                .map(contactId => this.getContactLabel(contactId))
+                .filter((label, index, labels) => label && (index === 0 || label !== labels[index - 1]));
+        }
+
+        return Array.from(desc.markers ?? [])
+            .map(contactId => this.getContactLabel(contactId))
+            .filter(Boolean);
+    }
+
+    updateRoutePreview() {
+        if (!this.dom_route_preview) return;
+
+        const previews = Object.values(this.layer_descs)
+            .filter(desc => desc.preview)
+            .slice(0, 3);
+
+        this.dom_route_preview.replaceChildren();
+
+        if (previews.length < 1) {
+            this.dom_route_preview.hidden = true;
+            return;
+        }
+
+        const header = document.createElement("div");
+        header.classList.add("map-route-preview-header");
+        header.textContent = previews.length > 1 ? `Live packet routes · ${previews.length}` : 'Live packet route';
+        this.dom_route_preview.append(header);
+
+        previews.forEach(desc => {
+            const preview = desc.preview;
+            const card = document.createElement("div");
+            const title = document.createElement("div");
+            const subtitle = document.createElement("div");
+            const chips = document.createElement("div");
+            const flow = document.createElement("div");
+
+            card.classList.add("map-route-card");
+            card.style.setProperty("--route-accent", preview.accent ?? '#4ea4c4');
+
+            title.classList.add("map-route-title");
+            title.textContent = preview.title ?? 'Route';
+
+            subtitle.classList.add("map-route-subtitle");
+            subtitle.textContent = preview.subtitle ?? '';
+
+            chips.classList.add("map-route-chips");
+            (preview.chips ?? []).forEach(chipText => {
+                const chip = document.createElement("span");
+                chip.classList.add("map-route-chip");
+                chip.textContent = chipText;
+                chips.append(chip);
+            });
+
+            const sequence = this.getRouteSequence(desc);
+            if (sequence.length > 0) {
+                flow.classList.add("map-route-flow");
+                sequence.forEach((step, index) => {
+                    const stepEl = document.createElement("span");
+                    stepEl.classList.add("map-route-step");
+                    stepEl.textContent = step;
+                    flow.append(stepEl);
+
+                    if (index < sequence.length - 1) {
+                        const arrow = document.createElement("span");
+                        arrow.classList.add("map-route-arrow");
+                        arrow.textContent = '→';
+                        flow.append(arrow);
+                    }
+                });
+            }
+
+            card.append(title);
+            if (preview.subtitle) card.append(subtitle);
+            if (chips.childElementCount > 0) card.append(chips);
+            if (flow.childElementCount > 0) card.append(flow);
+
+            if (preview.footer) {
+                const footer = document.createElement("div");
+                footer.classList.add("map-route-footer");
+                footer.textContent = preview.footer;
+                card.append(footer);
+            }
+
+            this.dom_route_preview.append(card);
+        });
+
+        this.dom_route_preview.hidden = false;
     }
 
     showError(message, timeout=0) {
@@ -2356,6 +2526,7 @@ class MeshLog {
         }
         this.showWarning(warningsStr);
         this.fadeMarkers();
+        this.updateRoutePreview();
     }
 
     // Build ordered [lat,lon] waypoints for a path: sender → hops → reporter
@@ -2474,7 +2645,7 @@ class MeshLog {
     }
 
     // Only adds descriptors, not layers
-    showPath(id, path, src, reporter) {
+    showPath(id, path, src, reporter, preview = null) {
         if (this.layer_descs.hasOwnProperty(id)) return;
 
         let hashes = path ? path.split(',') : [];
@@ -2495,7 +2666,8 @@ class MeshLog {
         let desc = {
             paths: [],
             markers: new Set(),
-            warnings: []
+            warnings: [],
+            preview: preview
         }
 
         for (let i=hashes.length-1;i>=0;i--) {
