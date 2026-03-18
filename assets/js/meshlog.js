@@ -627,8 +627,8 @@ class MeshLogContact extends MeshLogObject {
             const hash    = this.hash ?? '';
             const heard   = this.last?.data?.created_at ?? '';
             this._labelEl.innerHTML =
-                `<p class="mlabel-title">${name} <span class="mlabel-hash">[${hash}]</span></p>` +
-                (heard ? `<p class="mlabel-detail">Last heard: ${heard}</p>` : '');
+                `<p class="tooltip-title">${name} <span class="tooltip-hash">[${hash}]</span></p>` +
+                (heard ? `<p class="tooltip-detail">Last heard: ${heard}</p>` : '');
             this._labelEl.classList.add('visible');
         } else {
             this._labelEl.classList.remove('visible');
