@@ -225,11 +225,39 @@ const formatedTimestamp = (d=new Date())=> {
   return `${date} ${time}`
 }
 
-var map = L.map('map').setView([<?= json_encode($mapLat) ?>, <?= json_encode($mapLon) ?>], <?= json_encode($mapZoom) ?>);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-}).addTo(map);
+var map = L.map('map', { zoomControl: true }).setView([<?= json_encode($mapLat) ?>, <?= json_encode($mapLon) ?>], <?= json_encode($mapZoom) ?>);
+
+var _TILE_LAYERS = {
+    dark:  { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+             opts: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>' } },
+    light: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+             opts: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' } }
+};
+var _activeTileLayer = null;
+function _setTileLayer(name) {
+    if (_activeTileLayer) map.removeLayer(_activeTileLayer);
+    var cfg = _TILE_LAYERS[name];
+    _activeTileLayer = L.tileLayer(cfg.url, cfg.opts).addTo(map);
+    try { localStorage.setItem('meshlog_map_layer', name); } catch(e) {}
+    document.querySelectorAll('.map-layer-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.layer === name);
+    });
+}
+var _LayerToggle = L.Control.extend({
+    options: { position: 'bottomleft' },
+    onAdd: function() {
+        var div = L.DomUtil.create('div', 'map-layer-toggle');
+        div.innerHTML = '<button class="map-layer-btn" data-layer="dark">Dark</button><button class="map-layer-btn" data-layer="light">Light</button>';
+        L.DomEvent.disableClickPropagation(div);
+        div.querySelectorAll('.map-layer-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() { _setTileLayer(btn.dataset.layer); });
+        });
+        return div;
+    }
+});
+new _LayerToggle().addTo(map);
+var _savedLayer = (function(){ try { return localStorage.getItem('meshlog_map_layer'); } catch(e){ return null; } })();
+_setTileLayer(_savedLayer === 'light' ? 'light' : 'dark');
 
 var meshlog = new MeshLog(
     map,
