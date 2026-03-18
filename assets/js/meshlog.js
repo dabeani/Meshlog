@@ -605,13 +605,6 @@ class MeshLogContact extends MeshLogObject {
             }
         }
 
-        // Label embedded in the icon so CSS positions it precisely above the bubble
-        let labelEl = document.createElement("div");
-        labelEl.className = 'marker-label-text';
-        labelEl.textContent = this.adv.data.name ?? '';
-        icdivroot.appendChild(labelEl);
-        this._labelEl = labelEl;
-
         let icon = L.divIcon({
             className: 'custom-div-icon',
             html: icdivroot,
@@ -640,18 +633,11 @@ class MeshLogContact extends MeshLogObject {
     }
 
     showLabel(show) {
-        if (!this._labelEl) return;
         if (show) {
-            const name    = this.adv?.data?.name ?? '';
-            const hash    = this.hash ?? '';
-            const heard   = this.last?.data?.created_at ?? '';
-            this._labelEl.innerHTML =
-                `<div class="marker-label-row"><span class="marker-label-name">${name}</span><span class="marker-label-hash">[${hash}]</span></div>` +
-                (heard ? `<div class="marker-label-detail">Last heard: ${heard}</div>` : '');
-            this._labelEl.classList.add('visible');
+            this.updateTooltip();
+            this.marker?.openTooltip();
         } else {
-            this._labelEl.classList.remove('visible');
-            this._labelEl.innerHTML = '';
+            this.marker?.closeTooltip();
         }
     }
 
