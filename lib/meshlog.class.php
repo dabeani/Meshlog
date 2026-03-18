@@ -722,14 +722,19 @@ class MeshLog {
 
         $results = [];
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $row['reports'] = json_decode($row['reports'], true);
+            $reports = json_decode($row['reports'], true);
+            // Filter out NULL rows produced by LEFT JOIN when no reports exist
+            $reports = array_values(array_filter($reports, function($r) { return !empty($r['id']); }));
+
             // Convert DB row to entity and call asArray()
             if (class_exists($tklass)) {
                 $entity = call_user_func([$tklass, 'fromDb'], $row, $this);
-                $results[] = $entity ? $entity->asArray() : $row;
+                $arr = $entity ? $entity->asArray() : $row;
             } else {
-                $results[] = $row;
+                $arr = $row;
             }
+            $arr['reports'] = $reports;
+            $results[] = $arr;
         }
 
         return array("objects" => $results);
