@@ -106,8 +106,9 @@ class MeshLogChannelMessage extends MeshLogEntity {
         if ($this->meshlog->getConfig(MeshLogSetting::KEY_ANONYMIZE_USERNAMES, 0)) {
             $name = 'XXXXXX';
             // Anonymize [@USERNAME], @[USERNAME], and @USERNAME style mentions
-            $message = preg_replace('/\[@[\w]+\]/', '[@XXXXXX]', $message);
-            $message = preg_replace('/@\[[\w]+\]/', '@[XXXXXX]', $message);
+            // Use [^\]]+ inside brackets to handle names with spaces
+            $message = preg_replace('/\[@[^\]]+\]/', '[@XXXXXX]', $message);
+            $message = preg_replace('/@\[[^\]]+\]/', '@[XXXXXX]', $message);
             $message = preg_replace('/@[\w]+/', '@XXXXXX', $message);
         }
 
