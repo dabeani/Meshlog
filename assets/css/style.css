@@ -668,6 +668,19 @@ h2 {
 .tooltip-hash {
     color: #444;
     font-weight: normal;
+    font-family: "Fira Mono", "Menlo", "Consolas", monospace;
+    font-size: 0.95em;
+    background: #f6f6f6;
+    border-radius: 3px;
+    padding: 0 3px;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+    display: inline-block;
+    line-height: 1.1;
+    margin-left: 2px;
+    margin-right: 2px;
+    min-width: 2.2em;
+    text-align: center;
 }
 
 #login {
