@@ -630,7 +630,7 @@ class MeshLogContact extends MeshLogObject {
             this.marker.unbindTooltip();
 
             if (tooltip === undefined) {
-                tooltip = `<p class="tooltip-title"><span class="tooltip-title-text">${this.adv.data.name}</span><span class="tooltip-hash">[${this.hash}]</span></p><p class="tooltip-detail">Last heard: ${this.last.data.created_at}</p>`;
+                tooltip = `<p class="tooltip-title">${this.adv.data.name} <span class="tooltip-hash">[${this.hash}]</span></p><p class="tooltip-detail">Last heard: ${this.last.data.created_at}</p>`;
             }
 
             if (tooltip) {
@@ -646,8 +646,8 @@ class MeshLogContact extends MeshLogObject {
             const hash    = this.hash ?? '';
             const heard   = this.last?.data?.created_at ?? '';
             this._labelEl.innerHTML =
-                `<p class="tooltip-title"><span class="tooltip-title-text">${name}</span><span class="tooltip-hash">[${hash}]</span></p>` +
-                (heard ? `<p class="tooltip-detail">Last heard: ${heard}</p>` : '');
+                `<div class="marker-label-row"><span class="marker-label-name">${name}</span><span class="marker-label-hash">[${hash}]</span></div>` +
+                (heard ? `<div class="marker-label-detail">Last heard: ${heard}</div>` : '');
             this._labelEl.classList.add('visible');
         } else {
             this._labelEl.classList.remove('visible');

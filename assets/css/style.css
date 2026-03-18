@@ -398,6 +398,42 @@ h2 {
     white-space: normal;
     text-align: left;
 }
+
+.custom-div-icon .marker-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 5px;
+    min-width: 0;
+}
+
+.custom-div-icon .marker-label-name {
+    color: #111;
+    font-weight: bold;
+    line-height: 1.15;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.custom-div-icon .marker-label-hash {
+    color: #555;
+    font-family: monospace;
+    font-size: 10px;
+    font-weight: normal;
+    line-height: 1;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    position: relative;
+    top: 1px;
+}
+
+.custom-div-icon .marker-label-detail {
+    color: #444;
+    font-size: 0.8em;
+    line-height: 1.25;
+    margin-top: 2px;
+}
+
 .custom-div-icon .marker-label-text::after {
     content: '';
     position: absolute;
@@ -658,17 +694,6 @@ h2 {
 .tooltip-title {
     color: #111;
     font-weight: bold;
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 6px;
-}
-
-.tooltip-title-text {
-    color: inherit;
-    font: inherit;
-    min-width: 0;
-    flex: 1 1 auto;
 }
 
 .tooltip-detail {
@@ -678,20 +703,17 @@ h2 {
 
 .tooltip-hash {
     color: #444;
-    font-weight: bold;
+    font-weight: normal;
     font-family: monospace;
-    font-size: 0.84em;
+    font-size: 0.8em;
     letter-spacing: 0;
     background: none;
     border-radius: 0;
     padding: 0;
     vertical-align: baseline;
-    display: inline-block;
-    line-height: 1;
+    display: inline;
+    line-height: inherit;
     margin: 0;
-    min-width: 0;
-    text-align: right;
-    flex: 0 0 auto;
     white-space: nowrap;
 }
 
