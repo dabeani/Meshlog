@@ -808,14 +808,19 @@ class MeshLogReport {
         this.parent = parent;
     }
 
+    getPathLayerId() {
+        const parentTag = this.parent?.getPathTag ? this.parent.getPathTag() : 'PKT';
+        return `r_${parentTag}_${this.data.id}`;
+    }
+
     showPath(animated = false) {
         let sender = this._meshlog.contacts[this.contact_id] ?? false;
         let receiver = this._meshlog.reporters[this.data.reporter_id];
-        this._meshlog.showPath(this.data.id, this.data.path, sender, receiver, this.getPreviewData(), animated);
+        this._meshlog.showPath(this.getPathLayerId(), this.data.path, sender, receiver, this.getPreviewData(), animated);
     }
 
     hidePath() {
-        this._meshlog.hidePath(this.data.id);
+        this._meshlog.hidePath(this.getPathLayerId());
     }
 
     getPreviewData() {
