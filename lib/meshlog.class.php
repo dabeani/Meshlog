@@ -720,7 +720,13 @@ class MeshLog {
         $results = [];
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $row['reports'] = json_decode($row['reports'], true);
-            $results[] = $row;
+            // Convert DB row to entity and call asArray()
+            if (class_exists($tklass)) {
+                $entity = call_user_func([$tklass, 'fromDb'], $row, $this);
+                $results[] = $entity ? $entity->asArray() : $row;
+            } else {
+                $results[] = $row;
+            }
         }
 
         return array("objects" => $results);
