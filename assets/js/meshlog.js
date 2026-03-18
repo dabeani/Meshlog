@@ -1251,6 +1251,14 @@ class MeshLogReportedObject extends MeshLogObject {
     static onclick(e) {
         this.expanded = !this.expanded;
         this.updateDom();
+
+        // Show paths and fit the map to the route
+        const ids = this.reports.map(r => r.getPathLayerId());
+        for (let i = 0; i < this.reports.length; i++) {
+            this.reports[i].showPath(false);
+        }
+        this._meshlog.fitToLayerDescs(ids);
+        this._meshlog.updatePaths();
     }
 
     static onmouseover(e) {
@@ -2432,11 +2440,11 @@ class MeshLog {
         let decors = {};
         let warnings = [];
 
-        const ln_weight        = 3;
-        const ln_glow          = 16;
-        const ln_outline       = 5;
-        const ln_decor_weight  = 4;
-        const ln_decor_outline = 7;
+        const ln_weight        = 2;
+        const ln_glow          = 8;
+        const ln_outline       = 3;
+        const ln_decor_weight  = 3;
+        const ln_decor_outline = 5;
         const ln_offset        = 10;
         const ln_repeat        = 120;
 
@@ -2492,9 +2500,9 @@ class MeshLog {
                 line2.bindTooltip(dist, tooltipOpts);
 
                 const mouseover = function(e) {
-                    lineGlow.setStyle({ opacity: 0.6, weight: ln_glow + 8 });
+                    lineGlow.setStyle({ opacity: 0.6, weight: ln_glow + 4 });
                     line1.setStyle({ color: '#ffea00' });
-                    line2.setStyle({ color: '#ffef80', weight: ln_weight + 2 });
+                    line2.setStyle({ color: '#ffef80', weight: ln_weight + 1 });
                     this.openTooltip();
                 };
 
@@ -2579,7 +2587,6 @@ class MeshLog {
         }
         this.showWarning(warningsStr);
         this.fadeMarkers();
-        this.updateRoutePreview();
     }
 
     // Build ordered [lat,lon] waypoints for a path: sender → hops → reporter
@@ -2795,6 +2802,21 @@ class MeshLog {
     hidePath(id) {
         if (!this.layer_descs.hasOwnProperty(id)) return;
         delete this.layer_descs[id];
+    }
+
+    fitToLayerDescs(ids) {
+        const latLngs = [];
+        for (const id of ids) {
+            const desc = this.layer_descs[id];
+            if (!desc) continue;
+            for (const segment of desc.paths) {
+                if (segment.from?.lat && segment.from?.lon) latLngs.push([segment.from.lat, segment.from.lon]);
+                if (segment.to?.lat && segment.to?.lon)   latLngs.push([segment.to.lat,   segment.to.lon]);
+            }
+        }
+        if (latLngs.length > 0) {
+            this.map.fitBounds(L.latLngBounds(latLngs), { padding: [60, 60], maxZoom: 12 });
+        }
     }
 
     refresh() {
