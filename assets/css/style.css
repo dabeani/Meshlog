@@ -658,6 +658,17 @@ h2 {
 .tooltip-title {
     color: #111;
     font-weight: bold;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.tooltip-title-text {
+    color: inherit;
+    font: inherit;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .tooltip-detail {
@@ -668,18 +679,20 @@ h2 {
 .tooltip-hash {
     color: #444;
     font-weight: bold;
-    font-family: inherit;
-    font-size: 11px;
-    letter-spacing: 0.01em;
+    font-family: monospace;
+    font-size: 0.84em;
+    letter-spacing: 0;
     background: none;
     border-radius: 0;
     padding: 0;
     vertical-align: baseline;
-    display: inline;
-    line-height: inherit;
-    margin: 0 1px;
+    display: inline-block;
+    line-height: 1;
+    margin: 0;
     min-width: 0;
-    text-align: left;
+    text-align: right;
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 #login {
