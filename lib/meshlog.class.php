@@ -26,7 +26,8 @@ class MeshLog {
         MeshlogSetting::KEY_MAX_CONTACT_AGE => 1814400,
         MeshlogSetting::KEY_MAX_GROUPING_AGE => 21600,
         MeshlogSetting::KEY_INFLUXDB_URL => "",
-        MeshlogSetting::KEY_INFLUXDB_DB => "Meshlog"
+        MeshlogSetting::KEY_INFLUXDB_DB => "Meshlog",
+        MeshlogSetting::KEY_ANONYMIZE_USERNAMES => 0
     );
 
     function __construct($config) {

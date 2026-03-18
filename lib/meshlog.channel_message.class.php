@@ -100,13 +100,22 @@ class MeshLogChannelMessage extends MeshLogEntity {
 
         if ($this->contact_ref) $cid = $this->contact_ref->getId();
 
+        $name = $this->name ?? '';
+        $message = $this->message ?? '';
+
+        if ($this->meshlog->getConfig(MeshLogSetting::KEY_ANONYMIZE_USERNAMES, 0)) {
+            $name = 'XXXXXX';
+            // Anonymize @mentions in message
+            $message = preg_replace('/@\w+/', '@XXXXXX', $message);
+        }
+
         return array(
             'id' => $this->getId(),
             'contact_id' => $cid,
             'channel_id' => $this->channel_ref->getId(),
             'hash' => $this->hash,
-            'name' => $this->name ?? '',
-            'message' => $this->message ?? '',
+            'name' => $name,
+            'message' => $message,
             "hash_size" => $this->hash_size,
             'sent_at' => $this->sent_at,
             'created_at' => $this->created_at

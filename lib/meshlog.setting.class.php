@@ -6,6 +6,7 @@ class MeshLogSetting extends MeshLogEntity {
     const KEY_MAX_GROUPING_AGE = "MAX_GROUPING_AGE";
     const KEY_INFLUXDB_URL = "INFLUXDB_URL";
     const KEY_INFLUXDB_DB = "INFLUXDB_DB";
+    const KEY_ANONYMIZE_USERNAMES = "ANONYMIZE_USERNAMES";
 
     protected static $table = "settings";
 

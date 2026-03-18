@@ -540,6 +540,67 @@
 
         loadChannels();
     </script>
+
+    <h1>Settings</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Setting</th>
+                <th>Value</th>
+                <td></td>
+            </tr>
+        </thead>
+        <tbody id="settings"></tbody>
+    </table>
+
+    <script>
+        const settingsTable = document.getElementById("settings");
+
+        function loadSettings() {
+            fetch('api/settings/', {
+                method: "GET",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            })
+            .then(response => response.json())
+            .then(result => {
+                settingsTable.innerHTML = '';
+                addSettingRow(settingsTable, 'Anonymize Usernames', 'anonymize_usernames', result.settings.anonymize_usernames == 1);
+            });
+        }
+
+        function addSettingRow(table, label, key, value) {
+            let row = table.insertRow();
+
+            let labelCell = row.insertCell();
+            labelCell.innerText = label;
+
+            let valueCell = row.insertCell();
+            let checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = value;
+            valueCell.append(checkbox);
+
+            let actionCell = row.insertCell();
+            let btnSave = document.createElement("button");
+            btnSave.innerText = "Save";
+            btnSave.onclick = () => {
+                const data = { save: 1, anonymize_usernames: checkbox.checked ? 1 : 0 };
+                fetch('api/settings/', {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams(data)
+                })
+                .then(r => r.json())
+                .then(result => {
+                    if (getError(result)) { alert(getError(result)); }
+                    else { alert('Settings saved'); }
+                });
+            };
+            actionCell.append(btnSave);
+        }
+
+        loadSettings();
+    </script>
 <?php endif ?>
 </body>
 </html>
