@@ -69,8 +69,10 @@ class MeshLogDirectMessage extends MeshLogEntity {
 
         if ($this->meshlog->getConfig(MeshLogSetting::KEY_ANONYMIZE_USERNAMES, 0)) {
             $name = 'XXXXXX';
-            // Anonymize @mentions in message
-            $message = preg_replace('/@\w+/', '@XXXXXX', $message);
+            // Anonymize [@USERNAME], @[USERNAME], and @USERNAME style mentions
+            $message = preg_replace('/\[@[\w]+\]/', '[@XXXXXX]', $message);
+            $message = preg_replace('/@\[[\w]+\]/', '@[XXXXXX]', $message);
+            $message = preg_replace('/@[\w]+/', '@XXXXXX', $message);
         }
 
         return array(
