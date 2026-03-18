@@ -338,6 +338,104 @@ h2 {
     border-top-color: #444;
 }
 
+.map-route-preview {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 800;
+    width: min(360px, calc(100% - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.map-route-preview-header {
+    align-self: flex-end;
+    background: rgba(12, 14, 18, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #d3e5f6;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.map-route-card {
+    --route-accent: #4ea4c4;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(18, 22, 29, 0.92), rgba(11, 15, 20, 0.88));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 14px 16px 14px 18px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(14px);
+}
+
+.map-route-card::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, var(--route-accent), rgba(255, 255, 255, 0));
+}
+
+.map-route-title {
+    color: #f5fbff;
+    font-weight: 700;
+    font-size: 0.96rem;
+}
+
+.map-route-subtitle {
+    margin-top: 4px;
+    color: #b8c8d8;
+    font-size: 0.82rem;
+}
+
+.map-route-chips,
+.map-route-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    align-items: center;
+}
+
+.map-route-chip,
+.map-route-step {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #deebf6;
+    font-size: 0.76rem;
+}
+
+.map-route-step {
+    border-radius: 10px;
+}
+
+.map-route-arrow {
+    color: var(--route-accent);
+    font-weight: 700;
+}
+
+.map-route-footer {
+    margin-top: 10px;
+    color: #94a8bc;
+    font-size: 0.74rem;
+    word-break: break-word;
+}
+
 #warning {
     background: #262626;
     position: absolute;
