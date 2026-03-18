@@ -374,27 +374,30 @@ h2 {
     border-top-color: #444;
 }
 
-/* Permanent repeater name label shown while a route is active */
-.leaflet-tooltip.route-label {
+/* Repeater name label embedded in the divIcon — always exactly above the bubble */
+.custom-div-icon .marker-label-text {
+    position: absolute;
+    bottom: 46px;        /* sits above the 42px tall icon */
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
     background: rgba(10, 10, 14, 0.82);
     border: 1px solid rgba(255,255,255,0.15);
     color: #fff;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 600;
     letter-spacing: 0.02em;
     padding: 2px 8px;
     border-radius: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.7);
-    white-space: nowrap;
     pointer-events: none;
-    animation: route-label-fadein 0.25s ease-out both;
+    opacity: 0;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+    z-index: 900;
 }
-.leaflet-tooltip.route-label::before {
-    border-top-color: rgba(255,255,255,0.15);
-}
-@keyframes route-label-fadein {
-    from { opacity: 0; transform: translateY(4px); }
-    to   { opacity: 1; transform: translateY(0); }
+.custom-div-icon .marker-label-text.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-2px);
 }
 
 

@@ -586,6 +586,13 @@ class MeshLogContact extends MeshLogObject {
             }
         }
 
+        // Label embedded in the icon so CSS positions it precisely above the bubble
+        let labelEl = document.createElement("div");
+        labelEl.className = 'marker-label-text';
+        labelEl.textContent = this.adv.data.name ?? '';
+        icdivroot.appendChild(labelEl);
+        this._labelEl = labelEl;
+
         let icon = L.divIcon({
             className: 'custom-div-icon',
             html: icdivroot,
@@ -614,19 +621,12 @@ class MeshLogContact extends MeshLogObject {
     }
 
     showLabel(show) {
-        if (!this.marker || !this.adv) return;
+        if (!this._labelEl) return;
         if (show) {
-            const name = this.adv.data.name ?? '';
-            this.marker.unbindTooltip();
-            this.marker.bindTooltip(name, {
-                permanent: true,
-                direction: 'top',
-                offset: [0, -44],
-                className: 'route-label'
-            });
-            this.marker.openTooltip();
+            this._labelEl.textContent = this.adv?.data?.name ?? '';
+            this._labelEl.classList.add('visible');
         } else {
-            this.updateTooltip();
+            this._labelEl.classList.remove('visible');
         }
     }
 
@@ -2401,19 +2401,17 @@ class MeshLog {
         const empty = this.visible_markers.size < 1;
         Object.entries(this.contacts).forEach(([k,v]) => {
             if (!v.marker) return;
-            if (empty) {
+            const highlighted = !empty && this.visible_markers.has(v.data.id);
+            if (empty || highlighted) {
                 v.marker.setOpacity(1);
                 v.marker.setZIndexOffset(1000);
-                v.showLabel(false);
-            } else if (this.visible_markers.has(v.data.id)) {
-                v.marker.setOpacity(1);
-                v.marker.setZIndexOffset(1000);
-                v.showLabel(true);
+                v.updateTooltip();
             } else {
                 v.marker.setOpacity(opacity);
                 v.marker.setZIndexOffset(2);
                 v.updateTooltip('');
             }
+            v.showLabel(highlighted);
         });
     }
 
