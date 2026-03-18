@@ -63,6 +63,9 @@ class MeshLog {
             foreach ($settings['objects'] as $s) {
                 $k = $s['name'];
                 $v = $s['value'];
+                if ($k === MeshlogSetting::KEY_ANONYMIZE_USERNAMES) {
+                    $v = (int)$v;
+                }
                 if ($k) {
                     $this->settings[$k] = $v;
                 }
