@@ -226,10 +226,10 @@ const formatedTimestamp = (d=new Date())=> {
 }
 
 var map = L.map('map').setView([<?= json_encode($mapLat) ?>, <?= json_encode($mapLon) ?>], <?= json_encode($mapZoom) ?>);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    subdomains: 'abcd',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2020-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg', {
+    maxZoom: 8,
+    minZoom: 1,
+    attribution: 'Imagery provided by NASA EOSDIS GIBS &mdash; Black Marble, <a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a>'
 }).addTo(map);
 
 var meshlog = new MeshLog(
