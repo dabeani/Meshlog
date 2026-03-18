@@ -102,7 +102,7 @@ class MeshLog {
     }
 
     function setConfig($key, $value) {
-        // TODO write DB
+        $this->settings[$key] = $value;
     }
 
     function authorize($data) {
