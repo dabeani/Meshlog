@@ -826,7 +826,7 @@ class MeshLogReport {
 
         return {
             title: `${packetType} live route`,
-            subtitle: `${sender?.data?.name ?? this.parent?.data?.name ?? 'Unknown sender'} → ${reporter?.data?.name ?? 'Unknown reporter'}`,
+            subtitle: `${sender?.adv?.data?.name ?? sender?.data?.name ?? this.parent?.data?.name ?? 'Unknown sender'} → ${reporter?.data?.name ?? 'Unknown reporter'}`,
             accent: reporter ? (reporter.getStyle().color ?? '#4ea4c4') : '#4ea4c4',
             chips: [
                 hops > 0 ? `${hops} hop${hops === 1 ? '' : 's'}` : 'Direct',
@@ -1455,6 +1455,8 @@ class MeshLogLinkLayer {
 
 
 class MeshLog {
+    static MAX_ROUTE_PREVIEWS = 3;
+
     constructor(map, logsid, contactsid, stypesid, sreportersid, scontactsid, warningid, errorid, contextmenuid) {
         this.reporters = {};
         this.contacts = {};
@@ -1940,6 +1942,10 @@ class MeshLog {
         return contact.adv?.data?.name ?? contact.data?.name ?? `Node ${contactId}`;
     }
 
+    removeConsecutiveDuplicates(values) {
+        return values.filter((value, index, items) => value && (index === 0 || value !== items[index - 1]));
+    }
+
     getRouteSequence(desc) {
         if (!desc) return [];
 
@@ -1957,9 +1963,9 @@ class MeshLog {
                 }
             });
 
-            return ids
-                .map(contactId => this.getContactLabel(contactId))
-                .filter((label, index, labels) => label && (index === 0 || label !== labels[index - 1]));
+            return this.removeConsecutiveDuplicates(
+                ids.map(contactId => this.getContactLabel(contactId))
+            );
         }
 
         return Array.from(desc.markers ?? [])
@@ -1972,7 +1978,7 @@ class MeshLog {
 
         const previews = Object.values(this.layer_descs)
             .filter(desc => desc.preview)
-            .slice(0, 3);
+            .slice(0, MeshLog.MAX_ROUTE_PREVIEWS);
 
         this.dom_route_preview.replaceChildren();
 
