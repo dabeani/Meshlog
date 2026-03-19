@@ -4,6 +4,27 @@
     $errors = array();
     $results = array('status' => 'unknown');
 
+    function channelSnapshot($channel) {
+        if (!$channel) return array();
+        return array(
+            'hash' => $channel->hash,
+            'name' => $channel->name,
+            'psk' => $channel->psk,
+            'enabled' => intval($channel->enabled ?? 0),
+        );
+    }
+
+    function channelChanges($before, $after) {
+        $changes = array();
+        foreach ($after as $key => $newValue) {
+            $oldValue = $before[$key] ?? null;
+            if ((string)$oldValue !== (string)$newValue) {
+                $changes[] = "$key: {$oldValue} → {$newValue}";
+            }
+        }
+        return $changes;
+    }
+
     if (isset($_POST['add'])) {
         $channel = new MeshLogChannel($meshlog);
 
@@ -22,6 +43,12 @@
 
         if (!sizeof($errors)) {
             if ($channel->save($meshlog)) {
+                $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
+                $meshlog->auditLog(
+                    \MeshLogAuditLog::EVENT_CHANNEL_SAVE,
+                    $actor,
+                    'created channel ' . ($channel->name ?? '') . ' [' . ($channel->hash ?? '') . ']'
+                );
                 $results = array(
                     'status' => 'OK',
                     'channel' => $channel->asArray()
@@ -36,6 +63,7 @@
         if (!$channel) {
             $errors[] = 'Channel not found';
         } else {
+            $before = channelSnapshot($channel);
             if (isset($_POST['hash']) && trim($_POST['hash']) !== '') {
                 $channel->hash = trim($_POST['hash']);
             }
@@ -45,6 +73,16 @@
 
             if (!sizeof($errors)) {
                 if ($channel->save($meshlog)) {
+                    $after = channelSnapshot($channel);
+                    $changes = channelChanges($before, $after);
+                    if (!empty($changes)) {
+                        $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
+                        $meshlog->auditLog(
+                            \MeshLogAuditLog::EVENT_CHANNEL_SAVE,
+                            $actor,
+                            'updated channel ' . ($channel->name ?? '') . ': ' . implode('; ', $changes)
+                        );
+                    }
                     $results = array(
                         'status' => 'OK',
                         'channel' => $channel->asArray()
@@ -59,6 +97,12 @@
         $force = isset($_POST['force']) ? boolval(intval($_POST['force'])) : false;
         $channel = MeshLogChannel::findById($id, $meshlog);
         if ($channel && $channel->delete($force)) {
+            $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
+            $meshlog->auditLog(
+                \MeshLogAuditLog::EVENT_CHANNEL_DELETE,
+                $actor,
+                'deleted channel ' . ($channel->name ?? '') . ' [' . ($channel->hash ?? '') . ']' . ($force ? ' with messages' : '')
+            );
             $results = array('status' => 'OK');
         } else {
             $errors[] = 'Failed to delete: ' . ($channel ? $channel->getError() : 'Channel not found');

@@ -476,6 +476,37 @@ if (!$user && isset($_POST['login'])) {
 
         .reporter-key { min-width: 180px; }
 
+        .device-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .device-status.connected {
+            background: rgba(60, 170, 115, 0.16);
+            color: #81e3a6;
+            border: 1px solid rgba(60, 170, 115, 0.35);
+        }
+
+        .device-status.disconnected,
+        .device-status.never-seen {
+            background: rgba(190, 105, 85, 0.14);
+            color: #ef9c8c;
+            border: 1px solid rgba(190, 105, 85, 0.32);
+        }
+
+        .device-status-note {
+            font-size: 0.78rem;
+            color: var(--admin-muted);
+            margin-top: 4px;
+            white-space: nowrap;
+        }
+
         /* Device map */
         #admin-device-map {
             height: 360px;
@@ -497,6 +528,11 @@ if (!$user && isset($_POST['login'])) {
             height: 14px;
             border-radius: 50%;
             box-shadow: 0 0 6px rgba(0,0,0,0.5);
+        }
+
+        .admin-map-marker .marker-pin {
+            transform: scale(0.84);
+            transform-origin: center bottom;
         }
 
         @keyframes reporterBlink {
@@ -578,6 +614,7 @@ if (!$user && isset($_POST['login'])) {
                                 <th><span class="help-inline">Auth Token <button type="button" class="help-trigger" data-help-title="Auth Token" data-help-body="Bearer token for the HTTP firmware ingest path. Leave empty for MQTT-only reporters.">?</button></span></th>
                                 <th><span class="help-inline">Style <button type="button" class="help-trigger" data-help-title="Style Colors" data-help-body="Left color picker sets the fill/text color, right sets the border/stroke color. The label preview updates live.">?</button></span></th>
                                 <th><span class="help-inline">Enabled <button type="button" class="help-trigger" data-help-title="Reporter Enabled" data-help-body="Only enabled reporters are accepted for ingest. Disable a device without deleting its historic data.">?</button></span></th>
+                                <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -744,6 +781,8 @@ if (!$user && isset($_POST['login'])) {
         const reporters = document.getElementById('reporters');
         let addRowLatInput = null;
         let addRowLonInput = null;
+        let addRowPublicKeyInput = null;
+        let latestReporterRows = [];
 
         function makeInputCell(row, value, type = 'text') {
             const td = row.insertCell();
@@ -766,6 +805,65 @@ if (!$user && isset($_POST['login'])) {
             input.oninput = (e) => onchange(e.target.value);
             cell.append(input);
             return input;
+        }
+
+        function relativeTimeFromSql(sqlValue) {
+            if (!sqlValue) return 'Never seen';
+            const parsed = Date.parse(String(sqlValue).replace(' ', 'T'));
+            if (!Number.isFinite(parsed)) return sqlValue;
+            const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+            if (seconds < 60) return `${seconds}s ago`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+            return `${Math.floor(seconds / 86400)}d ago`;
+        }
+
+        function renderReporterStatusCell(cell, reporter) {
+            cell.innerHTML = '';
+            const state = reporter.connection_state ?? 'never-seen';
+            const badge = document.createElement('span');
+            badge.className = `device-status ${state}`;
+            badge.innerText = state === 'connected' ? 'Connected' : state === 'disconnected' ? 'Disconnected' : 'Never seen';
+            cell.append(badge);
+
+            if (!reporter.isAddRow) {
+                const note = document.createElement('div');
+                note.className = 'device-status-note';
+                note.innerText = reporter.last_heard_at ? `Last heard ${relativeTimeFromSql(reporter.last_heard_at)}` : 'No packets received yet';
+                cell.append(note);
+            }
+        }
+
+        function getReporterTypeLabel(type) {
+            if (type === 2) return 'Repeater';
+            if (type === 3) return 'Room';
+            if (type === 4) return 'Sensor';
+            return 'Chat';
+        }
+
+        function createAdminReporterIcon(reporter) {
+            const type = Number(reporter.contact_type ?? 1);
+            let iconUrl = '../assets/img/person.svg';
+            if (type === 2) iconUrl = '../assets/img/tower.svg';
+            else if (type === 3) iconUrl = '../assets/img/group.svg';
+            else if (type === 4) iconUrl = '../assets/img/sensor.svg';
+
+            let style = { color: '#6cc7b8', stroke: '#6cc7b8' };
+            try {
+                const parsed = JSON.parse(reporter.style ?? '{}');
+                style.color = parsed.color ?? style.color;
+                style.stroke = parsed.stroke ?? style.color;
+            } catch (_) {}
+
+            const pinClass = `marker-pin${reporter.connection_state === 'disconnected' || reporter.connection_state === 'never-seen' ? ' ghosted' : ''}`;
+            const html = `<div class="admin-map-marker"><div class="${pinClass}"></div><img class="marker-icon-img" src="${iconUrl}" alt="${getReporterTypeLabel(type)}"></div>`;
+            return L.divIcon({
+                className: 'custom-div-icon',
+                html,
+                iconSize: [30, 42],
+                iconAnchor: [15, 42],
+                popupAnchor: [0, -42],
+            });
         }
 
         function makeHashSizeInput(row, value = 1) {
@@ -830,6 +928,8 @@ if (!$user && isset($_POST['login'])) {
             styleCell.append(preview);
 
             const enabled     = makeInputCell(row, reporter.authorized, 'checkbox');
+            const statusCell  = row.insertCell();
+            renderReporterStatusCell(statusCell, reporter);
             const actionsCell = row.insertCell();
 
             const collectReporter = () => ({
@@ -847,6 +947,10 @@ if (!$user && isset($_POST['login'])) {
             if (reporter.isAddRow) {
                 addRowLatInput = lat;
                 addRowLonInput = lon;
+                addRowPublicKeyInput = publicKey;
+                publicKey.addEventListener('input', () => updateSelectionPreviewMarker());
+                lat.addEventListener('input', () => updateSelectionPreviewMarker());
+                lon.addEventListener('input', () => updateSelectionPreviewMarker());
                 const addBtn = document.createElement('button');
                 addBtn.className = 'button-primary';
                 addBtn.innerText = 'Add';
@@ -913,8 +1017,10 @@ if (!$user && isset($_POST['login'])) {
         let adminMap        = null;
         let adminMarkers    = {};      // reporterId => { marker, lastHeard }
         let pollInterval    = null;
+        let selectionMarker = null;
 
         function initDeviceMap(reportersList) {
+            latestReporterRows = reportersList.slice();
             if (!adminMap) {
                 adminMap = L.map('admin-device-map', { zoomControl: true });
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -929,6 +1035,7 @@ if (!$user && isset($_POST['login'])) {
                     addRowLonInput.value  = e.latlng.lng.toFixed(5);
                     addRowLatInput.style.color = '#1976D2';
                     addRowLonInput.style.color = '#1976D2';
+                    updateSelectionPreviewMarker();
                 });
             }
 
@@ -942,23 +1049,8 @@ if (!$user && isset($_POST['login'])) {
                 const lon = parseFloat(r.lon);
                 if (!isFinite(lat) || !isFinite(lon) || (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001)) return;
 
-                let color = '#6cc7b8', stroke = '#6cc7b8';
-                try {
-                    const s = JSON.parse(r.style ?? '{}');
-                    color  = s.color  ?? '#6cc7b8';
-                    stroke = s.stroke ?? color;
-                } catch {}
-
-                const iconEl = L.divIcon({
-                    className: 'admin-reporter-icon',
-                    html: `<div class="admin-reporter-dot" style="background:${color};border:2px solid ${stroke};"></div>`,
-                    iconSize:    [14, 14],
-                    iconAnchor:  [7, 7],
-                    popupAnchor: [0, -8],
-                });
-
-                const marker = L.marker([lat, lon], { icon: iconEl })
-                    .bindPopup(`<b>${r.name}</b><br>${lat.toFixed(5)}, ${lon.toFixed(5)}<br><small style="color:#888">${r.public_key.slice(0, 16)}\u2026</small>`)
+                const marker = L.marker([lat, lon], { icon: createAdminReporterIcon(r) })
+                    .bindPopup(`<b>${r.name}</b><br>${getReporterTypeLabel(Number(r.contact_type ?? 1))} • ${r.connection_state ?? 'never-seen'}<br>${lat.toFixed(5)}, ${lon.toFixed(5)}<br><small style="color:#888">${r.public_key.slice(0, 16)}\u2026</small>`)
                     .addTo(adminMap);
 
                 adminMarkers[r.id] = { marker, lastHeard: null };
@@ -974,16 +1066,51 @@ if (!$user && isset($_POST['login'])) {
             if (pollInterval) clearInterval(pollInterval);
             pollInterval = setInterval(pollReporterActivity, 15000);
             pollReporterActivity();   // immediate first run
+            updateSelectionPreviewMarker();
+        }
+
+        function getSelectionPreviewReporter() {
+            const publicKey = (addRowPublicKeyInput?.value ?? '').trim().toUpperCase();
+            const matched = latestReporterRows.find(r => (r.public_key ?? '').toUpperCase() === publicKey);
+            return {
+                name: 'Selected Location',
+                public_key: publicKey,
+                style: matched?.style ?? '{"color":"#6cc7b8"}',
+                contact_type: matched?.contact_type ?? 1,
+                connection_state: 'connected',
+            };
+        }
+
+        function updateSelectionPreviewMarker() {
+            if (!adminMap || !addRowLatInput || !addRowLonInput) return;
+            const lat = parseFloat(addRowLatInput.value);
+            const lon = parseFloat(addRowLonInput.value);
+            if (!isFinite(lat) || !isFinite(lon)) return;
+
+            const previewReporter = getSelectionPreviewReporter();
+            if (!selectionMarker) {
+                selectionMarker = L.marker([lat, lon], { icon: createAdminReporterIcon(previewReporter) }).addTo(adminMap);
+            } else {
+                selectionMarker.setLatLng([lat, lon]);
+                selectionMarker.setIcon(createAdminReporterIcon(previewReporter));
+            }
+
+            selectionMarker.bindPopup(`<b>Selected Location</b><br>${getReporterTypeLabel(Number(previewReporter.contact_type ?? 1))}<br>${lat.toFixed(5)}, ${lon.toFixed(5)}`);
         }
 
         function pollReporterActivity() {
-            fetch('../api/v1/reporters/')
+            fetch('api/reporters/')
             .then(r => r.json())
             .then(result => {
+                latestReporterRows = result.objects ?? [];
                 (result.objects ?? []).forEach(r => {
                     const m = adminMarkers[r.id];
+                    const row = reporters.querySelector(`tr[data-id="${r.id}"]`);
+                    const statusCell = row?.cells?.[9] ?? null;
+                    if (statusCell) renderReporterStatusCell(statusCell, r);
                     if (!m) return;
-                    const newHeard = r.contact?.last_heard_at ?? null;
+
+                    const newHeard = r.last_heard_at ?? r.contact?.last_heard_at ?? null;
                     if (newHeard && newHeard !== m.lastHeard && m.lastHeard !== null) {
                         // New activity — blink the marker
                         const container = m.marker.getElement();
@@ -995,8 +1122,12 @@ if (!$user && isset($_POST['login'])) {
                             setTimeout(() => container.classList.remove('reporter-blink'), 2500);
                         }
                     }
+                    m.marker.setIcon(createAdminReporterIcon(r));
+                    const markerLatLng = m.marker.getLatLng();
+                    m.marker.bindPopup(`<b>${r.name}</b><br>${getReporterTypeLabel(Number(r.contact_type ?? 1))} • ${r.connection_state ?? 'never-seen'}<br>${markerLatLng.lat.toFixed(5)}, ${markerLatLng.lng.toFixed(5)}<br><small style="color:#888">${r.public_key.slice(0, 16)}\u2026</small>`);
                     m.lastHeard = newHeard;
                 });
+                updateSelectionPreviewMarker();
             })
             .catch(() => {});
         }
@@ -1347,6 +1478,10 @@ if (!$user && isset($_POST['login'])) {
             'logout':       'logout',
             'purge.manual': 'purge\\.manual',
             'purge.auto':   'purge\\.auto',
+            'reporter.save': 'settings\\.save',
+            'reporter.delete': 'error',
+            'channel.save': 'settings\\.save',
+            'channel.delete': 'error',
             'error':        'error',
         };
 
