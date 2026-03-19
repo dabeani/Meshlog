@@ -1205,7 +1205,120 @@ class MeshLogReportedObject extends MeshLogObject {
         if (scope === null || scope <= 0) {
             return 'Region scope: * (not set or wildcard)';
         }
-        return `Region scope: ${scope}`;
+        return `Region scope transport code: ${scope}`;
+    }
+
+    getHopBadgeText() {
+        const hops = parsePath(this.data.path ?? '').length;
+        return hops === 0 ? 'dir' : `${hops}h`;
+    }
+
+    getHopBadgeTitle() {
+        const hops = parsePath(this.data.path ?? '').length;
+        return hops === 0
+            ? 'Observed route length: direct reception with no relays'
+            : `Observed route length: ${hops} hop${hops === 1 ? '' : 's'}`;
+    }
+
+    getSnrBadgeText() {
+        const snr = Number(this.data.snr);
+        if (!Number.isFinite(snr)) return null;
+        return `${Number.isInteger(snr) ? snr : snr.toFixed(1)}dB`;
+    }
+
+    getSnrBadgeTitle() {
+        const snr = Number(this.data.snr);
+        if (!Number.isFinite(snr)) return '';
+        return `Observed SNR at receiving reporter: ${Number.isInteger(snr) ? snr : snr.toFixed(1)} dB`;
+    }
+
+    getReportCountBadgeText() {
+        return '1rx';
+    }
+
+    getReportCountBadgeTitle() {
+        return 'Stored raw packet heard by 1 reporter';
+    }
+
+    resolveHopRange() {
+        if (!this.reports || this.reports.length === 0) return null;
+
+        let minHops = Infinity;
+        let maxHops = -Infinity;
+
+        for (let i = 0; i < this.reports.length; i++) {
+            const path = this.reports[i].data.path ?? '';
+            const hops = parsePath(path).length;
+            if (hops < minHops) minHops = hops;
+            if (hops > maxHops) maxHops = hops;
+        }
+
+        if (!Number.isFinite(minHops) || !Number.isFinite(maxHops)) return null;
+        return { min: minHops, max: maxHops };
+    }
+
+    getHopBadgeText() {
+        const range = this.resolveHopRange();
+        if (!range) return null;
+        if (range.min === range.max) {
+            return range.min === 0 ? 'dir' : `${range.min}h`;
+        }
+        return `${range.min}-${range.max}h`;
+    }
+
+    getHopBadgeTitle() {
+        const range = this.resolveHopRange();
+        if (!range) return '';
+        if (range.min === range.max) {
+            return range.min === 0
+                ? 'Observed route length: direct reception with no relays'
+                : `Observed route length: ${range.min} hop${range.min === 1 ? '' : 's'}`;
+        }
+        return `Observed route length range: ${range.min} to ${range.max} hops across grouped receptions`;
+    }
+
+    resolveBestSnr() {
+        if (!this.reports || this.reports.length === 0) return null;
+
+        let bestSnr = null;
+        for (let i = 0; i < this.reports.length; i++) {
+            const candidate = Number(this.reports[i].data.snr);
+            if (!Number.isFinite(candidate)) continue;
+            if (bestSnr === null || candidate > bestSnr) {
+                bestSnr = candidate;
+            }
+        }
+
+        return bestSnr;
+    }
+
+    formatSnr(value) {
+        if (!Number.isFinite(value)) return '';
+        return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+    }
+
+    getSnrBadgeText() {
+        const bestSnr = this.resolveBestSnr();
+        if (!Number.isFinite(bestSnr)) return null;
+        return `${this.formatSnr(bestSnr)}dB`;
+    }
+
+    getSnrBadgeTitle() {
+        const bestSnr = this.resolveBestSnr();
+        if (!Number.isFinite(bestSnr)) return '';
+        return `Best observed SNR across grouped receptions: ${this.formatSnr(bestSnr)} dB`;
+    }
+
+    getReportCountBadgeText() {
+        const count = this.reports?.length ?? 0;
+        if (count <= 0) return null;
+        return `${count}rx`;
+    }
+
+    getReportCountBadgeTitle() {
+        const count = this.reports?.length ?? 0;
+        if (count <= 0) return '';
+        return `Grouped receptions: heard by ${count} reporter${count === 1 ? '' : 's'}`;
     }
 
     updateMetaIndicators() {
@@ -1221,6 +1334,27 @@ class MeshLogReportedObject extends MeshLogObject {
         if (this.dom.scope) {
             this.dom.scope.innerText = this.getScopeBadgeText();
             applyPresentation(this.dom.scope, { title: this.getScopeBadgeTitle() });
+        }
+
+        if (this.dom.hops) {
+            const hopBadge = this.getHopBadgeText();
+            this.dom.hops.innerText = hopBadge ?? '';
+            this.dom.hops.hidden = !hopBadge;
+            applyPresentation(this.dom.hops, { title: this.getHopBadgeTitle() });
+        }
+
+        if (this.dom.snr) {
+            const snrBadge = this.getSnrBadgeText();
+            this.dom.snr.innerText = snrBadge ?? '';
+            this.dom.snr.hidden = !snrBadge;
+            applyPresentation(this.dom.snr, { title: this.getSnrBadgeTitle() });
+        }
+
+        if (this.dom.reportCount) {
+            const reportCountBadge = this.getReportCountBadgeText();
+            this.dom.reportCount.innerText = reportCountBadge ?? '';
+            this.dom.reportCount.hidden = !reportCountBadge;
+            applyPresentation(this.dom.reportCount, { title: this.getReportCountBadgeTitle() });
         }
 
         if (this.dom.prefix) {
@@ -1313,6 +1447,27 @@ class MeshLogReportedObject extends MeshLogObject {
         spScope.innerText = this.getScopeBadgeText();
         applyPresentation(spScope, { title: this.getScopeBadgeTitle() });
 
+        let spHops = document.createElement("span");
+        let hopBadge = this.getHopBadgeText();
+        spHops.classList.add('sp', 'metric-badge');
+        spHops.innerText = hopBadge ?? '';
+        spHops.hidden = !hopBadge;
+        applyPresentation(spHops, { title: this.getHopBadgeTitle() });
+
+        let spSnr = document.createElement("span");
+        let snrBadge = this.getSnrBadgeText();
+        spSnr.classList.add('sp', 'metric-badge');
+        spSnr.innerText = snrBadge ?? '';
+        spSnr.hidden = !snrBadge;
+        applyPresentation(spSnr, { title: this.getSnrBadgeTitle() });
+
+        let spReportCount = document.createElement("span");
+        let reportCountBadge = this.getReportCountBadgeText();
+        spReportCount.classList.add('sp', 'metric-badge');
+        spReportCount.innerText = reportCountBadge ?? '';
+        spReportCount.hidden = !reportCountBadge;
+        applyPresentation(spReportCount, { title: this.getReportCountBadgeTitle() });
+
         spTag.classList.add(...['sp', 'tag']);
         spTag.classList.add(...tag.classList);
         spTag.innerText = tag.text;
@@ -1332,6 +1487,9 @@ class MeshLogReportedObject extends MeshLogObject {
             divLine1.append(spDate);
             divLine1.append(spHashSize);
             divLine1.append(spScope);
+            divLine1.append(spHops);
+            divLine1.append(spSnr);
+            divLine1.append(spReportCount);
             divLine1.append(spPrefix);
             divLine1.append(spTag);
             divLine2.append(spName);
@@ -1341,6 +1499,9 @@ class MeshLogReportedObject extends MeshLogObject {
             divLine1.append(spDate);
             divLine1.append(spHashSize);
             divLine1.append(spScope);
+            divLine1.append(spHops);
+            divLine1.append(spSnr);
+            divLine1.append(spReportCount);
             // divLine1.append(spPrefix);
             // divLine1.append(spTag);
             divLine1.append(spName);
@@ -1377,6 +1538,9 @@ class MeshLogReportedObject extends MeshLogObject {
             prefix: spPrefix,
             hashSize: spHashSize,
             scope: spScope,
+            hops: spHops,
+            snr: spSnr,
+            reportCount: spReportCount,
             input: {
                 show: inputShow
             }
@@ -1610,7 +1774,7 @@ class MeshLogRawPacket extends MeshLogObject {
         if (scope === null || scope <= 0) {
             return 'Region scope: * (not set or wildcard)';
         }
-        return `Region scope: ${scope}`;
+        return `Region scope transport code: ${scope}`;
     }
 
     resolveHashSize() {
@@ -1665,6 +1829,26 @@ class MeshLogRawPacket extends MeshLogObject {
         spScope.innerText = this.getScopeBadgeText();
         applyPresentation(spScope, { title: this.getScopeBadgeTitle() });
         divLine.append(spScope);
+
+        let spHops = document.createElement("span");
+        spHops.classList.add('sp', 'metric-badge');
+        spHops.innerText = this.getHopBadgeText();
+        applyPresentation(spHops, { title: this.getHopBadgeTitle() });
+        divLine.append(spHops);
+
+        let spSnr = document.createElement("span");
+        let snrBadge = this.getSnrBadgeText();
+        spSnr.classList.add('sp', 'metric-badge');
+        spSnr.innerText = snrBadge ?? '';
+        spSnr.hidden = !snrBadge;
+        applyPresentation(spSnr, { title: this.getSnrBadgeTitle() });
+        divLine.append(spSnr);
+
+        let spReportCount = document.createElement("span");
+        spReportCount.classList.add('sp', 'metric-badge');
+        spReportCount.innerText = this.getReportCountBadgeText();
+        applyPresentation(spReportCount, { title: this.getReportCountBadgeTitle() });
+        divLine.append(spReportCount);
 
         let spTag = document.createElement("span");
         spTag.classList.add('sp', 'tag', 'type-badge', 'type-badge-raw');
