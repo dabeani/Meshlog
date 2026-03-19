@@ -634,6 +634,10 @@ h2 {
     gap: 6px;
 }
 
+.settings-badge-row[hidden] {
+    display: none !important;
+}
+
 /* App-wide help dialog (fired by ? buttons in the sidebar filter panels) */
 #app-help-modal {
     position: fixed;
