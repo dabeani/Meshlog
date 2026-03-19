@@ -12,6 +12,7 @@ class MeshLogMqttDecoder {
     const PAYLOAD_TYPE_ADVERT  = 4;  // PAYLOAD_TYPE_ADVERT  (0x04) - node advertisement, unencrypted
     const PAYLOAD_TYPE_TXT_MSG = 2;  // PAYLOAD_TYPE_TXT_MSG (0x02) - direct text message, encrypted
     const PAYLOAD_TYPE_GRP_TXT = 5;  // PAYLOAD_TYPE_GRP_TXT (0x05) - group text message, encrypted
+    const PUBLIC_GROUP_PSK_HEX = '8b3387e9c5cdea6ac9e5edbaa115cd72'; // MeshCore well-known Public channel 128-bit key
 
     // MeshCore route types (bits 0-1 of the packet header byte).
     const ROUTE_TYPE_TRANSPORT_FLOOD  = 0x00;  // flood + transport codes (4 extra bytes)
@@ -530,6 +531,10 @@ class MeshLogMqttDecoder {
                     error_log('[GRP_TXT] channel "' . $channelName . '": PSK length ' . $pskLen . ' is not 16 or 32');
                     continue;
                 }
+            } elseif (strtolower($channelName) === 'public' || strtolower($channel->hash ?? '') === '11') {
+                // MeshCore default public channel: fixed, well-known 128-bit key.
+                $pskBytes = hex2bin(static::PUBLIC_GROUP_PSK_HEX);
+                $pskLen = 16;
             } elseif ($channelName !== '' && $channelName[0] === '#') {
                 // Public hashtag channel: PSK = first 16 bytes of SHA-256(channel_name_utf8).
                 // MeshCore companion protocol: key = sha256(name)[0:16] (128-bit key).

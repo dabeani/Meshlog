@@ -76,11 +76,27 @@ class MeshLogChannel extends MeshLogEntity {
     public static function getAllWithPsk($meshlog) {
         $channels = array();
         try {
-            $stmt = $meshlog->pdo->prepare("SELECT * FROM channels WHERE enabled = 1 AND (psk != '' OR name LIKE '#%') ORDER BY id");
+            $stmt = $meshlog->pdo->prepare("SELECT * FROM channels WHERE enabled = 1 AND (psk != '' OR name LIKE '#%' OR LOWER(name) = 'public' OR LOWER(hash) = '11') ORDER BY id");
             $stmt->execute();
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $hasPublic = false;
             foreach ($rows as $row) {
+                if (strtolower($row['name'] ?? '') === 'public' || strtolower($row['hash'] ?? '') === '11') {
+                    $hasPublic = true;
+                }
                 $channels[] = static::fromDb($row, $meshlog);
+            }
+
+            // Make the built-in MeshCore Public channel decodable even if it was not
+            // manually added in Admin yet.  Binary GRP_TXT packets only expose the
+            // channel hash byte, so without this synthetic fallback they stay RAW PUB.
+            if (!$hasPublic) {
+                $public = new MeshLogChannel($meshlog);
+                $public->hash = '11';
+                $public->name = 'Public';
+                $public->psk = '';
+                $public->enabled = 1;
+                $channels[] = $public;
             }
         } catch (PDOException $e) {
             error_log('MeshLogChannel::getAllWithPsk: ' . $e->getMessage());
