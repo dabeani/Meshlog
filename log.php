@@ -26,7 +26,7 @@ $data["time"]["server"] = $systime;
 
 $meshlog = new MeshLog($config['db']);
 $response = $meshlog->insert($data);
-
+$meshlog->maybeAutoPurge();
 if (is_array($response) && array_key_exists("error", $response)) {
     dockerLog('WARN', 'Insert failed: ' . $response["error"]);
     echo $response["error"];

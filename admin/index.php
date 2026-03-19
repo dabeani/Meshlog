@@ -516,6 +516,8 @@ if (!$user && isset($_POST['login'])) {
                 <div class="section-body">
                     <div class="settings-grid" id="settings-grid"></div>
                     <div class="settings-actions">
+                        <button type="button" id="purge-now-btn" title="Run data purge immediately using current retention settings">Purge Now</button>
+                        <span id="purge-status" style="font-size:0.85rem;color:#9dc0b6;margin-left:10px;"></span>
                         <button type="button" class="button-primary" id="setting-save-btn">Save Settings</button>
                     </div>
                 </div>
@@ -910,7 +912,43 @@ if (!$user && isset($_POST['login'])) {
                 help: 'When enabled, names and @mentions in stored messages are replaced with XXXXXX in all API and UI output. Useful when the installation is accessible to people who should not see callsigns.',
                 formatHint: (v) => v ? 'Usernames will be hidden' : 'Usernames shown as received'
             },
+            {
+                key: 'DATA_RETENTION_ADV',
+                label: 'Advertisement retention',
+                type: 'number',
+                placeholder: '604800',
+                unit: 'seconds',
+                description: 'Advertisements older than this period are automatically deleted (reports included). Set to 0 to keep forever.',
+                help: 'Default: 604800 s (7 days).\n\nIncludes all associated advertisement_reports rows. Purge runs automatically at most once per hour during ingest. Use "Purge Now" to run immediately.\n\nSet to 0 to disable automatic deletion.',
+                formatHint: (v) => formatRetentionHint(v)
+            },
+            {
+                key: 'DATA_RETENTION_MSG',
+                label: 'Message retention',
+                type: 'number',
+                placeholder: '604800',
+                unit: 'seconds',
+                description: 'Direct messages and channel messages older than this period are deleted. Set to 0 to keep forever.',
+                help: 'Default: 604800 s (7 days).\n\nApplies to both direct_messages and channel_messages including their report sub-rows. Set to 0 to disable automatic deletion.',
+                formatHint: (v) => formatRetentionHint(v)
+            },
+            {
+                key: 'DATA_RETENTION_RAW',
+                label: 'Raw packet retention',
+                type: 'number',
+                placeholder: '604800',
+                unit: 'seconds',
+                description: 'Raw (undecoded / encrypted) packets older than this period are deleted. Set to 0 to keep forever.',
+                help: 'Default: 604800 s (7 days).\n\nRaw packets accumulate quickly on busy nodes. Set to 0 to keep all raw packets indefinitely.',
+                formatHint: (v) => formatRetentionHint(v)
+            },
         ];
+
+        function formatRetentionHint(value) {
+            const seconds = parseInt(value ?? 0, 10);
+            if (!Number.isFinite(seconds) || seconds === 0) return 'Disabled — data kept forever';
+            return 'Delete after ' + formatDurationHint(seconds, '').trim();
+        }
 
         function formatDurationHint(value, prefix) {
             const seconds = parseInt(value ?? 0, 10);
@@ -1030,6 +1068,27 @@ if (!$user && isset($_POST['login'])) {
         }
 
         saveSettingsButton.addEventListener('click', saveSettings);
+
+        const purgeNowButton = document.getElementById('purge-now-btn');
+        const purgeStatus   = document.getElementById('purge-status');
+        function purgeNow() {
+            purgeNowButton.disabled = true;
+            purgeStatus.innerText = 'Purging…';
+            fetch('api/purge/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ purge: 1 })
+            })
+            .then(r => r.json())
+            .then(result => {
+                purgeNowButton.disabled = false;
+                if (getError(result)) { purgeStatus.innerText = 'Error: ' + getError(result); return; }
+                purgeStatus.innerText = result.message ?? 'Done';
+                setTimeout(() => { purgeStatus.innerText = ''; }, 4000);
+            })
+            .catch(() => { purgeNowButton.disabled = false; purgeStatus.innerText = 'Request failed'; });
+        }
+        purgeNowButton.addEventListener('click', purgeNow);
 
         /* ── Init ────────────────────────────────────────────────────── */
         const initialPage = PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'devices';

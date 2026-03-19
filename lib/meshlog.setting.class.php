@@ -7,6 +7,10 @@ class MeshLogSetting extends MeshLogEntity {
     const KEY_INFLUXDB_URL = "INFLUXDB_URL";
     const KEY_INFLUXDB_DB = "INFLUXDB_DB";
     const KEY_ANONYMIZE_USERNAMES = "ANONYMIZE_USERNAMES";
+    const KEY_DATA_RETENTION_ADV = "DATA_RETENTION_ADV";
+    const KEY_DATA_RETENTION_MSG = "DATA_RETENTION_MSG";
+    const KEY_DATA_RETENTION_RAW = "DATA_RETENTION_RAW";
+    const KEY_LAST_PURGE_AT = "LAST_PURGE_AT";
 
     public static function getAdminDefinitions() {
         return array(
@@ -21,6 +25,18 @@ class MeshLogSetting extends MeshLogEntity {
             static::KEY_ANONYMIZE_USERNAMES => array(
                 'type' => 'boolean',
                 'default' => 0,
+            ),
+            static::KEY_DATA_RETENTION_ADV => array(
+                'type' => 'number',
+                'default' => 604800,
+            ),
+            static::KEY_DATA_RETENTION_MSG => array(
+                'type' => 'number',
+                'default' => 604800,
+            ),
+            static::KEY_DATA_RETENTION_RAW => array(
+                'type' => 'number',
+                'default' => 604800,
             ),
         );
     }

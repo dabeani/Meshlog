@@ -21,13 +21,18 @@ define("DEFAULT_COUNT", 500);
 class MeshLog {
     private $error = '';
     private $version = 10;
+    const PURGE_INTERVAL_SECONDS = 3600;
     private $settings = array(
         MeshlogSetting::KEY_DB_VERSION => 0,
         MeshlogSetting::KEY_MAX_CONTACT_AGE => 1814400,
         MeshlogSetting::KEY_MAX_GROUPING_AGE => 21600,
         MeshlogSetting::KEY_INFLUXDB_URL => "",
         MeshlogSetting::KEY_INFLUXDB_DB => "Meshlog",
-        MeshlogSetting::KEY_ANONYMIZE_USERNAMES => 0
+        MeshlogSetting::KEY_ANONYMIZE_USERNAMES => 0,
+        MeshlogSetting::KEY_DATA_RETENTION_ADV => 604800,
+        MeshlogSetting::KEY_DATA_RETENTION_MSG => 604800,
+        MeshlogSetting::KEY_DATA_RETENTION_RAW => 604800,
+        MeshlogSetting::KEY_LAST_PURGE_AT => 0,
     );
 
     function __construct($config) {
@@ -67,6 +72,10 @@ class MeshLog {
                     MeshlogSetting::KEY_MAX_CONTACT_AGE,
                     MeshlogSetting::KEY_MAX_GROUPING_AGE,
                     MeshlogSetting::KEY_ANONYMIZE_USERNAMES,
+                    MeshlogSetting::KEY_DATA_RETENTION_ADV,
+                    MeshlogSetting::KEY_DATA_RETENTION_MSG,
+                    MeshlogSetting::KEY_DATA_RETENTION_RAW,
+                    MeshlogSetting::KEY_LAST_PURGE_AT,
                 ), true)) {
                     $v = (int)$v;
                 }
@@ -107,6 +116,86 @@ class MeshLog {
 
     function setConfig($key, $value) {
         $this->settings[$key] = $value;
+    }
+
+    /**
+     * Delete records older than the configured retention periods.
+     * Returns array with row counts deleted per category.
+     */
+    function purgeOldData() {
+        $stats = array('advertisements' => 0, 'messages' => 0, 'raw_packets' => 0);
+
+        $retAdv = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_ADV, 0));
+        $retMsg = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_MSG, 0));
+        $retRaw = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_RAW, 0));
+
+        if ($retAdv > 0) {
+            $this->pdo->prepare("
+                DELETE ar FROM advertisement_reports ar
+                INNER JOIN advertisements a ON a.id = ar.advertisement_id
+                WHERE a.created_at < DATE_SUB(NOW(), INTERVAL :age SECOND)
+            ")->execute([':age' => $retAdv]);
+
+            $stmt = $this->pdo->prepare("
+                DELETE FROM advertisements WHERE created_at < DATE_SUB(NOW(), INTERVAL :age SECOND)
+            ");
+            $stmt->execute([':age' => $retAdv]);
+            $stats['advertisements'] = $stmt->rowCount();
+        }
+
+        if ($retMsg > 0) {
+            $this->pdo->prepare("
+                DELETE dr FROM direct_message_reports dr
+                INNER JOIN direct_messages d ON d.id = dr.direct_message_id
+                WHERE d.created_at < DATE_SUB(NOW(), INTERVAL :age SECOND)
+            ")->execute([':age' => $retMsg]);
+
+            $stmt = $this->pdo->prepare("
+                DELETE FROM direct_messages WHERE created_at < DATE_SUB(NOW(), INTERVAL :age SECOND)
+            ");
+            $stmt->execute([':age' => $retMsg]);
+            $stats['messages'] += $stmt->rowCount();
+
+            $this->pdo->prepare("
+                DELETE cr FROM channel_message_reports cr
+                INNER JOIN channel_messages c ON c.id = cr.channel_message_id
+                WHERE c.created_at < DATE_SUB(NOW(), INTERVAL :age SECOND)
+            ")->execute([':age' => $retMsg]);
+
+            $stmt = $this->pdo->prepare("
+                DELETE FROM channel_messages WHERE created_at < DATE_SUB(NOW(), INTERVAL :age SECOND)
+            ");
+            $stmt->execute([':age' => $retMsg]);
+            $stats['messages'] += $stmt->rowCount();
+        }
+
+        if ($retRaw > 0) {
+            $stmt = $this->pdo->prepare("
+                DELETE FROM raw_packets WHERE received_at < DATE_SUB(NOW(), INTERVAL :age SECOND)
+            ");
+            $stmt->execute([':age' => $retRaw]);
+            $stats['raw_packets'] = $stmt->rowCount();
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Run purgeOldData() at most once per PURGE_INTERVAL_SECONDS.
+     * Called automatically from HTTP/MQTT ingest.
+     */
+    function maybeAutoPurge() {
+        $retAdv = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_ADV, 0));
+        $retMsg = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_MSG, 0));
+        $retRaw = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_RAW, 0));
+        if ($retAdv === 0 && $retMsg === 0 && $retRaw === 0) return;
+
+        $lastPurge = intval($this->getConfig(MeshlogSetting::KEY_LAST_PURGE_AT, 0));
+        if ((time() - $lastPurge) < static::PURGE_INTERVAL_SECONDS) return;
+
+        $this->purgeOldData();
+        $this->setConfig(MeshlogSetting::KEY_LAST_PURGE_AT, time());
+        $this->saveSettings();
     }
 
     function authorize($data) {
