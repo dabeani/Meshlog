@@ -355,9 +355,7 @@ class MeshLog {
 
         if ($contact) {
             $contact->name = $data['contact']['name'];
-            if (array_key_exists('hash_size', $data)) {
-                $contact->hash_size = $data['hash_size'];
-            }
+            $this->syncContactHashSize($contact, $data);
         } else {
             $contact = MeshLogContact::fromJson($data, $this);
             $contact->name = $data['contact']['name'];
@@ -409,6 +407,9 @@ class MeshLog {
         if (!$contact) {
             $contact = MeshLogContact::fromJson($data, $this);
             if (!$contact->save($this)) return $this->repError('failed to save contact');
+        } else {
+            $this->syncContactHashSize($contact, $data);
+            if (!$contact->save($this)) return $this->repError('failed to update contact');
         }
 
         $dm = MeshLogDirectMessage::fromJson($data, $this);
@@ -479,6 +480,10 @@ class MeshLog {
         $advertisement = MeshLogAdvertisement::findBy("name", $name, $this, array(), true, true);
         $contact = null;
         if ($advertisement) $contact = MeshLogContact::findById($advertisement->contact_ref->getId(), $this);
+        if ($contact) {
+            $this->syncContactHashSize($contact, $data);
+            if (!$contact->save($this)) return $this->repError('failed to update contact');
+        }
 
         $grpmsg = MeshLogChannelMessage::fromJson($data, $this);
         $grpmsg->contact_ref = $contact;
@@ -640,6 +645,15 @@ class MeshLog {
 
     private function repError($msg, $extra = array()) {
         return array_merge(array('error' => $msg), $extra);
+    }
+
+    private function syncContactHashSize($contact, $data) {
+        if (!$contact || !is_array($data) || !array_key_exists('hash_size', $data)) return;
+
+        $hashSize = intval($data['hash_size']);
+        if (!in_array($hashSize, array(1, 2, 3), true)) return;
+
+        $contact->hash_size = $hashSize;
     }
 
     // getters
@@ -911,7 +925,12 @@ class MeshLog {
                 t.id,
                 t.public_key,
                 t.name,
-                t.hash_size,
+                GREATEST(
+                    COALESCE(t.hash_size, 1),
+                    COALESCE((SELECT MAX(a.hash_size) FROM advertisements a WHERE a.contact_id = t.id), 1),
+                    COALESCE((SELECT MAX(dm.hash_size) FROM direct_messages dm WHERE dm.contact_id = t.id), 1),
+                    COALESCE((SELECT MAX(cm.hash_size) FROM channel_messages cm WHERE cm.contact_id = t.id), 1)
+                ) AS hash_size,
                 t.last_heard_at,
                 t.created_at,
 
