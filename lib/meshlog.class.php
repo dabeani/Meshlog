@@ -21,7 +21,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 11;
+    private $version = 12;
     const PURGE_INTERVAL_SECONDS = 3600;
     private $settings = array(
         MeshlogSetting::KEY_DB_VERSION => 0,
@@ -756,6 +756,7 @@ class MeshLog {
                             'id', r.id,
                             'reporter_id', r.reporter_id,
                             'snr', r.snr,
+                            'scope', r.scope,
                             'path', r.path,
                             'received_at', r.received_at,
                             'created_at', r.created_at

@@ -11,6 +11,7 @@ class MeshLogRawPacket extends MeshLogEntity {
     public $snr = null;
     public $decded = null;
     public $hash_size = null;
+    public $scope = null;
 
     public $received_at = null;
     public $created_at = null;
@@ -22,6 +23,7 @@ class MeshLogRawPacket extends MeshLogEntity {
         if (!isset($data['packet'])) return $m;
 
         $m->hash_size = $data['packet']['hash_size'] ?? 1;
+    $m->scope = static::normalizeScope($data['packet']['scope'] ?? null);
         $m->header = $data['packet']['header'] ?? 0;
         $m->path = $data['packet']['path'] ?? '';
         $m->payload = hex2bin($data['packet']['payload'] ?? '');
@@ -30,6 +32,15 @@ class MeshLogRawPacket extends MeshLogEntity {
         $m->received_at = Utils::time2str($data['time']['local']);
 
         return $m;
+    }
+
+    private static function normalizeScope($scope) {
+        if ($scope === null || $scope === '') return null;
+
+        $value = intval($scope);
+        if ($value < 0 || $value > 255) return null;
+
+        return $value;
     }
 
     public static function fromDb($data, $meshlog) {
@@ -44,6 +55,7 @@ class MeshLogRawPacket extends MeshLogEntity {
         $m->snr = $data['snr'];
         $m->decoded = $data['decoded'];
         $m->hash_size = $data['hash_size'];
+        $m->scope = static::normalizeScope($data['scope'] ?? null);
 
         $m->received_at = $data['received_at'];
         $m->created_at = $data['created_at'];
@@ -71,6 +83,7 @@ class MeshLogRawPacket extends MeshLogEntity {
             'snr' => $this->snr,
             'decoded' => $this->decoded,
             "hash_size" => $this->hash_size,
+            "scope" => $this->scope,
             'received_at' => $this->received_at,
             'created_at' => $this->created_at
         );
@@ -86,6 +99,7 @@ class MeshLogRawPacket extends MeshLogEntity {
             "snr" => array($this->snr, PDO::PARAM_INT),
             "decoded" => array($this->decoded, PDO::PARAM_INT),
             "hash_size" => array($this->hash_size, PDO::PARAM_INT),
+            "scope" => array($this->scope, PDO::PARAM_INT),
             "received_at" => array($this->received_at, PDO::PARAM_STR),
             "created_at" => array($this->created_at, PDO::PARAM_STR)
         );

@@ -169,6 +169,21 @@ h2 {
     white-space: nowrap;
 }
 
+.scope-badge {
+    display: inline-block;
+    min-width: 24px;
+    text-align: center;
+    font-size: 0.85em;
+    color: #dcefe8;
+    background: #35524a;
+    border: 1px solid #4f7a6c;
+    border-radius: 10px;
+    padding: 0 6px;
+    line-height: 1.4;
+    margin-right: 6px;
+    white-space: nowrap;
+}
+
 .tag-badge,
 .type-badge {
     display: inline-flex;

@@ -9,6 +9,7 @@ class MeshLogReport extends MeshLogEntity {
 
     public $path = null;
     public $snr = null;
+    public $scope = null;
 
     public $received_at = null;
     public $created_at = null;
@@ -18,9 +19,19 @@ class MeshLogReport extends MeshLogEntity {
 
         $m->path = static::normalizePath($data['message']['path'] ?? null);
         $m->snr = $data['snr'] ?? null;
+        $m->scope = static::normalizeScope($data['scope'] ?? null);
         $m->received_at = Utils::time2str($data['time']['local']) ?? null;
 
         return $m;
+    }
+
+    private static function normalizeScope($scope) {
+        if ($scope === null || $scope === '') return null;
+
+        $value = intval($scope);
+        if ($value < 0 || $value > 255) return null;
+
+        return $value;
     }
 
     /**
@@ -51,6 +62,7 @@ class MeshLogReport extends MeshLogEntity {
         $m->_id = $data['id'];
         $m->path = $data['path'];
         $m->snr = $data['snr'];
+        $m->scope = static::normalizeScope($data['scope'] ?? null);
 
         $m->received_at = $data['received_at'];
         $m->created_at = $data['created_at'];
@@ -89,6 +101,7 @@ class MeshLogReport extends MeshLogEntity {
             static::$refname => $this->object_id,
             'reporter_id' => $this->reporter_id,
             "snr" => floatval($this->snr),
+            "scope" => $this->scope,
             "path" => $this->path,
             "received_at" => $this->received_at,
             "created_at" => $this->created_at
@@ -101,6 +114,7 @@ class MeshLogReport extends MeshLogEntity {
             "reporter_id" => array($this->reporter_id, PDO::PARAM_INT),
             "path" => array($this->path, PDO::PARAM_STR),
             "snr" => array($this->snr, PDO::PARAM_INT),
+            "scope" => array($this->scope, PDO::PARAM_INT),
             "received_at" => array($this->received_at, PDO::PARAM_STR),
         );
     }

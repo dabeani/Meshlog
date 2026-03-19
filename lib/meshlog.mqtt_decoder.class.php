@@ -47,6 +47,7 @@ class MeshLogMqttDecoder {
             $packet = static::extractPacket($bytes);
             $path = $packet['path'] ?? static::decodePath($data['path'] ?? '');
             $hashSize = $packet['hash_size'] ?? static::decodeHashSize($path);
+            $scope = static::normalizeScope($packet['scope'] ?? null);
             $packetType = intval($data['packet_type'] ?? 0);
             $snr = intval($data['SNR'] ?? 0);
 
@@ -59,7 +60,7 @@ class MeshLogMqttDecoder {
             // into the ADV structured format that insertForReporter() already handles.
             if ($packetType === static::PAYLOAD_TYPE_ADVERT) {
                 $decoded = static::decodeAdvertPacket(
-                    $raw, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta
+                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -69,7 +70,7 @@ class MeshLogMqttDecoder {
             // Falls through to RAW if no channel matches or decryption fails.
             if ($packetType === static::PAYLOAD_TYPE_GRP_TXT && !empty($channels)) {
                 $decoded = static::decodeGroupPacket(
-                    $raw, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
+                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -92,7 +93,8 @@ class MeshLogMqttDecoder {
                     "payload" => $packet['payload'] ?? $raw,
                     "snr" => $snr,
                     "decoded" => false,
-                    "hash_size" => $hashSize
+                    "hash_size" => $hashSize,
+                    "scope" => $scope,
                 ),
                 "_mqtt" => $mqttMeta,
             );
@@ -247,6 +249,7 @@ class MeshLogMqttDecoder {
             'path' => static::decodePathBytes(substr($bytes, $layout['path_offset'], $layout['path_byte_len']), $layout['hash_size']),
             'payload' => strtoupper(bin2hex(substr($bytes, $layout['payload_offset']))),
             'hash_size' => $layout['hash_size'],
+            'scope' => static::decodeTransportScope($layout['transport_codes'] ?? null),
         );
     }
 
@@ -278,7 +281,28 @@ class MeshLogMqttDecoder {
             'path_offset' => $pathOffset,
             'path_byte_len' => $pathByteLen,
             'payload_offset' => $payloadOffset,
+            'transport_codes' => $hasTransport ? array(
+                ord($bytes[1]),
+                ord($bytes[2]),
+                ord($bytes[3]),
+                ord($bytes[4]),
+            ) : null,
         );
+    }
+
+    private static function decodeTransportScope($transportCodes) {
+        if (!is_array($transportCodes) || !array_key_exists(0, $transportCodes)) return null;
+
+        return static::normalizeScope($transportCodes[0]);
+    }
+
+    private static function normalizeScope($scope) {
+        if ($scope === null || $scope === '') return null;
+
+        $value = intval($scope);
+        if ($value < 0 || $value > 255) return null;
+
+        return $value;
     }
 
     /**
@@ -368,7 +392,7 @@ class MeshLogMqttDecoder {
      * @param  array  $mqttMeta   MQTT metadata array from extractMetadata().
      * @return array|null         ADV data array for insertForReporter(), or null on failure.
      */
-    private static function decodeAdvertPacket($rawHex, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+    private static function decodeAdvertPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
         $bytes = hex2bin($rawHex);
 
         $binaryHashSize = 1;
@@ -446,6 +470,7 @@ class MeshLogMqttDecoder {
             "reporter"  => $reporter,
             "hash"      => $packetHash,
             "hash_size" => $hashSize,
+            "scope"     => $scope,
             "contact"   => array(
                 "pubkey" => $pubkey,
                 "name"   => $name,
@@ -491,7 +516,7 @@ class MeshLogMqttDecoder {
      * @param  array  $channels  Array of MeshLogChannel objects with PSK set.
      * @return array|null        PUB data array for insertForReporter(), or null on failure.
      */
-    private static function decodeGroupPacket($rawHex, $path, $hashSize, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels) {
+    private static function decodeGroupPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels) {
         $bytes = hex2bin($rawHex);
         $payload = static::extractPayloadBytes($bytes);
         if ($payload === null) return null;
@@ -610,6 +635,7 @@ class MeshLogMqttDecoder {
                 'reporter' => $reporter,
                 'hash'     => $packetHash,
                 'hash_size' => $hashSize,
+                'scope'    => $scope,
                 'channel'  => array(
                     'hash' => $channel->hash,
                     'name' => $channel->name,

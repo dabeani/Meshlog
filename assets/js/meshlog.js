@@ -1175,6 +1175,39 @@ class MeshLogReportedObject extends MeshLogObject {
         return '';
     }
 
+    resolveScope() {
+        const dataScope = parseInt(this.data.scope ?? NaN, 10);
+        let derivedScope = NaN;
+
+        if (this.reports && this.reports.length > 0) {
+            for (let i = 0; i < this.reports.length; i++) {
+                const candidate = parseInt(this.reports[i].data.scope ?? NaN, 10);
+                if (Number.isFinite(candidate) && candidate >= 0 && candidate <= 255) {
+                    derivedScope = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (Number.isFinite(derivedScope)) return derivedScope;
+        if (Number.isFinite(dataScope) && dataScope >= 0 && dataScope <= 255) return dataScope;
+        return null;
+    }
+
+    getScopeBadgeText() {
+        const scope = this.resolveScope();
+        if (scope === null || scope <= 0) return '*';
+        return `${scope}`;
+    }
+
+    getScopeBadgeTitle() {
+        const scope = this.resolveScope();
+        if (scope === null || scope <= 0) {
+            return 'Region scope: * (not set or wildcard)';
+        }
+        return `Region scope: ${scope}`;
+    }
+
     updateMetaIndicators() {
         if (!this.dom) return;
 
@@ -1183,6 +1216,11 @@ class MeshLogReportedObject extends MeshLogObject {
             this.dom.hashSize.innerText = hashSizeBadge ?? '';
             this.dom.hashSize.hidden = !hashSizeBadge;
             applyPresentation(this.dom.hashSize, { title: this.getHashSizeBadgeTitle() });
+        }
+
+        if (this.dom.scope) {
+            this.dom.scope.innerText = this.getScopeBadgeText();
+            applyPresentation(this.dom.scope, { title: this.getScopeBadgeTitle() });
         }
 
         if (this.dom.prefix) {
@@ -1270,6 +1308,11 @@ class MeshLogReportedObject extends MeshLogObject {
         spHashSize.hidden = !hashSizeBadge;
         applyPresentation(spHashSize, { title: this.getHashSizeBadgeTitle() });
 
+        let spScope = document.createElement("span");
+        spScope.classList.add('sp', 'scope-badge');
+        spScope.innerText = this.getScopeBadgeText();
+        applyPresentation(spScope, { title: this.getScopeBadgeTitle() });
+
         spTag.classList.add(...['sp', 'tag']);
         spTag.classList.add(...tag.classList);
         spTag.innerText = tag.text;
@@ -1288,6 +1331,7 @@ class MeshLogReportedObject extends MeshLogObject {
             // message
             divLine1.append(spDate);
             divLine1.append(spHashSize);
+            divLine1.append(spScope);
             divLine1.append(spPrefix);
             divLine1.append(spTag);
             divLine2.append(spName);
@@ -1296,6 +1340,7 @@ class MeshLogReportedObject extends MeshLogObject {
             // advert
             divLine1.append(spDate);
             divLine1.append(spHashSize);
+            divLine1.append(spScope);
             // divLine1.append(spPrefix);
             // divLine1.append(spTag);
             divLine1.append(spName);
@@ -1331,6 +1376,7 @@ class MeshLogReportedObject extends MeshLogObject {
             text: spText,
             prefix: spPrefix,
             hashSize: spHashSize,
+            scope: spScope,
             input: {
                 show: inputShow
             }
@@ -1547,6 +1593,26 @@ class MeshLogRawPacket extends MeshLogObject {
         return '';
     }
 
+    resolveScope() {
+        const scope = parseInt(this.data.scope ?? NaN, 10);
+        if (Number.isFinite(scope) && scope >= 0 && scope <= 255) return scope;
+        return null;
+    }
+
+    getScopeBadgeText() {
+        const scope = this.resolveScope();
+        if (scope === null || scope <= 0) return '*';
+        return `${scope}`;
+    }
+
+    getScopeBadgeTitle() {
+        const scope = this.resolveScope();
+        if (scope === null || scope <= 0) {
+            return 'Region scope: * (not set or wildcard)';
+        }
+        return `Region scope: ${scope}`;
+    }
+
     resolveHashSize() {
         const dataHashSize = parseInt(this.data.hash_size ?? 0, 10);
         const path = this.data.path ?? '';
@@ -1593,6 +1659,12 @@ class MeshLogRawPacket extends MeshLogObject {
         spHashSize.hidden = !hashSizeBadge;
         applyPresentation(spHashSize, { title: this.getHashSizeBadgeTitle() });
         divLine.append(spHashSize);
+
+        let spScope = document.createElement("span");
+        spScope.classList.add('sp', 'scope-badge');
+        spScope.innerText = this.getScopeBadgeText();
+        applyPresentation(spScope, { title: this.getScopeBadgeTitle() });
+        divLine.append(spScope);
 
         let spTag = document.createElement("span");
         spTag.classList.add('sp', 'tag', 'type-badge', 'type-badge-raw');
