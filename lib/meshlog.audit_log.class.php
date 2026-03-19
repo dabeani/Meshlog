@@ -9,6 +9,7 @@ class MeshLogAuditLog extends MeshLogEntity {
     const EVENT_LOGOUT       = 'logout';
     const EVENT_PURGE_AUTO   = 'purge.auto';
     const EVENT_PURGE_MANUAL = 'purge.manual';
+    const EVENT_SETTINGS_SAVE = 'settings.save';
     const EVENT_ERROR        = 'error';
 
     public $event      = null;

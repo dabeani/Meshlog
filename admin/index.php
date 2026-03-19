@@ -49,6 +49,12 @@ if (!$user && isset($_POST['login'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MeshLog Admin</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
     <link rel="stylesheet" href="../assets/css/style.css">
     <style>
         :root {
@@ -447,6 +453,7 @@ if (!$user && isset($_POST['login'])) {
         .audit-badge-logout         { background:#1a2c3d; color:#6aabde; }
         .audit-badge-purge\.manual  { background:#2d2215; color:#e0a84a; }
         .audit-badge-purge\.auto    { background:#1d2a1d; color:#7ec87e; }
+        .audit-badge-settings\.save { background:#1e1d34; color:#a89de0; }
         .audit-badge-error          { background:#3d1a1a; color:#e06060; }
         .audit-badge-default        { background:#1e2430; color:#9dc0b6; }
         .audit-pagination {
@@ -457,6 +464,48 @@ if (!$user && isset($_POST['login'])) {
             justify-content: flex-end;
             font-size: 0.88rem;
             color: var(--admin-muted);
+        }
+
+        /* Table input auto-sizing */
+        table td input[type=text],
+        table td input[type=number] {
+            width: 100%;
+            box-sizing: border-box;
+            min-width: 60px;
+        }
+
+        .reporter-key { min-width: 180px; }
+
+        /* Device map */
+        #admin-device-map {
+            height: 360px;
+            margin-top: 18px;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid var(--admin-line);
+        }
+
+        .admin-map-hint {
+            font-size: 0.82rem;
+            color: var(--admin-muted);
+            margin-top: 8px;
+        }
+
+        /* Reporter marker dot */
+        .admin-reporter-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            box-shadow: 0 0 6px rgba(0,0,0,0.5);
+        }
+
+        @keyframes reporterBlink {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            40%       { opacity: 0.3; transform: scale(1.7); }
+        }
+
+        .reporter-blink .admin-reporter-dot {
+            animation: reporterBlink 0.6s ease-in-out 4;
         }
 
         @media (max-width: 900px) {
@@ -534,6 +583,16 @@ if (!$user && isset($_POST['login'])) {
                         </thead>
                         <tbody id="reporters"></tbody>
                     </table>
+                </div>
+            </section>
+            <section class="admin-section" style="margin-top:18px;">
+                <div class="section-title">
+                    <span>Device Map</span>
+                    <span class="section-kicker">Reporter positions — markers pulse when a packet arrives. Click the map to pre-fill Lat/Lon in the add-row above.</span>
+                </div>
+                <div class="section-body">
+                    <div id="admin-device-map"></div>
+                    <p class="admin-map-hint">Click anywhere on the map to copy those coordinates into the &ldquo;Add&rdquo; row&rsquo;s Lat/Lon fields.</p>
                 </div>
             </section>
         </div>
@@ -683,6 +742,8 @@ if (!$user && isset($_POST['login'])) {
 
         /* ── Reporter helpers ────────────────────────────────────────── */
         const reporters = document.getElementById('reporters');
+        let addRowLatInput = null;
+        let addRowLonInput = null;
 
         function makeInputCell(row, value, type = 'text') {
             const td = row.insertCell();
@@ -735,6 +796,7 @@ if (!$user && isset($_POST['login'])) {
                     authorized: 1, style: '{"color":"#ff0000"}',
                     isAddRow: true
                 });
+                initDeviceMap(result.objects);
             });
         }
 
@@ -752,12 +814,9 @@ if (!$user && isset($_POST['login'])) {
             const name      = makeInputCell(row, reporter.name);
             const publicKey = makeInputCell(row, reporter.public_key);
             publicKey.classList.add('reporter-key');
-            publicKey.style.width = '220px';
             const hashSize  = makeHashSizeInput(row, reporter.hash_size ?? 1);
             const lat       = makeInputCell(row, reporter.lat);
             const lon       = makeInputCell(row, reporter.lon);
-            lat.style.width = '78px';
-            lon.style.width = '78px';
             const auth      = makeInputCell(row, reporter.auth);
 
             const styleCell = row.insertCell();
@@ -786,6 +845,8 @@ if (!$user && isset($_POST['login'])) {
             });
 
             if (reporter.isAddRow) {
+                addRowLatInput = lat;
+                addRowLonInput = lon;
                 const addBtn = document.createElement('button');
                 addBtn.className = 'button-primary';
                 addBtn.innerText = 'Add';
@@ -844,7 +905,100 @@ if (!$user && isset($_POST['login'])) {
             .then(result => {
                 if (getError(result)) { alert(getError(result)); return; }
                 reporters.querySelector(`tr[data-id="${id}"]`)?.remove();
+                if (adminMarkers[id]) { adminMarkers[id].marker.remove(); delete adminMarkers[id]; }
             });
+        }
+
+        /* ── Device Map ──────────────────────────────────────────────── */
+        let adminMap        = null;
+        let adminMarkers    = {};      // reporterId => { marker, lastHeard }
+        let pollInterval    = null;
+
+        function initDeviceMap(reportersList) {
+            if (!adminMap) {
+                adminMap = L.map('admin-device-map', { zoomControl: true });
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '\u00a9 <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>'
+                }).addTo(adminMap);
+
+                // Click on map → prefill lat/lon in Add row
+                adminMap.on('click', (e) => {
+                    if (!addRowLatInput || !addRowLonInput) return;
+                    addRowLatInput.value  = e.latlng.lat.toFixed(5);
+                    addRowLonInput.value  = e.latlng.lng.toFixed(5);
+                    addRowLatInput.style.color = '#1976D2';
+                    addRowLonInput.style.color = '#1976D2';
+                });
+            }
+
+            // Clear existing markers
+            Object.values(adminMarkers).forEach(m => m.marker.remove());
+            adminMarkers = {};
+
+            const coords = [];
+            reportersList.forEach(r => {
+                const lat = parseFloat(r.lat);
+                const lon = parseFloat(r.lon);
+                if (!isFinite(lat) || !isFinite(lon) || (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001)) return;
+
+                let color = '#6cc7b8', stroke = '#6cc7b8';
+                try {
+                    const s = JSON.parse(r.style ?? '{}');
+                    color  = s.color  ?? '#6cc7b8';
+                    stroke = s.stroke ?? color;
+                } catch {}
+
+                const iconEl = L.divIcon({
+                    className: 'admin-reporter-icon',
+                    html: `<div class="admin-reporter-dot" style="background:${color};border:2px solid ${stroke};"></div>`,
+                    iconSize:    [14, 14],
+                    iconAnchor:  [7, 7],
+                    popupAnchor: [0, -8],
+                });
+
+                const marker = L.marker([lat, lon], { icon: iconEl })
+                    .bindPopup(`<b>${r.name}</b><br>${lat.toFixed(5)}, ${lon.toFixed(5)}<br><small style="color:#888">${r.public_key.slice(0, 16)}\u2026</small>`)
+                    .addTo(adminMap);
+
+                adminMarkers[r.id] = { marker, lastHeard: null };
+                coords.push([lat, lon]);
+            });
+
+            if (coords.length > 0) {
+                adminMap.fitBounds(coords, { padding: [40, 40], maxZoom: 13 });
+            }
+            setTimeout(() => adminMap.invalidateSize(), 100);
+
+            // Start polling for new packets to trigger blink
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(pollReporterActivity, 15000);
+            pollReporterActivity();   // immediate first run
+        }
+
+        function pollReporterActivity() {
+            fetch('../api/v1/reporters/')
+            .then(r => r.json())
+            .then(result => {
+                (result.objects ?? []).forEach(r => {
+                    const m = adminMarkers[r.id];
+                    if (!m) return;
+                    const newHeard = r.contact?.last_heard_at ?? null;
+                    if (newHeard && newHeard !== m.lastHeard && m.lastHeard !== null) {
+                        // New activity — blink the marker
+                        const container = m.marker.getElement();
+                        if (container) {
+                            container.classList.remove('reporter-blink');
+                            // force reflow so animation restarts
+                            void container.offsetWidth;
+                            container.classList.add('reporter-blink');
+                            setTimeout(() => container.classList.remove('reporter-blink'), 2500);
+                        }
+                    }
+                    m.lastHeard = newHeard;
+                });
+            })
+            .catch(() => {});
         }
 
         /* ── Channels ────────────────────────────────────────────────── */

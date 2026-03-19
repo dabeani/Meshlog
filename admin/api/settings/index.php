@@ -32,6 +32,13 @@
     }
 
     if (isset($_POST['save'])) {
+        // Capture current values before update for audit comparison
+        $oldValues = array();
+        foreach ($adminDefs as $key => $definition) {
+            $oldValues[$key] = $meshlog->getConfig($key, $definition['default'] ?? null);
+        }
+
+        $newValues = array();
         foreach ($adminDefs as $key => $definition) {
             if (!array_key_exists($key, $_POST)) continue;
 
@@ -40,11 +47,25 @@
                 continue;
             }
 
+            $newValues[$key] = $normalized;
             $meshlog->setConfig($key, $normalized);
         }
 
         if (!sizeof($errors)) {
             $meshlog->saveSettings();
+
+            $changes = array();
+            foreach ($newValues as $key => $newVal) {
+                $oldVal = $oldValues[$key] ?? null;
+                if ((string)$oldVal !== (string)$newVal) {
+                    $changes[] = "$key: {$oldVal} \u{2192} {$newVal}";
+                }
+            }
+            if (!empty($changes)) {
+                $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
+                $meshlog->auditLog(\MeshLogAuditLog::EVENT_SETTINGS_SAVE, $actor, implode('; ', $changes));
+            }
+
             $results = array('status' => 'OK');
         }
     } else {
