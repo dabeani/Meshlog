@@ -3,7 +3,34 @@
 
     $errors = array();
     $results = array('status' => 'unknown');
-    $connectedAgeSeconds = 900;
+    $connectedAgeSeconds = 7200;
+
+    function findReporterLastActivity($meshlog, $reporterId, $publicKey) {
+        $sql = "
+            SELECT MAX(ts) AS last_activity_at
+            FROM (
+                SELECT MAX(received_at) AS ts FROM advertisement_reports WHERE reporter_id = :reporter_id
+                UNION ALL
+                SELECT MAX(received_at) AS ts FROM direct_message_reports WHERE reporter_id = :reporter_id
+                UNION ALL
+                SELECT MAX(received_at) AS ts FROM channel_message_reports WHERE reporter_id = :reporter_id
+                UNION ALL
+                SELECT MAX(received_at) AS ts FROM raw_packets WHERE reporter_id = :reporter_id
+                UNION ALL
+                SELECT MAX(received_at) AS ts FROM telemetry WHERE reporter_id = :reporter_id
+                UNION ALL
+                SELECT MAX(last_heard_at) AS ts FROM contacts WHERE public_key = :public_key
+            ) activity
+        ";
+
+        $stmt = $meshlog->pdo->prepare($sql);
+        $stmt->bindValue(':reporter_id', intval($reporterId), PDO::PARAM_INT);
+        $stmt->bindValue(':public_key', strval($publicKey), PDO::PARAM_STR);
+        $stmt->execute();
+
+        $value = $stmt->fetchColumn();
+        return $value !== false && $value !== null && $value !== '' ? $value : null;
+    }
 
     function reporterSnapshot($reporter) {
         if (!$reporter) return array();
@@ -41,21 +68,20 @@
         if ($contact) {
             $row['contact'] = $contact->asArray();
             $row['contact_id'] = $contact->getId();
-            $row['last_heard_at'] = $contact->last_heard_at;
-
             $advertisement = MeshLogAdvertisement::findBy('contact_id', $contact->getId(), $meshlog, array());
             if ($advertisement) {
                 $row['contact_type'] = intval($advertisement->type);
                 $row['advertisement'] = $advertisement->asArray();
             }
+        }
 
-            if (!empty($contact->last_heard_at)) {
-                $lastHeardTs = strtotime($contact->last_heard_at);
-                if ($lastHeardTs !== false && (time() - $lastHeardTs) <= $connectedAgeSeconds) {
-                    $row['connection_state'] = 'connected';
-                } else {
-                    $row['connection_state'] = 'disconnected';
-                }
+        $row['last_heard_at'] = findReporterLastActivity($meshlog, intval($row['id']), strval($row['public_key']));
+        if (!empty($row['last_heard_at'])) {
+            $lastHeardTs = strtotime($row['last_heard_at']);
+            if ($lastHeardTs !== false && (time() - $lastHeardTs) <= $connectedAgeSeconds) {
+                $row['connection_state'] = 'connected';
+            } else {
+                $row['connection_state'] = 'disconnected';
             }
         }
 

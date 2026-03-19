@@ -384,7 +384,7 @@ if (!$user && isset($_POST['login'])) {
             display: grid;
             place-items: center;
             background: rgba(7, 10, 15, 0.72);
-            z-index: 200;
+            z-index: 5000;
             padding: 20px;
         }
 
@@ -399,6 +399,8 @@ if (!$user && isset($_POST['login'])) {
             border-radius: 20px;
             box-shadow: var(--admin-shadow);
             padding: 22px;
+            position: relative;
+            z-index: 5001;
         }
 
         .admin-modal-card h2 {
@@ -472,6 +474,59 @@ if (!$user && isset($_POST['login'])) {
             width: 100%;
             box-sizing: border-box;
             min-width: 60px;
+        }
+
+        .admin-table {
+            min-width: 100%;
+        }
+
+        .admin-devices-table {
+            min-width: 1480px;
+        }
+
+        .admin-channels-table {
+            min-width: 760px;
+        }
+
+        .admin-devices-table td,
+        .admin-devices-table th,
+        .admin-channels-table td,
+        .admin-channels-table th {
+            white-space: nowrap;
+        }
+
+        .admin-devices-table input.reporter-name-input {
+            min-width: 150px;
+        }
+
+        .admin-devices-table input.reporter-key {
+            min-width: 280px;
+        }
+
+        .admin-devices-table input.coord-input {
+            min-width: 92px;
+            max-width: 110px;
+        }
+
+        .admin-devices-table input.auth-token-input {
+            min-width: 180px;
+        }
+
+        .admin-devices-table select.hash-size-select {
+            min-width: 96px;
+        }
+
+        .style-cell {
+            white-space: nowrap;
+        }
+
+        .style-cell input[type=color] {
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        .status-cell {
+            min-width: 150px;
         }
 
         .reporter-key { min-width: 180px; }
@@ -602,7 +657,7 @@ if (!$user && isset($_POST['login'])) {
                     <span class="section-kicker">Authorization keys, location, style, and hash-byte configuration per device</span>
                 </div>
                 <div class="section-body">
-                    <table>
+                    <table class="admin-table admin-devices-table">
                         <thead>
                             <tr>
                                 <th>#</th>
@@ -642,7 +697,7 @@ if (!$user && isset($_POST['login'])) {
                     <span class="section-kicker">Channel hashes, names, pre-shared keys (for GRP_TXT decryption), and visibility</span>
                 </div>
                 <div class="section-body">
-                    <table>
+                    <table class="admin-table admin-channels-table">
                         <thead>
                             <tr>
                                 <th>#</th>
@@ -910,14 +965,20 @@ if (!$user && isset($_POST['login'])) {
             catch { style = { color: reporter.style ?? '#ff0000' }; }
 
             const name      = makeInputCell(row, reporter.name);
+            name.classList.add('reporter-name-input');
             const publicKey = makeInputCell(row, reporter.public_key);
             publicKey.classList.add('reporter-key');
             const hashSize  = makeHashSizeInput(row, reporter.hash_size ?? 1);
+            hashSize.classList.add('hash-size-select');
             const lat       = makeInputCell(row, reporter.lat);
             const lon       = makeInputCell(row, reporter.lon);
+            lat.classList.add('coord-input');
+            lon.classList.add('coord-input');
             const auth      = makeInputCell(row, reporter.auth);
+            auth.classList.add('auth-token-input');
 
             const styleCell = row.insertCell();
+            styleCell.classList.add('style-cell');
             const preview = document.createElement('span');
             preview.innerText  = reporter.name;
             preview.className  = 'logger-name';
@@ -929,6 +990,7 @@ if (!$user && isset($_POST['login'])) {
 
             const enabled     = makeInputCell(row, reporter.authorized, 'checkbox');
             const statusCell  = row.insertCell();
+            statusCell.classList.add('status-cell');
             renderReporterStatusCell(statusCell, reporter);
             const actionsCell = row.insertCell();
 
