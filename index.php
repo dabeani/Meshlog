@@ -65,6 +65,18 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
 <div id="context-menu" class="menu">
 </div>
 </div>
+
+<!-- App help dialog (opened by ? buttons in the filter panels) -->
+<div id="app-help-modal" hidden>
+    <div class="app-help-card" role="dialog" aria-modal="true" aria-labelledby="app-help-title">
+        <div class="app-help-header">
+            <span id="app-help-title"></span>
+            <button type="button" id="app-help-close" title="Close">✕</button>
+        </div>
+        <p id="app-help-body"></p>
+    </div>
+</div>
+
 <script>
 
 // Setup linkifyjs default options (default to ouse page)
@@ -335,6 +347,22 @@ var meshlog = new MeshLog(
 );
 meshlog.loadAll();
 meshlog.setAutorefresh(10000);
+
+// App help dialog
+(function() {
+    const modal = document.getElementById('app-help-modal');
+    const titleEl = document.getElementById('app-help-title');
+    const bodyEl  = document.getElementById('app-help-body');
+    window.openAppHelp = function(title, body) {
+        titleEl.innerText = title;
+        bodyEl.innerText  = body;
+        modal.hidden = false;
+    };
+    function close() { modal.hidden = true; }
+    document.getElementById('app-help-close').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) close(); });
+})();
 
 </script>
 </body>

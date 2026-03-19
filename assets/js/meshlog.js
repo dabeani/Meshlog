@@ -1852,7 +1852,7 @@ class MeshLog {
     __init_filter_layout() {
         this.dom_settings_types.replaceChildren();
 
-        const createGroup = (title, description) => {
+        const createGroup = (title, helpText) => {
             const section = document.createElement('section');
             section.className = 'settings-card';
 
@@ -1863,22 +1863,33 @@ class MeshLog {
             headingTitle.className = 'settings-card-title';
             headingTitle.innerText = title;
 
-            const headingDesc = document.createElement('div');
-            headingDesc.className = 'settings-card-subtitle';
-            headingDesc.innerText = description;
+            const helpBtn = document.createElement('button');
+            helpBtn.type = 'button';
+            helpBtn.className = 'settings-help-btn';
+            helpBtn.innerText = '?';
+            helpBtn.title = helpText;
+            helpBtn.addEventListener('click', () => {
+                if (typeof window.openAppHelp === 'function') window.openAppHelp(title, helpText);
+            });
 
             const badgeRow = document.createElement('div');
             badgeRow.className = 'settings-badge-row';
 
-            heading.append(headingTitle, headingDesc);
+            heading.append(headingTitle, helpBtn);
             section.append(heading, badgeRow);
             this.dom_settings_types.append(section);
 
             return badgeRow;
         };
 
-        this.dom_type_badges = createGroup('Live Feed Filters', 'Toggle message families shown in the left feed. These choices are stored per browser in cookies.');
-        this.dom_channel_badges = createGroup('Channel Filters', 'Channel badges share the same colors used in channel message badges inside the feed.');
+        this.dom_type_badges = createGroup(
+            'Live Feed Filters',
+            'Toggle which packet types appear in the live feed below. Choices are saved per browser.\n\nAdvertisements — periodic node beacons.\nChannel Messages — decoded group/channel messages.\nDirect Messages — unicast messages.\nRaw Packets — undecoded or encrypted packets.\nNotifications — browser push alerts for new entries.'
+        );
+        this.dom_channel_badges = createGroup(
+            'Channel Filters',
+            'Show or hide individual channels in the live feed. Each channel has a unique color that matches its badge in the feed entries.\n\nChannels shown as grey/dim have been disabled in the Admin panel and cannot be toggled here.'
+        );
     }
 
     __createInput(name, key, def, onchange) {
