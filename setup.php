@@ -13,6 +13,7 @@
     include 'migrations/008_expand_channel_hash.php';
     include 'migrations/009_add_channel_psk.php';
     include 'migrations/010_add_reporter_hash_size.php';
+    include 'migrations/011_add_audit_log.php';
 
     // Must be in order!
     $migrationClasses = array(
@@ -27,6 +28,7 @@
         'Migration_008',
         'Migration_009',
         'Migration_010',
+        'Migration_011',
     );
 
     session_start();
