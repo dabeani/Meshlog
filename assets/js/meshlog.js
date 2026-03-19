@@ -1998,6 +1998,7 @@ class MeshLogLinkLayer {
 
 class MeshLog {
     static MAX_ROUTE_PREVIEWS = 3;
+    static MAX_TRANSIENT_ROUTE_ANIMATIONS = 8;
     static MARKER_PANE_BACKGROUND = 'meshlog-marker-background';
     static MARKER_PANE_ROUTE = 'meshlog-marker-route';
     static ROUTE_PANE = 'meshlog-route-lines';
@@ -2018,6 +2019,7 @@ class MeshLog {
         this.links = {};
         this.canvas_renderer = L.canvas({ padding: 0.5 });
         this.routeAnimationFrames = [];
+        this.transientRouteAnimations = [];
         this._initMapPanes();
         this.dom_logs = document.getElementById(logsid);
         this.dom_contacts = document.getElementById(contactsid);
@@ -2099,6 +2101,33 @@ class MeshLog {
             cancelAnimationFrame(this.routeAnimationFrames[i].id);
         }
         this.routeAnimationFrames = [];
+    }
+
+    _cleanupTransientRouteAnimations() {
+        this.transientRouteAnimations = this.transientRouteAnimations.filter(animation => {
+            if (animation.done) {
+                if (animation.layer && this.map.hasLayer(animation.layer)) {
+                    this.map.removeLayer(animation.layer);
+                }
+                return false;
+            }
+            return true;
+        });
+    }
+
+    _trimTransientRouteAnimations() {
+        this._cleanupTransientRouteAnimations();
+        while (this.transientRouteAnimations.length >= MeshLog.MAX_TRANSIENT_ROUTE_ANIMATIONS) {
+            const animation = this.transientRouteAnimations.shift();
+            if (!animation) break;
+            animation.done = true;
+            if (animation.frameId) {
+                cancelAnimationFrame(animation.frameId);
+            }
+            if (animation.layer && this.map.hasLayer(animation.layer)) {
+                this.map.removeLayer(animation.layer);
+            }
+        }
     }
 
     _startRouteLineAnimation(lineGlow, line2, baseWeight) {
@@ -3320,8 +3349,16 @@ class MeshLog {
         const validWpts = waypoints.filter(w => w[0] !== 0 || w[1] !== 0);
         if (validWpts.length < 2) return;
 
+        this._trimTransientRouteAnimations();
+
         const animLayer = L.layerGroup().addTo(this.map);
         const cr = this.canvas_renderer;
+        const animationState = {
+            layer: animLayer,
+            frameId: 0,
+            done: false
+        };
+        this.transientRouteAnimations.push(animationState);
 
         const glowLine  = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, renderer: cr, color: color,     weight: 14, opacity: 0 }).addTo(animLayer);
         const innerLine = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, renderer: cr, color: '#ffffff', weight: 2,  opacity: 0 }).addTo(animLayer);
@@ -3358,8 +3395,19 @@ class MeshLog {
         };
 
         const animate = (now) => {
+            if (animationState.done) {
+                if (self.map.hasLayer(animLayer)) {
+                    self.map.removeLayer(animLayer);
+                }
+                return;
+            }
+
             const t = now - startTime;
-            if (t > totalMs) { self.map.removeLayer(animLayer); return; }
+            if (t > totalMs) {
+                animationState.done = true;
+                self._cleanupTransientRouteAnimations();
+                return;
+            }
 
             // Glow envelope
             let gOp;
@@ -3386,9 +3434,9 @@ class MeshLog {
                 pulse.setRadius(pt * 22);
             }
 
-            requestAnimationFrame(animate);
+            animationState.frameId = requestAnimationFrame(animate);
         };
-        requestAnimationFrame(animate);
+        animationState.frameId = requestAnimationFrame(animate);
     }
 
     _animateNewPacketPath(msg) {
@@ -3396,14 +3444,20 @@ class MeshLog {
         if (!msg.reports || msg.reports.length === 0) return;
         const srcContact = this.contacts[msg.data.contact_id] ?? null;
         const labelContacts = new Set();
+        const animatedPathKeys = new Set();
 
         msg.reports.forEach(report => {
             const reporter = this.reporters[report.data.reporter_id];
             if (!reporter) return;
             const hashes    = parsePath(report.data.path);
             const waypoints = this._buildPathWaypoints(hashes, srcContact, reporter);
+            if (waypoints.length < 2) return;
             const color     = reporter.getStyle().color ?? '#4eb8d0';
-            this._runPathAnimation(waypoints, color);
+            const pathKey = `${report.data.reporter_id}:${color}:${waypoints.map(point => point.join(',')).join('|')}`;
+            if (!animatedPathKeys.has(pathKey)) {
+                animatedPathKeys.add(pathKey);
+                this._runPathAnimation(waypoints, color);
+            }
 
             // Collect contacts on this path for label display
             const anchor = this._getReporterAnchor(reporter);
