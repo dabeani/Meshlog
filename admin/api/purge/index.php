@@ -8,13 +8,18 @@
         try {
             $stats = $meshlog->purgeOldData();
             $total = array_sum($stats);
+            $message = "Purged {$stats['advertisements']} advertisements, {$stats['messages']} messages, {$stats['raw_packets']} raw packets.";
+            $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
+            $meshlog->auditLog(\MeshLogAuditLog::EVENT_PURGE_MANUAL, $actor, $message);
             $results = array(
                 'status' => 'OK',
                 'deleted' => $stats,
                 'total' => $total,
-                'message' => "Purged {$stats['advertisements']} advertisements, {$stats['messages']} messages, {$stats['raw_packets']} raw packets."
+                'message' => $message
             );
         } catch (Exception $e) {
+            $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
+            $meshlog->auditLog(\MeshLogAuditLog::EVENT_ERROR, $actor, 'purge failed: ' . $e->getMessage());
             $results = array('status' => 'error', 'error' => $e->getMessage());
         }
     } else {

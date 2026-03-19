@@ -14,13 +14,14 @@ require_once 'meshlog.user.class.php';
 require_once 'meshlog.report.class.php';
 require_once 'meshlog.raw_packet.class.php';
 require_once 'meshlog.mqtt_decoder.class.php';
+require_once 'meshlog.audit_log.class.php';
 
 define("MAX_COUNT", 2500);
 define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 10;
+    private $version = 11;
     const PURGE_INTERVAL_SECONDS = 3600;
     private $settings = array(
         MeshlogSetting::KEY_DB_VERSION => 0,
@@ -119,6 +120,17 @@ class MeshLog {
     }
 
     /**
+     * Write an audit log entry.  Wraps MeshLogAuditLog::write() with the
+     * client IP resolved from the server environment.
+     */
+    function auditLog($event, $actor = '', $detail = '') {
+        $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '';
+        // Only use the first address in X-Forwarded-For
+        $ip = explode(',', $ip)[0];
+        MeshLogAuditLog::write($this, $event, $actor, $detail, trim($ip));
+    }
+
+    /**
      * Delete records older than the configured retention periods.
      * Returns array with row counts deleted per category.
      */
@@ -193,9 +205,12 @@ class MeshLog {
         $lastPurge = intval($this->getConfig(MeshlogSetting::KEY_LAST_PURGE_AT, 0));
         if ((time() - $lastPurge) < static::PURGE_INTERVAL_SECONDS) return;
 
-        $this->purgeOldData();
+        $stats = $this->purgeOldData();
         $this->setConfig(MeshlogSetting::KEY_LAST_PURGE_AT, time());
         $this->saveSettings();
+        $total = array_sum($stats);
+        $detail = "auto-purge: {$stats['advertisements']} adv, {$stats['messages']} msg, {$stats['raw_packets']} raw ({$total} total)";
+        $this->auditLog(MeshLogAuditLog::EVENT_PURGE_AUTO, 'system', $detail);
     }
 
     function authorize($data) {

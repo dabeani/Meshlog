@@ -12,6 +12,13 @@ if (isset($_SESSION['user'])) {
 }
 
 if (isset($_POST['logout']) || isset($_GET['logout'])) {
+    if (isset($_SESSION['user'])) {
+        $logoutUser = $_SESSION['user'];
+        $meshlog->auditLog(
+            \MeshLogAuditLog::EVENT_LOGOUT,
+            is_object($logoutUser) ? $logoutUser->name : ($logoutUser['name'] ?? 'unknown')
+        );
+    }
     session_destroy();
     $user = null;
     header('Location: .');
@@ -30,6 +37,9 @@ if (!$user && isset($_POST['login'])) {
             'permissions' => $login->permissions,
         );
         $_SESSION['user'] = $login;
+        $meshlog->auditLog(\MeshLogAuditLog::EVENT_LOGIN_OK, $login->name);
+    } else {
+        $meshlog->auditLog(\MeshLogAuditLog::EVENT_LOGIN_FAIL, htmlspecialchars($username, ENT_QUOTES, 'UTF-8'), 'invalid password');
     }
 }
 ?>
@@ -403,6 +413,52 @@ if (!$user && isset($_POST['login'])) {
             margin-top: 18px;
         }
 
+        /* Audit log table */
+        .audit-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88rem;
+        }
+        .audit-table th {
+            text-align: left;
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--admin-line-strong);
+            color: var(--admin-muted);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .audit-table td {
+            padding: 6px 10px;
+            border-bottom: 1px solid var(--admin-line);
+            vertical-align: top;
+            word-break: break-word;
+        }
+        .audit-table tr:last-child td { border-bottom: none; }
+        .audit-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .audit-badge-login\.ok      { background:#1a3d2e; color:#5cde9a; }
+        .audit-badge-login\.fail    { background:#3d1a1a; color:#e06060; }
+        .audit-badge-logout         { background:#1a2c3d; color:#6aabde; }
+        .audit-badge-purge\.manual  { background:#2d2215; color:#e0a84a; }
+        .audit-badge-purge\.auto    { background:#1d2a1d; color:#7ec87e; }
+        .audit-badge-error          { background:#3d1a1a; color:#e06060; }
+        .audit-badge-default        { background:#1e2430; color:#9dc0b6; }
+        .audit-pagination {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+            justify-content: flex-end;
+            font-size: 0.88rem;
+            color: var(--admin-muted);
+        }
+
         @media (max-width: 900px) {
             .admin-header {
                 flex-wrap: wrap;
@@ -445,6 +501,7 @@ if (!$user && isset($_POST['login'])) {
             <button type="button" class="admin-nav-btn" data-page="devices">Devices</button>
             <button type="button" class="admin-nav-btn" data-page="channels">Channels</button>
             <button type="button" class="admin-nav-btn" data-page="settings">Settings</button>
+            <button type="button" class="admin-nav-btn" data-page="audit">Audit Log</button>
             <div class="admin-nav-sep"></div>
             <a href="?logout" class="admin-nav-btn">Log out</a>
         </nav>
@@ -524,7 +581,37 @@ if (!$user && isset($_POST['login'])) {
             </section>
         </div>
 
-    </div>
+        <!-- PAGE: Audit Log -->
+        <div class="admin-page" id="page-audit">
+            <section class="admin-section">
+                <div class="section-title">
+                    <span>Audit Log</span>
+                    <span class="section-kicker">Login attempts, purge jobs, and system errors</span>
+                </div>
+                <div class="section-body">
+                    <table class="audit-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>When</th>
+                                <th>Event</th>
+                                <th>Actor</th>
+                                <th>IP</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-tbody"></tbody>
+                    </table>
+                    <div class="audit-pagination">
+                        <button type="button" id="audit-prev-btn" disabled>&larr; Prev</button>
+                        <span id="audit-page-info"></span>
+                        <button type="button" id="audit-next-btn">Next &rarr;</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+    </div><!-- /.admin-body -->
 
     <!-- Help modal (shared) -->
     <div class="admin-modal" id="help-modal" hidden>
@@ -539,7 +626,7 @@ if (!$user && isset($_POST['login'])) {
 
     <script>
         /* ── Tabs ────────────────────────────────────────────────────── */
-        const PAGES = ['devices', 'channels', 'settings'];
+        const PAGES = ['devices', 'channels', 'settings', 'audit'];
         const loadedPages = new Set();
 
         function switchPage(name) {
@@ -557,6 +644,7 @@ if (!$user && isset($_POST['login'])) {
                 if (name === 'devices')  loadReporters();
                 if (name === 'channels') loadChannels();
                 if (name === 'settings') loadSettings();
+                if (name === 'audit')    loadAudit(0);
             }
         }
 
@@ -1089,6 +1177,77 @@ if (!$user && isset($_POST['login'])) {
             .catch(() => { purgeNowButton.disabled = false; purgeStatus.innerText = 'Request failed'; });
         }
         purgeNowButton.addEventListener('click', purgeNow);
+
+        /* ── Audit Log ───────────────────────────────────────────────── */
+        const auditTbody   = document.getElementById('audit-tbody');
+        const auditPageInfo = document.getElementById('audit-page-info');
+        const auditPrevBtn  = document.getElementById('audit-prev-btn');
+        const auditNextBtn  = document.getElementById('audit-next-btn');
+        const AUDIT_LIMIT   = 50;
+        let   auditOffset   = 0;
+        let   auditTotal    = 0;
+
+        const AUDIT_BADGE_MAP = {
+            'login.ok':     'login\\.ok',
+            'login.fail':   'login\\.fail',
+            'logout':       'logout',
+            'purge.manual': 'purge\\.manual',
+            'purge.auto':   'purge\\.auto',
+            'error':        'error',
+        };
+
+        function auditBadgeClass(event) {
+            return 'audit-badge-' + (AUDIT_BADGE_MAP[event] ?? 'default').replace('.', '\\.');
+        }
+
+        function renderAudit(rows, total, offset) {
+            auditTotal  = total;
+            auditOffset = offset;
+            auditTbody.innerHTML = '';
+            if (!rows.length) {
+                const tr = auditTbody.insertRow();
+                const td = tr.insertCell();
+                td.colSpan = 6;
+                td.style.textAlign = 'center';
+                td.style.color = 'var(--admin-muted)';
+                td.innerText = 'No audit entries yet.';
+                auditPrevBtn.disabled = true;
+                auditNextBtn.disabled = true;
+                auditPageInfo.innerText = '';
+                return;
+            }
+            rows.forEach(row => {
+                const tr = auditTbody.insertRow();
+                tr.insertCell().innerText = row.id;
+                tr.insertCell().innerText = row.created_at ?? '';
+                const evCell = tr.insertCell();
+                const badge = document.createElement('span');
+                badge.className = 'audit-badge audit-badge-' + (row.event ?? 'default');
+                badge.innerText = row.event ?? '';
+                evCell.append(badge);
+                tr.insertCell().innerText = row.actor  ?? '';
+                tr.insertCell().innerText = row.ip     ?? '';
+                tr.insertCell().innerText = row.detail ?? '';
+            });
+            const page    = Math.floor(offset / AUDIT_LIMIT) + 1;
+            const pages   = Math.max(1, Math.ceil(total / AUDIT_LIMIT));
+            auditPageInfo.innerText = `Page ${page} / ${pages}  (${total} entries)`;
+            auditPrevBtn.disabled = offset <= 0;
+            auditNextBtn.disabled = offset + AUDIT_LIMIT >= total;
+        }
+
+        function loadAudit(offset) {
+            fetch(`api/audit/?limit=${AUDIT_LIMIT}&offset=${offset}`)
+                .then(r => r.json())
+                .then(result => {
+                    if (getError(result)) { auditTbody.innerHTML = '<tr><td colspan="6">Error: ' + getError(result) + '</td></tr>'; return; }
+                    renderAudit(result.objects ?? [], result.total ?? 0, offset);
+                })
+                .catch(() => { auditTbody.innerHTML = '<tr><td colspan="6">Request failed</td></tr>'; });
+        }
+
+        auditPrevBtn.addEventListener('click', () => loadAudit(Math.max(0, auditOffset - AUDIT_LIMIT)));
+        auditNextBtn.addEventListener('click', () => loadAudit(auditOffset + AUDIT_LIMIT));
 
         /* ── Init ────────────────────────────────────────────────────── */
         const initialPage = PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'devices';
