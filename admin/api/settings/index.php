@@ -3,18 +3,59 @@
 
     $errors = array();
     $results = array('status' => 'unknown');
+    $adminDefs = MeshLogSetting::getAdminDefinitions();
+
+    function normalizeSettingValue($key, $value, $definitions, &$errors) {
+        if (!isset($definitions[$key])) return null;
+
+        $type = $definitions[$key]['type'] ?? 'text';
+        if ($type === 'boolean') {
+            return intval($value) ? 1 : 0;
+        }
+
+        if ($type === 'number') {
+            if ($value === '' || !is_numeric($value)) {
+                $errors[] = "Invalid value for $key";
+                return null;
+            }
+
+            $normalized = intval($value);
+            if ($normalized < 0) {
+                $errors[] = "Invalid value for $key";
+                return null;
+            }
+
+            return $normalized;
+        }
+
+        return trim(strval($value));
+    }
 
     if (isset($_POST['save'])) {
-        $anonymize = isset($_POST['anonymize_usernames']) ? intval($_POST['anonymize_usernames']) : 0;
-        $meshlog->setConfig(MeshLogSetting::KEY_ANONYMIZE_USERNAMES, $anonymize);
-        $meshlog->saveSettings();
-        $results = array('status' => 'OK');
+        foreach ($adminDefs as $key => $definition) {
+            if (!array_key_exists($key, $_POST)) continue;
+
+            $normalized = normalizeSettingValue($key, $_POST[$key], $adminDefs, $errors);
+            if ($normalized === null && sizeof($errors)) {
+                continue;
+            }
+
+            $meshlog->setConfig($key, $normalized);
+        }
+
+        if (!sizeof($errors)) {
+            $meshlog->saveSettings();
+            $results = array('status' => 'OK');
+        }
     } else {
+        $settings = array();
+        foreach ($adminDefs as $key => $definition) {
+            $settings[$key] = $meshlog->getConfig($key, $definition['default'] ?? null);
+        }
+
         $results = array(
             'status' => 'OK',
-            'settings' => array(
-                'anonymize_usernames' => $meshlog->getConfig(MeshLogSetting::KEY_ANONYMIZE_USERNAMES, 0)
-            )
+            'settings' => $settings
         );
     }
 

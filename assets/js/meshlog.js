@@ -1,20 +1,65 @@
 class Settings {
-    static get(key, def=undefined) {
-        if (!localStorage.hasOwnProperty(key)) {
-            localStorage[key] = def;
+    static cookiePrefix = 'meshlog_';
+
+    static getCookieKey(key) {
+        return `${this.cookiePrefix}${key}`;
+    }
+
+    static readCookie(key) {
+        const cookieKey = encodeURIComponent(this.getCookieKey(key));
+        const parts = document.cookie ? document.cookie.split('; ') : [];
+        for (let i = 0; i < parts.length; i++) {
+            const [name, ...valueParts] = parts[i].split('=');
+            if (name === cookieKey) {
+                return decodeURIComponent(valueParts.join('='));
+            }
         }
-        return localStorage[key];
+        return undefined;
+    }
+
+    static readLegacyLocalStorage(key) {
+        try {
+            const value = localStorage.getItem(key);
+            if (value !== null) {
+                this.writeCookie(key, value);
+                return value;
+            }
+        } catch (error) {
+            console.debug('localStorage unavailable', error);
+        }
+        return undefined;
+    }
+
+    static writeCookie(key, value) {
+        const cookieKey = encodeURIComponent(this.getCookieKey(key));
+        const cookieValue = encodeURIComponent(String(value));
+        document.cookie = `${cookieKey}=${cookieValue}; path=/; max-age=31536000; SameSite=Lax`;
+    }
+
+    static get(key, def=undefined) {
+        let value = this.readCookie(key);
+        if (value === undefined) {
+            value = this.readLegacyLocalStorage(key);
+        }
+        if (value === undefined && def !== undefined) {
+            this.set(key, def);
+            return String(def);
+        }
+        return value;
     }
 
     static getBool(key, def=undefined) {
-        if (!localStorage.hasOwnProperty(key)) {
-            localStorage[key] = def;
-        }
-        return localStorage[key] === "true";
+        const value = this.get(key, def);
+        return value === 'true' || value === '1' || value === true;
     }
 
     static set(key, value) {
-        localStorage[key] = value;
+        this.writeCookie(key, value);
+        try {
+            localStorage.setItem(key, String(value));
+        } catch (error) {
+            console.debug('localStorage unavailable', error);
+        }
     }
 }
 
@@ -50,6 +95,43 @@ function parsePath(pathStr) {
     if (!pathStr) return [];
     const parts = pathStr.includes('->') ? pathStr.split('->') : pathStr.split(',');
     return parts.map(h => h.trim().replace(/[^0-9a-fA-F]/g, '').toLowerCase()).filter(Boolean);
+}
+
+function str2hue(str) {
+    let hash = 0x811c9dc5n;
+    for (let i = 0; i < str.length; i++) {
+        hash = BigInt.asIntN(32, hash ^ BigInt(str.charCodeAt(i)));
+        hash = BigInt.asIntN(32, hash * 0x01000193n);
+    }
+
+    return Number(hash & 0xFFFFFFFFn) % 360;
+}
+
+function getChannelTheme(seed) {
+    const basis = seed && seed.length > 0 ? seed : 'channel';
+    const hue = str2hue(basis);
+    return {
+        hue,
+        solid: `hsl(${hue}deg, 68%, 46%)`,
+        background: `hsla(${hue}deg, 72%, 52%, 0.18)`,
+        border: `hsla(${hue}deg, 84%, 70%, 0.44)`,
+        text: `hsl(${hue}deg, 88%, 78%)`,
+    };
+}
+
+function applyPresentation(element, meta = {}, fallbackTitle = '') {
+    if (!element) return;
+
+    element.title = meta.title ?? fallbackTitle;
+    if (meta.title ?? fallbackTitle) {
+        element.setAttribute('aria-label', meta.title ?? fallbackTitle);
+    }
+
+    if (meta.style) {
+        Object.entries(meta.style).forEach(([key, value]) => {
+            element.style[key] = value;
+        });
+    }
 }
 
 class MeshLogObject {
@@ -116,6 +198,18 @@ class MeshLogChannel extends MeshLogObject {
         super(meshlog, data);
     }
 
+    getBadgeTheme() {
+        return getChannelTheme(`${this.data.hash ?? ''}:${this.data.name ?? ''}`);
+    }
+
+    getBadgeTitle() {
+        const adminEnabled = !(this.data.enabled === 0 || this.data.enabled === '0' || this.data.enabled === false);
+        if (!adminEnabled) {
+            return `${this.data.name}: disabled in admin`;
+        }
+        return `Toggle live-feed visibility for channel ${this.data.name}`;
+    }
+
     isEnabled() {
         // Respect the admin-side enabled flag first.  If the admin has disabled this
         // channel (enabled == 0 or "0") it must be hidden regardless of the user's
@@ -135,22 +229,34 @@ class MeshLogChannel extends MeshLogObject {
 
         const self = this;
 
-        let cb = this._meshlog.__createCb(
+        const adminEnabled = !(this.data.enabled === 0 || this.data.enabled === '0' || this.data.enabled === false);
+        let toggle = this._meshlog.__createBadgeToggle(
             this.data.name,
-            '',
             `channels.${this.data.id}.enabled`,
             this.isEnabled(),
             (e) => {
                 this.enabled = e.target.checked;
                 self._meshlog.__onTypesChanged();
+            },
+            {
+                title: this.getBadgeTitle(),
+                theme: this.getBadgeTheme(),
+                disabled: !adminEnabled,
             }
         );
 
         this.dom = {
-            cb: cb,
+            cb: toggle.button,
+            toggle,
         };
 
         return this.dom;
+    }
+
+    updateDom() {
+        if (!this.dom?.toggle) return;
+        this.dom.toggle.setActive(this.isEnabled());
+        this.dom.toggle.setDisabled(this.data.enabled === 0 || this.data.enabled === '0' || this.data.enabled === false);
     }
 }
 
@@ -1061,6 +1167,14 @@ class MeshLogReportedObject extends MeshLogObject {
         return null;
     }
 
+    getHashSizeBadgeTitle() {
+        const hashSize = this.resolveHashSize();
+        if (hashSize >= 1 && hashSize <= 3) {
+            return `Routing hash prefix size: ${hashSize} byte${hashSize === 1 ? '' : 's'}`;
+        }
+        return '';
+    }
+
     updateMetaIndicators() {
         if (!this.dom) return;
 
@@ -1068,6 +1182,7 @@ class MeshLogReportedObject extends MeshLogObject {
         if (this.dom.hashSize) {
             this.dom.hashSize.innerText = hashSizeBadge ?? '';
             this.dom.hashSize.hidden = !hashSizeBadge;
+            applyPresentation(this.dom.hashSize, { title: this.getHashSizeBadgeTitle() });
         }
 
         if (this.dom.prefix) {
@@ -1153,10 +1268,12 @@ class MeshLogReportedObject extends MeshLogObject {
         spHashSize.classList.add('sp', 'hash-size-badge');
         spHashSize.innerText = hashSizeBadge ?? '';
         spHashSize.hidden = !hashSizeBadge;
+        applyPresentation(spHashSize, { title: this.getHashSizeBadgeTitle() });
 
         spTag.classList.add(...['sp', 'tag']);
         spTag.classList.add(...tag.classList);
         spTag.innerText = tag.text;
+        applyPresentation(spTag, tag, tag.text);
 
         spName.classList.add(...['sp', 't']);
         spName.classList.add(...name.classList);
@@ -1237,6 +1354,8 @@ class MeshLogReportedObject extends MeshLogObject {
         this.dom.tag.className = 'sp tag';
         this.dom.tag.classList.add(...tag.classList);
         this.dom.tag.innerText = tag.text;
+        this.dom.tag.style.cssText = '';
+        applyPresentation(this.dom.tag, tag, tag.text);
 
         this.dom.name.className = 'sp t';
         this.dom.name.classList.add(...name.classList);
@@ -1319,7 +1438,13 @@ class MeshLogAdvertisement extends MeshLogReportedObject {
     static idPrefix = "a";
     getId()   { return `a_${this.data.id}`; }
     getDate() { return {text: this.data.created_at, classList: []}; }
-    getTag()  { return {text: "ADVERT", classList: []}; }
+    getTag()  {
+        return {
+            text: 'ADVERT',
+            classList: ['type-badge', 'type-badge-adv'],
+            title: 'Advertisement frame from a node'
+        };
+    }
     getName() { return {text: this.data.name, classList: []}; }
     getText() { return {text: "", classList: []}; }
     getPathTag() { return "ADV"; }
@@ -1332,7 +1457,17 @@ class MeshLogChannelMessage extends MeshLogReportedObject {
         let chid = this.data.channel_id;
         let ch = this._meshlog.channels[chid] ?? false;
         let chname = ch ? ch.data.name : `Channel ${chid}`;
-        return {text: `→ ${chname}`, classList: []};
+        let theme = getChannelTheme(ch ? `${ch.data.hash}:${ch.data.name}` : chname);
+        return {
+            text: chname,
+            classList: ['tag-badge', 'channel-tag'],
+            title: `Channel message in ${chname}. Color matches the channel filter badge.`,
+            style: {
+                background: theme.background,
+                borderColor: theme.border,
+                color: theme.text,
+            }
+        };
     }
 
     getId()   { return `c_${this.data.id}`; }
@@ -1359,7 +1494,11 @@ class MeshLogDirectMessage extends MeshLogReportedObject {
                 text = `→ ${reporter.data.name}`;
             }
         }
-        return {text: text, classList: []};
+        return {
+            text: text,
+            classList: ['tag-badge', 'tag-badge-direct'],
+            title: 'Direct message destination or receiving reporter'
+        };
     }
 
     getId()   { return `d_${this.data.id}`; }
@@ -1393,11 +1532,19 @@ class MeshLogRawPacket extends MeshLogObject {
     }
 
     getHashSizeBadgeText() {
-        const hashSize = parseInt(this.data.hash_size ?? 0, 10);
+        const hashSize = this.resolveHashSize();
         if (hashSize >= 1 && hashSize <= 3) {
             return `${hashSize}b`;
         }
         return null;
+    }
+
+    getHashSizeBadgeTitle() {
+        const hashSize = this.resolveHashSize();
+        if (hashSize >= 1 && hashSize <= 3) {
+            return `Raw packet path hash prefix size: ${hashSize} byte${hashSize === 1 ? '' : 's'}`;
+        }
+        return '';
     }
 
     resolveHashSize() {
@@ -1444,11 +1591,13 @@ class MeshLogRawPacket extends MeshLogObject {
         spHashSize.classList.add('sp', 'hash-size-badge');
         spHashSize.innerText = hashSizeBadge ?? '';
         spHashSize.hidden = !hashSizeBadge;
+        applyPresentation(spHashSize, { title: this.getHashSizeBadgeTitle() });
         divLine.append(spHashSize);
 
         let spTag = document.createElement("span");
-        spTag.classList.add('sp', 'tag');
+        spTag.classList.add('sp', 'tag', 'type-badge', 'type-badge-raw');
         spTag.innerText = this.getTypeLabel();
+        applyPresentation(spTag, { title: 'Stored raw packet subtype derived from the packet header' }, this.getTypeLabel());
         divLine.append(spTag);
 
         let reporter = this._meshlog.reporters[this.data.reporter_id] ?? false;
@@ -1549,6 +1698,8 @@ class MeshLog {
         this.dom_settings_reporters = document.getElementById(sreportersid);
         this.dom_settings_contacts = document.getElementById(scontactsid);
 
+        this.__init_filter_layout();
+
         this.dom_contacts.addEventListener('click', this.handleMouseEvent);
         this.dom_contacts.addEventListener('mouseover', this.handleMouseEvent);
         this.dom_contacts.addEventListener('mouseout', this.handleMouseEvent);
@@ -1637,10 +1788,8 @@ class MeshLog {
 
         cb.type = "checkbox";
         cb.checked = Settings.getBool(key, def);
-        console.log('create cb: ', key, cb.checked);
         cb.onchange = (e) => {
             Settings.set(key, e.target.checked);
-            localStorage[key] = e.target.checked;
             onchange(e);
         };
 
@@ -1660,14 +1809,86 @@ class MeshLog {
         return div;
     }
 
+    __createBadgeToggle(label, key, def, onchange, options = {}) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'selector-badge';
+        button.innerText = label;
+
+        const applyTheme = (theme) => {
+            if (!theme) return;
+            button.style.setProperty('--badge-bg', theme.background);
+            button.style.setProperty('--badge-border', theme.border);
+            button.style.setProperty('--badge-text', theme.text);
+            button.style.setProperty('--badge-solid', theme.solid);
+        };
+
+        const setActive = (active) => {
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        };
+
+        const setDisabled = (disabled) => {
+            button.disabled = disabled;
+            button.classList.toggle('is-disabled', disabled);
+        };
+
+        applyTheme(options.theme);
+        applyPresentation(button, { title: options.title ?? label }, options.title ?? label);
+        setActive(Settings.getBool(key, def));
+        setDisabled(Boolean(options.disabled));
+
+        button.addEventListener('click', () => {
+            if (button.disabled) return;
+            const nextValue = !Settings.getBool(key, def);
+            Settings.set(key, nextValue);
+            setActive(nextValue);
+            onchange({ target: { checked: nextValue, value: nextValue } });
+        });
+
+        return { button, setActive, setDisabled };
+    }
+
+    __init_filter_layout() {
+        this.dom_settings_types.replaceChildren();
+
+        const createGroup = (title, description) => {
+            const section = document.createElement('section');
+            section.className = 'settings-card';
+
+            const heading = document.createElement('div');
+            heading.className = 'settings-card-heading';
+
+            const headingTitle = document.createElement('div');
+            headingTitle.className = 'settings-card-title';
+            headingTitle.innerText = title;
+
+            const headingDesc = document.createElement('div');
+            headingDesc.className = 'settings-card-subtitle';
+            headingDesc.innerText = description;
+
+            const badgeRow = document.createElement('div');
+            badgeRow.className = 'settings-badge-row';
+
+            heading.append(headingTitle, headingDesc);
+            section.append(heading, badgeRow);
+            this.dom_settings_types.append(section);
+
+            return badgeRow;
+        };
+
+        this.dom_type_badges = createGroup('Live Feed Filters', 'Toggle message families shown in the left feed. These choices are stored per browser in cookies.');
+        this.dom_channel_badges = createGroup('Channel Filters', 'Channel badges share the same colors used in channel message badges inside the feed.');
+    }
+
     __createInput(name, key, def, onchange) {
         let div = document.createElement("div");
         let inp = document.createElement("input");
 
         inp.type = "text";
-        inp.value = localStorage[key] ?? def;
+        inp.value = Settings.get(key, def) ?? def;
         inp.oninput = (e) => {
-            localStorage[key] = e.target.value;
+            Settings.set(key, e.target.value);
             onchange(e);
         };
         inp.placeholder = name;
@@ -1847,62 +2068,77 @@ class MeshLog {
 
     __init_message_types() {
         const self = this;
-        this.dom_settings_types.appendChild(
-            this.__createCb(
+        this.dom_type_badges.appendChild(
+            this.__createBadgeToggle(
                 "Advertisements",
-                "assets/img/beacon.png",
                 'messageTypes.advertisements',
                 true,
                 (e) => {
                     self.__onTypesChanged();
+                },
+                {
+                    title: 'Show or hide advertisement entries in the live feed'
                 }
             )
+            .button
         );
 
-        this.dom_settings_types.appendChild(
-            this.__createCb(
+        this.dom_type_badges.appendChild(
+            this.__createBadgeToggle(
                 "Channel Messages",
-                "assets/img/message.png",
                 'messageTypes.channel',
                 true,
                 (e) => {
                     self.__onTypesChanged();
+                },
+                {
+                    title: 'Show or hide decoded channel messages in the live feed'
                 }
             )
+            .button
         );
 
-        this.dom_settings_types.append(
-            this.__createCb(
+        this.dom_type_badges.append(
+            this.__createBadgeToggle(
                 "Direct Messages",
-                "assets/img/message.png",
                 'messageTypes.direct',
                 false,
                 (e) => {
                     self.__onTypesChanged();
+                },
+                {
+                    title: 'Show or hide decoded direct messages in the live feed'
                 }
             )
+            .button
         );
 
-        this.dom_settings_types.append(
-            this.__createCb(
+        this.dom_type_badges.append(
+            this.__createBadgeToggle(
                 "Raw Packets",
-                "assets/img/receipt.svg",
                 'messageTypes.raw',
                 false,
                 (e) => {
                     self.__onTypesChanged();
+                },
+                {
+                    title: 'Show or hide stored raw packets in the live feed'
                 }
             )
+            .button
         );
 
-        this.dom_settings_types.append(
-            this.__createCb(
-                "🐐",
-                "",
+        this.dom_type_badges.append(
+            this.__createBadgeToggle(
+                'Notifications',
                 'notifications.enabled',
                 false,
-                (e) => { }
+                (e) => { },
+                {
+                    title: 'Enable or disable browser notifications for newly received feed entries'
+                }
             )
+            .button
         );
     }
 
@@ -2291,7 +2527,7 @@ class MeshLog {
         let dom = ch.createDom();
         ch.updateDom();
         if (isnew) {
-            this.dom_settings_types.appendChild(dom.cb);
+            this.dom_channel_badges.appendChild(dom.cb);
         }
     }
 
@@ -2958,13 +3194,7 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 function str2color(str, saturation = 65, lightness = 45) {
-    let hash = 0x811c9dc5n;
-    for (let i = 0; i < str.length; i++) {
-        hash = BigInt.asIntN(32, hash ^ BigInt(str.charCodeAt(i)));
-        hash = BigInt.asIntN(32, hash * 0x01000193n);
-    }
-
-    return `hsl(${Number(hash & 0xFFFFFFFFn) % 360}deg, ${saturation}%, ${lightness}%)`;
+    return `hsl(${str2hue(str)}deg, ${saturation}%, ${lightness}%)`;
 }
 
 function createTooltip(element, contents) {

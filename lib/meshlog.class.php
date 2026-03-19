@@ -20,7 +20,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 9;
+    private $version = 10;
     private $settings = array(
         MeshlogSetting::KEY_DB_VERSION => 0,
         MeshlogSetting::KEY_MAX_CONTACT_AGE => 1814400,
@@ -63,7 +63,11 @@ class MeshLog {
             foreach ($settings['objects'] as $s) {
                 $k = $s['name'];
                 $v = $s['value'];
-                if ($k === MeshlogSetting::KEY_ANONYMIZE_USERNAMES) {
+                if (in_array($k, array(
+                    MeshlogSetting::KEY_MAX_CONTACT_AGE,
+                    MeshlogSetting::KEY_MAX_GROUPING_AGE,
+                    MeshlogSetting::KEY_ANONYMIZE_USERNAMES,
+                ), true)) {
                     $v = (int)$v;
                 }
                 if ($k) {

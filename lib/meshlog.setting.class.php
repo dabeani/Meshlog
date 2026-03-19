@@ -8,6 +8,23 @@ class MeshLogSetting extends MeshLogEntity {
     const KEY_INFLUXDB_DB = "INFLUXDB_DB";
     const KEY_ANONYMIZE_USERNAMES = "ANONYMIZE_USERNAMES";
 
+    public static function getAdminDefinitions() {
+        return array(
+            static::KEY_MAX_CONTACT_AGE => array(
+                'type' => 'number',
+                'default' => 1814400,
+            ),
+            static::KEY_MAX_GROUPING_AGE => array(
+                'type' => 'number',
+                'default' => 21600,
+            ),
+            static::KEY_ANONYMIZE_USERNAMES => array(
+                'type' => 'boolean',
+                'default' => 0,
+            ),
+        );
+    }
+
     protected static $table = "settings";
 
     public $name = null;

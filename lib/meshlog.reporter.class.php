@@ -11,6 +11,7 @@ class MeshLogReporter extends MeshLogEntity {
     public $style = null;
     public $data = null;
     public $auth = null;
+    public $hash_size = 1;
 
     public static function fromDb($data, $meshlog) {
         if (!$data) return null;
@@ -26,6 +27,7 @@ class MeshLogReporter extends MeshLogEntity {
         $m->style = $data['style'] ?? '{}';
         $m->data = $data['data'] ?? '{}';
         $m->auth = $data['auth'] ?? '';
+        $m->hash_size = intval($data['hash_size'] ?? 1);
 
         return $m;
     }
@@ -39,6 +41,7 @@ class MeshLogReporter extends MeshLogEntity {
             'lon' => $this->lon,
             'style' => $this->style,
             'data' => $this->data,
+            'hash_size' => intval($this->hash_size ?? 1),
         );
 
         if ($secret) {
@@ -66,6 +69,10 @@ class MeshLogReporter extends MeshLogEntity {
     public function isValid() {
         if ($this->public_key == null) { $this->error = "Missing Public Key"; return false; };
         if ($this->name == null) { $this->error = "Missing Name"; return false; };
+        if (!in_array(intval($this->hash_size), array(1, 2, 3), true)) {
+            $this->error = "Hash size must be 1, 2, or 3 bytes";
+            return false;
+        }
 
         return parent::isValid();
     }
@@ -80,6 +87,7 @@ class MeshLogReporter extends MeshLogEntity {
             "style" => array($this->style, PDO::PARAM_STR),
             "color" => array("", PDO::PARAM_STR),
             "auth" => array($this->auth, PDO::PARAM_STR),
+            "hash_size" => array(intval($this->hash_size ?? 1), PDO::PARAM_INT),
         );
     }
     

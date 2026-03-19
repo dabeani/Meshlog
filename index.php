@@ -50,10 +50,10 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
     <div id="logs"></div>
 </div>
 <div id="midbar">
-    <div class="resize-bar" id="leftdrag"></div>
+    <div class="resize-bar" id="leftdrag"><button type="button" class="collapse-toggle" id="toggle-leftbar" title="Hide live feed sidebar" aria-label="Hide live feed sidebar">◀</button></div>
     <div id="map"></div>
     <div id="warning" hidden></div>
-    <div class="resize-bar" id="rightdrag"></div>
+    <div class="resize-bar" id="rightdrag"><button type="button" class="collapse-toggle" id="toggle-rightbar" title="Hide contacts sidebar" aria-label="Hide contacts sidebar">▶</button></div>
 </div>
 <div id="rightbar">
     <div class="settings" id="settings-contacts">
@@ -76,24 +76,29 @@ class Bar {
     constructor(id, width) {
         this.tmpWidth = undefined;
         this.dom = document.getElementById(id);
+        this.savedWidth = width;
         this.setWidth(width);
     }
 
-    setWidth(w) {
+    setWidth(w, remember=true) {
         this.width = w;
+        if (remember && w > 0.5) {
+            this.savedWidth = w;
+        }
         this.dom.style.width = `${w}%`;
+        this.dom.classList.toggle('bar-collapsed', w <= 0.5);
     }
 
     setTmpWidth(w) {
         if (this.tmpWidth == undefined) {
             this.tmpWidth = this.width;
-            this.setWidth(w);
+            this.setWidth(w, false);
         }
     }
 
     resetWidth() {
         if (this.tmpWidth != undefined) {
-            this.setWidth(this.tmpWidth);
+            this.setWidth(this.tmpWidth, false);
             this.tmpWidth = undefined;
         }
     }
@@ -196,6 +201,59 @@ const rightBar = new Bar("rightbar", 20);
 
 const dragLeft = new DragPair("leftdrag", leftBar, middleBar);
 const dragRight = new DragPair("rightdrag", middleBar, rightBar);
+const toggleLeftBar = document.getElementById('toggle-leftbar');
+const toggleRightBar = document.getElementById('toggle-rightbar');
+
+function syncCollapseButton(button, collapsed, direction, title) {
+    button.innerText = collapsed ? (direction === '◀' ? '▶' : '◀') : direction;
+    button.title = title;
+    button.setAttribute('aria-label', title);
+    button.parentElement.classList.toggle('compact', collapsed);
+}
+
+function setLeftCollapsed(collapsed) {
+    const total = leftBar.width + middleBar.width;
+    if (collapsed) {
+        if (leftBar.width > 0.5) {
+            leftBar.savedWidth = leftBar.width;
+        }
+        leftBar.setWidth(0, false);
+        middleBar.setWidth(total, false);
+    } else {
+        const restored = Math.min(Math.max(leftBar.savedWidth ?? 33, 18), Math.max(total - 18, 18));
+        leftBar.setWidth(restored, false);
+        middleBar.setWidth(total - restored, false);
+    }
+    Settings.set('layout.leftbar.collapsed', collapsed);
+    syncCollapseButton(toggleLeftBar, collapsed, '◀', collapsed ? 'Show live feed sidebar' : 'Hide live feed sidebar');
+    if (typeof map !== 'undefined' && map) map.invalidateSize();
+}
+
+function setRightCollapsed(collapsed) {
+    const total = middleBar.width + rightBar.width;
+    if (collapsed) {
+        if (rightBar.width > 0.5) {
+            rightBar.savedWidth = rightBar.width;
+        }
+        rightBar.setWidth(0, false);
+        middleBar.setWidth(total, false);
+    } else {
+        const restored = Math.min(Math.max(rightBar.savedWidth ?? 20, 18), Math.max(total - 18, 18));
+        rightBar.setWidth(restored, false);
+        middleBar.setWidth(total - restored, false);
+    }
+    Settings.set('layout.rightbar.collapsed', collapsed);
+    syncCollapseButton(toggleRightBar, collapsed, '▶', collapsed ? 'Show contacts sidebar' : 'Hide contacts sidebar');
+    if (typeof map !== 'undefined' && map) map.invalidateSize();
+}
+
+toggleLeftBar.addEventListener('click', () => {
+    setLeftCollapsed(!Settings.getBool('layout.leftbar.collapsed', false));
+});
+
+toggleRightBar.addEventListener('click', () => {
+    setRightCollapsed(!Settings.getBool('layout.rightbar.collapsed', false));
+});
 
 function resize() {
     if (window.innerWidth <= 900) {
@@ -216,6 +274,9 @@ window.addEventListener("resize", function() {
 const drags = new Drags("container");
 drags.add(dragLeft);
 drags.add(dragRight);
+
+setLeftCollapsed(Settings.getBool('layout.leftbar.collapsed', false));
+setRightCollapsed(Settings.getBool('layout.rightbar.collapsed', false));
 
 resize();
 
@@ -238,7 +299,7 @@ function _setTileLayer(name) {
     if (_activeTileLayer) map.removeLayer(_activeTileLayer);
     var cfg = _TILE_LAYERS[name];
     _activeTileLayer = L.tileLayer(cfg.url, cfg.opts).addTo(map);
-    try { localStorage.setItem('meshlog_map_layer', name); } catch(e) {}
+    Settings.set('map.layer', name);
     document.querySelectorAll('.map-layer-btn').forEach(function(b) {
         b.classList.toggle('active', b.dataset.layer === name);
     });
@@ -250,13 +311,15 @@ var _LayerToggle = L.Control.extend({
         div.innerHTML = '<button class="map-layer-btn" data-layer="dark">Dark</button><button class="map-layer-btn" data-layer="light">Light</button>';
         L.DomEvent.disableClickPropagation(div);
         div.querySelectorAll('.map-layer-btn').forEach(function(btn) {
+            btn.title = btn.dataset.layer === 'dark' ? 'Use the dark map tile layer' : 'Use the light map tile layer';
+            btn.setAttribute('aria-label', btn.title);
             btn.addEventListener('click', function() { _setTileLayer(btn.dataset.layer); });
         });
         return div;
     }
 });
 new _LayerToggle().addTo(map);
-var _savedLayer = (function(){ try { return localStorage.getItem('meshlog_map_layer'); } catch(e){ return null; } })();
+var _savedLayer = Settings.get('map.layer', 'dark');
 _setTileLayer(_savedLayer === 'light' ? 'light' : 'dark');
 
 var meshlog = new MeshLog(
