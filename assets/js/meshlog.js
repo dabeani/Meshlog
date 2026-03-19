@@ -134,6 +134,71 @@ function applyPresentation(element, meta = {}, fallbackTitle = '') {
     }
 }
 
+function getSnrBadgePresentation(snr, title = '') {
+    if (!Number.isFinite(snr)) {
+        return { title };
+    }
+
+    let qualityLabel = 'Poor';
+
+    if (snr >= 9) {
+        qualityLabel = 'Excellent';
+        return {
+            title: title ? `${title} (${qualityLabel})` : qualityLabel,
+            style: {
+                color: '#ecfff4',
+                background: '#20583a',
+                borderColor: '#3ea86c'
+            }
+        };
+    }
+
+    if (snr >= 3) {
+        qualityLabel = 'Good';
+        return {
+            title: title ? `${title} (${qualityLabel})` : qualityLabel,
+            style: {
+                color: '#e9fffc',
+                background: '#245764',
+                borderColor: '#46a8c2'
+            }
+        };
+    }
+
+    if (snr >= -3) {
+        qualityLabel = 'Fair';
+        return {
+            title: title ? `${title} (${qualityLabel})` : qualityLabel,
+            style: {
+                color: '#fff7e3',
+                background: '#6d5522',
+                borderColor: '#c79a3a'
+            }
+        };
+    }
+
+    if (snr >= -10) {
+        qualityLabel = 'Weak';
+        return {
+            title: title ? `${title} (${qualityLabel})` : qualityLabel,
+            style: {
+                color: '#fff0e3',
+                background: '#7a4520',
+                borderColor: '#d47d39'
+            }
+        };
+    }
+
+    return {
+        title: title ? `${title} (${qualityLabel})` : qualityLabel,
+        style: {
+            color: '#ffeceb',
+            background: '#6d2730',
+            borderColor: '#d35a69'
+        }
+    };
+}
+
 class MeshLogObject {
     static idPrefix = "";
 
@@ -267,6 +332,8 @@ class MeshLogContact extends MeshLogObject {
         this.last = null;
         this.telemetry = null;
         this.marker = null;
+        this.markerPane = null;
+        this.markerTooltip = undefined;
 
         this.flags.dupe = false;
         this.hash = data.public_key.substr(0, 2 * data.hash_size).toLowerCase();
@@ -463,8 +530,6 @@ class MeshLogContact extends MeshLogObject {
                     for (let i=hashes.length-1;i>=0;i--) {
                         let hash = hashes[i];
                         let nearest = this._meshlog.findNearestContact(prev.lat, prev.lon, hash, true);
-
-                        // Valid repeater found?
                         if (nearest) {
                             if (nearest.matches > 1) {
                                 // desc.warnings.push(`Multiple paths (${nearest.matches}) detected to ${hash}. Showing shortest.`);
@@ -718,10 +783,32 @@ class MeshLogContact extends MeshLogObject {
             iconAnchor: [15, 42]
         });
 
-        const self = this;
+        this.marker = L.marker(
+            [this.adv.data.lat, this.adv.data.lon],
+            {
+                icon: icon,
+                pane: this.markerPane ?? this._meshlog.getMarkerPaneName(false)
+            }
+        ).addTo(map);
+        this.markerPane = this.marker.options.pane;
+        this.updateTooltip(this.markerTooltip);
+    }
 
-        this.marker = L.marker([this.adv.data.lat, this.adv.data.lon], { icon: icon }).addTo(map);
-        this.updateTooltip();
+    setMarkerPane(active) {
+        if (!this.marker) return;
+
+        const targetPane = this._meshlog.getMarkerPaneName(active);
+        if (this.markerPane === targetPane) return;
+
+        const wasTooltipOpen = !!this.marker.getTooltip() && this.marker.isTooltipOpen();
+        this.marker.remove();
+        this.marker.options.pane = targetPane;
+        this.marker.addTo(this._meshlog.map);
+        this.markerPane = targetPane;
+        this.updateTooltip(this.markerTooltip);
+        if (wasTooltipOpen) {
+            this.marker.openTooltip();
+        }
     }
 
     updateTooltip(tooltip = undefined) {
@@ -731,6 +818,8 @@ class MeshLogContact extends MeshLogObject {
             if (tooltip === undefined) {
                 tooltip = `<p class="tooltip-title">${this.adv.data.name} <span class="tooltip-hash">[${this.hash}]</span></p><p class="tooltip-detail">Last heard: ${this.last.data.created_at}</p>`;
             }
+
+            this.markerTooltip = tooltip;
 
             if (tooltip) {
                 this.marker.bindTooltip(tooltip);
@@ -1277,6 +1366,10 @@ class MeshLogReportedObject extends MeshLogObject {
         return `Best observed SNR across grouped receptions: ${this.formatSnr(bestSnr)} dB`;
     }
 
+    getSnrBadgePresentation() {
+        return getSnrBadgePresentation(this.resolveBestSnr(), this.getSnrBadgeTitle());
+    }
+
     getReportCountBadgeText() {
         const count = this.reports?.length ?? 0;
         if (count <= 0) return null;
@@ -1315,7 +1408,7 @@ class MeshLogReportedObject extends MeshLogObject {
             const snrBadge = this.getSnrBadgeText();
             this.dom.snr.innerText = snrBadge ?? '';
             this.dom.snr.hidden = !snrBadge;
-            applyPresentation(this.dom.snr, { title: this.getSnrBadgeTitle() });
+            applyPresentation(this.dom.snr, this.getSnrBadgePresentation());
         }
 
         if (this.dom.reportCount) {
@@ -1427,7 +1520,7 @@ class MeshLogReportedObject extends MeshLogObject {
         spSnr.classList.add('sp', 'metric-badge');
         spSnr.innerText = snrBadge ?? '';
         spSnr.hidden = !snrBadge;
-        applyPresentation(spSnr, { title: this.getSnrBadgeTitle() });
+        applyPresentation(spSnr, this.getSnrBadgePresentation());
 
         let spReportCount = document.createElement("span");
         let reportCountBadge = this.getReportCountBadgeText();
@@ -1454,11 +1547,11 @@ class MeshLogReportedObject extends MeshLogObject {
             // message
             divLine1.append(spDate);
             divLine1.append(spHashSize);
-            divLine1.append(spScope);
             divLine1.append(spHops);
             divLine1.append(spSnr);
             divLine1.append(spReportCount);
             divLine1.append(spPrefix);
+            divLine1.append(spScope);
             divLine1.append(spTag);
             divLine2.append(spName);
             divLine2.append(spText);
@@ -1466,11 +1559,11 @@ class MeshLogReportedObject extends MeshLogObject {
             // advert
             divLine1.append(spDate);
             divLine1.append(spHashSize);
-            divLine1.append(spScope);
             divLine1.append(spHops);
             divLine1.append(spSnr);
             divLine1.append(spReportCount);
             // divLine1.append(spPrefix);
+            divLine1.append(spScope);
             // divLine1.append(spTag);
             divLine1.append(spName);
         }
@@ -1769,6 +1862,10 @@ class MeshLogRawPacket extends MeshLogObject {
         return `Observed SNR at receiving reporter: ${Number.isInteger(snr) ? snr : snr.toFixed(1)} dB`;
     }
 
+    getSnrBadgePresentation() {
+        return getSnrBadgePresentation(Number(this.data.snr), this.getSnrBadgeTitle());
+    }
+
     getReportCountBadgeText() {
         return '1rx';
     }
@@ -1828,7 +1925,6 @@ class MeshLogRawPacket extends MeshLogObject {
         spScope.classList.add('sp', 'scope-badge');
         spScope.innerText = this.getScopeBadgeText();
         applyPresentation(spScope, { title: this.getScopeBadgeTitle() });
-        divLine.append(spScope);
 
         let spHops = document.createElement("span");
         spHops.classList.add('sp', 'metric-badge');
@@ -1841,7 +1937,7 @@ class MeshLogRawPacket extends MeshLogObject {
         spSnr.classList.add('sp', 'metric-badge');
         spSnr.innerText = snrBadge ?? '';
         spSnr.hidden = !snrBadge;
-        applyPresentation(spSnr, { title: this.getSnrBadgeTitle() });
+        applyPresentation(spSnr, this.getSnrBadgePresentation());
         divLine.append(spSnr);
 
         let spReportCount = document.createElement("span");
@@ -1854,6 +1950,7 @@ class MeshLogRawPacket extends MeshLogObject {
         spTag.classList.add('sp', 'tag', 'type-badge', 'type-badge-raw');
         spTag.innerText = this.getTypeLabel();
         applyPresentation(spTag, { title: 'Stored raw packet subtype derived from the packet header' }, this.getTypeLabel());
+        divLine.append(spScope);
         divLine.append(spTag);
 
         let reporter = this._meshlog.reporters[this.data.reporter_id] ?? false;
@@ -1901,6 +1998,9 @@ class MeshLogLinkLayer {
 
 class MeshLog {
     static MAX_ROUTE_PREVIEWS = 3;
+    static MARKER_PANE_BACKGROUND = 'meshlog-marker-background';
+    static MARKER_PANE_ROUTE = 'meshlog-marker-route';
+    static ROUTE_PANE = 'meshlog-route-lines';
 
     constructor(map, logsid, contactsid, stypesid, sreportersid, scontactsid, warningid, errorid, contextmenuid) {
         this.reporters = {};
@@ -1918,6 +2018,7 @@ class MeshLog {
         this.links = {};
         this.canvas_renderer = L.canvas({ padding: 0.5 });
         this.routeAnimationFrames = [];
+        this._initMapPanes();
         this.dom_logs = document.getElementById(logsid);
         this.dom_contacts = document.getElementById(contactsid);
         this.dom_warning = document.getElementById(warningid);
@@ -1975,6 +2076,22 @@ class MeshLog {
         this.link_layers.addTo(this.map);
 
         this.last = '2025-01-01 00:00:00';
+    }
+
+    _initMapPanes() {
+        const backgroundPane = this.map.createPane(MeshLog.MARKER_PANE_BACKGROUND);
+        backgroundPane.style.zIndex = '350';
+
+        const routePane = this.map.createPane(MeshLog.ROUTE_PANE);
+        routePane.style.zIndex = '500';
+        routePane.style.pointerEvents = 'auto';
+
+        const routeMarkerPane = this.map.createPane(MeshLog.MARKER_PANE_ROUTE);
+        routeMarkerPane.style.zIndex = '650';
+    }
+
+    getMarkerPaneName(active = false) {
+        return active ? MeshLog.MARKER_PANE_ROUTE : MeshLog.MARKER_PANE_BACKGROUND;
     }
 
     _stopRouteLineAnimations() {
@@ -2937,6 +3054,7 @@ class MeshLog {
         Object.entries(this.contacts).forEach(([k,v]) => {
             if (!v.marker) return;
             const highlighted = !empty && this.visible_markers.has(v.data.id);
+            v.setMarkerPane(highlighted);
             if (empty || highlighted) {
                 v.marker.setOpacity(1);
                 v.marker.setZIndexOffset(1000);
@@ -3032,9 +3150,9 @@ class MeshLog {
                 const dashArray = animatedRoute ? '10 10' : null;
 
                 // Three-layer rendering: wide semi-transparent glow → dark outline → colored inner
-                let lineGlow = L.polyline(linePath, {color: reporterColor, weight: ln_glow, opacity: glowOpacity});
-                let line1    = L.polyline(linePath, {color: linkOutlineColor, weight: ln_outline});
-                let line2    = L.polyline(linePath, {color: reporterColor, weight: innerWeight, dashArray: dashArray});
+                let lineGlow = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, color: reporterColor, weight: ln_glow, opacity: glowOpacity});
+                let line1    = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, color: linkOutlineColor, weight: ln_outline});
+                let line2    = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, color: reporterColor, weight: innerWeight, dashArray: dashArray});
 
                 if (!links.includes(line_id)) {
                     links.push(line_id);
@@ -3084,6 +3202,7 @@ class MeshLog {
                 if (path.circle && !circles.includes(circle_id)) {
                     circles.push(circle_id);
                     let circle = L.circle(linePath[0], {
+                        pane: MeshLog.ROUTE_PANE,
                         color: reporterColor,
                         fillColor: reporterColor,
                         fillOpacity: 0.2,
@@ -3111,7 +3230,7 @@ class MeshLog {
                             symbol: L.Symbol.arrowHead({
                                 pixelSize: 14,
                                 polygon: false,
-                                pathOptions: { renderer: this.canvas_renderer, stroke: true, color: strokeColor, weight: ln_decor_outline }
+                                pathOptions: { pane: MeshLog.ROUTE_PANE, renderer: this.canvas_renderer, stroke: true, color: strokeColor, weight: ln_decor_outline }
                             })
                         },
                         {
@@ -3120,7 +3239,7 @@ class MeshLog {
                             symbol: L.Symbol.arrowHead({
                                 pixelSize: 14,
                                 polygon: false,
-                                pathOptions: { renderer: this.canvas_renderer, stroke: true, color: path.reporter.getStyle().color, weight: ln_decor_weight }
+                                pathOptions: { pane: MeshLog.ROUTE_PANE, renderer: this.canvas_renderer, stroke: true, color: path.reporter.getStyle().color, weight: ln_decor_weight }
                             })
                         }
                         ]
@@ -3204,13 +3323,13 @@ class MeshLog {
         const animLayer = L.layerGroup().addTo(this.map);
         const cr = this.canvas_renderer;
 
-        const glowLine  = L.polyline(waypoints, { renderer: cr, color: color,     weight: 14, opacity: 0 }).addTo(animLayer);
-        const innerLine = L.polyline(waypoints, { renderer: cr, color: '#ffffff', weight: 2,  opacity: 0 }).addTo(animLayer);
+        const glowLine  = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, renderer: cr, color: color,     weight: 14, opacity: 0 }).addTo(animLayer);
+        const innerLine = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, renderer: cr, color: '#ffffff', weight: 2,  opacity: 0 }).addTo(animLayer);
         const dot = L.circleMarker(waypoints[0], {
-            renderer: cr, radius: 7, color: '#ffffff', fillColor: color, fillOpacity: 1, weight: 2, opacity: 1
+            pane: MeshLog.MARKER_PANE_ROUTE, renderer: cr, radius: 7, color: '#ffffff', fillColor: color, fillOpacity: 1, weight: 2, opacity: 1
         }).addTo(animLayer);
         const pulse = L.circleMarker(waypoints[waypoints.length - 1], {
-            renderer: cr, radius: 0, color: color, fillColor: color, fillOpacity: 0.35, weight: 2, opacity: 0
+            pane: MeshLog.MARKER_PANE_ROUTE, renderer: cr, radius: 0, color: color, fillColor: color, fillOpacity: 0.35, weight: 2, opacity: 0
         }).addTo(animLayer);
 
         const totalLen     = this._calcPathLength(waypoints);
