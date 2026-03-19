@@ -1208,38 +1208,6 @@ class MeshLogReportedObject extends MeshLogObject {
         return `Region scope transport code: ${scope}`;
     }
 
-    getHopBadgeText() {
-        const hops = parsePath(this.data.path ?? '').length;
-        return hops === 0 ? 'dir' : `${hops}h`;
-    }
-
-    getHopBadgeTitle() {
-        const hops = parsePath(this.data.path ?? '').length;
-        return hops === 0
-            ? 'Observed route length: direct reception with no relays'
-            : `Observed route length: ${hops} hop${hops === 1 ? '' : 's'}`;
-    }
-
-    getSnrBadgeText() {
-        const snr = Number(this.data.snr);
-        if (!Number.isFinite(snr)) return null;
-        return `${Number.isInteger(snr) ? snr : snr.toFixed(1)}dB`;
-    }
-
-    getSnrBadgeTitle() {
-        const snr = Number(this.data.snr);
-        if (!Number.isFinite(snr)) return '';
-        return `Observed SNR at receiving reporter: ${Number.isInteger(snr) ? snr : snr.toFixed(1)} dB`;
-    }
-
-    getReportCountBadgeText() {
-        return '1rx';
-    }
-
-    getReportCountBadgeTitle() {
-        return 'Stored raw packet heard by 1 reporter';
-    }
-
     resolveHopRange() {
         if (!this.reports || this.reports.length === 0) return null;
 
@@ -1777,6 +1745,38 @@ class MeshLogRawPacket extends MeshLogObject {
         return `Region scope transport code: ${scope}`;
     }
 
+    getHopBadgeText() {
+        const hops = parsePath(this.data.path ?? '').length;
+        return hops === 0 ? 'dir' : `${hops}h`;
+    }
+
+    getHopBadgeTitle() {
+        const hops = parsePath(this.data.path ?? '').length;
+        return hops === 0
+            ? 'Observed route length: direct reception with no relays'
+            : `Observed route length: ${hops} hop${hops === 1 ? '' : 's'}`;
+    }
+
+    getSnrBadgeText() {
+        const snr = Number(this.data.snr);
+        if (!Number.isFinite(snr)) return null;
+        return `${Number.isInteger(snr) ? snr : snr.toFixed(1)}dB`;
+    }
+
+    getSnrBadgeTitle() {
+        const snr = Number(this.data.snr);
+        if (!Number.isFinite(snr)) return '';
+        return `Observed SNR at receiving reporter: ${Number.isInteger(snr) ? snr : snr.toFixed(1)} dB`;
+    }
+
+    getReportCountBadgeText() {
+        return '1rx';
+    }
+
+    getReportCountBadgeTitle() {
+        return 'Stored raw packet heard by 1 reporter';
+    }
+
     resolveHashSize() {
         const dataHashSize = parseInt(this.data.hash_size ?? 0, 10);
         const path = this.data.path ?? '';
@@ -1874,11 +1874,6 @@ class MeshLogRawPacket extends MeshLogObject {
         spPath.classList.add('sp');
         spPath.innerText = this.data.path || "direct";
         divLine.append(spPath);
-
-        let spSnr = document.createElement("span");
-        spSnr.classList.add('sp');
-        spSnr.innerText = `snr:${this.data.snr}`;
-        divLine.append(spSnr);
 
         this.dom = { container: divContainer, log: divLog };
         return this.dom;
