@@ -877,19 +877,24 @@ class MeshLog {
         $placeholders = implode(',', array_fill(0, count($publicKeys), '?'));
         $sql = "
             SELECT
-                c.public_key,
-                c.id AS contact_id,
+                r.public_key,
                 a.type,
                 a.sent_at,
-                a.created_at
-            FROM contacts c
-            INNER JOIN (
-                SELECT contact_id, MAX(id) AS latest_id
-                FROM advertisements
-                GROUP BY contact_id
-            ) latest ON latest.contact_id = c.id
-            INNER JOIN advertisements a ON a.id = latest.latest_id
-            WHERE c.public_key IN ($placeholders)
+                a.created_at,
+                ar.created_at AS report_created_at
+            FROM reporters r
+            INNER JOIN advertisement_reports ar ON ar.id = (
+                SELECT ar2.id
+                FROM advertisement_reports ar2
+                INNER JOIN advertisements a2 ON a2.id = ar2.advertisement_id
+                INNER JOIN contacts c2 ON c2.id = a2.contact_id
+                WHERE ar2.reporter_id = r.id
+                  AND c2.public_key = r.public_key
+                ORDER BY ar2.id DESC
+                LIMIT 1
+            )
+            INNER JOIN advertisements a ON a.id = ar.advertisement_id
+            WHERE r.public_key IN ($placeholders)
         ";
 
         $query = $this->pdo->prepare($sql);
@@ -913,7 +918,9 @@ class MeshLog {
         }
 
         $sentAtMs = $this->parseTimestampMs($advertisement['sent_at'] ?? null);
-        $receivedAtMs = $this->parseTimestampMs($advertisement['created_at'] ?? null);
+        $receivedAtMs = $this->parseTimestampMs(
+            $advertisement['report_created_at'] ?? ($advertisement['created_at'] ?? null)
+        );
         if ($sentAtMs === null || $receivedAtMs === null) {
             return null;
         }
@@ -930,7 +937,7 @@ class MeshLog {
             'threshold_ms' => $thresholdMs,
             'source' => $referenceClock['source'] ?? 'platform',
             'latest_sent_at' => $advertisement['sent_at'] ?? null,
-            'latest_received_at' => $advertisement['created_at'] ?? null,
+            'latest_received_at' => $advertisement['report_created_at'] ?? ($advertisement['created_at'] ?? null),
             'latest_contact_type' => intval($advertisement['type'] ?? 0),
         );
     }
@@ -969,7 +976,6 @@ class MeshLog {
             'authorized = 1'
         );
         $results = MeshLogReporter::getAll($this, $params);
-        $referenceClock = $this->getReferenceClock();
 
         $publicKeys = array();
         foreach ($results['objects'] as $reporter) {

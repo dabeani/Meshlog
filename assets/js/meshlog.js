@@ -3646,7 +3646,7 @@ class MeshLog {
                 }
 
                 document.getElementById('favicon').setAttribute('href','assets/favicon/faviconr.ico');
-                document.title = `(${count}) MeshCore Log`; 
+                document.title = `(${count}) MeshCore Log (forked)`; 
             }
         });
         this.setAutorefresh(this.interval);
@@ -3683,7 +3683,7 @@ class MeshLog {
     clearNotifications() {
         this.new_messages = [];
         document.getElementById('favicon').setAttribute('href','assets/favicon/faviconw.ico');
-        document.title = `MeshCore Log`; 
+        document.title = `MeshCore Log (forked)`; 
     }
 
     isReporter(public_key) {

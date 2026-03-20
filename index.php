@@ -36,7 +36,7 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
     <script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.min.js"></script>
     <script src="assets/js/meshlog.js?v=<?= $jsVersion ?>"></script>
     <link rel="stylesheet" href="assets/css/style.css?v=<?= $cssVersion ?>">
-    <title>MeshCore Log v1.99.1</title>
+    <title>MeshCore Log v1.99.1 (forked)</title>
 </head>
 <body>
 
@@ -58,7 +58,7 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
 <div id="rightbar">
     <div class="settings" id="settings-contacts">
     </div>
-    <div class="settings" id="about">MeshLog Web v1.99</div>
+    <div class="settings" id="about">MeshLog Web v1.99 (forked)</div>
     <div id="contacts"></div>
 </div>
 
