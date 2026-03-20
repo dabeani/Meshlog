@@ -2069,20 +2069,75 @@ class MeshLogRawPacket extends MeshLogObject {
 
     getTypeLabel() {
         switch (this.getPayloadType()) {
-            case 0:  return 'RAW REQ';   // PAYLOAD_TYPE_REQ      (encrypted request)
-            case 1:  return 'RAW RESP';  // PAYLOAD_TYPE_RESPONSE  (encrypted response)
-            case 2:  return 'RAW MSG';   // PAYLOAD_TYPE_TXT_MSG   (encrypted direct message)
-            case 3:  return 'RAW ACK';   // PAYLOAD_TYPE_ACK       (4-byte CRC acknowledgment)
-            case 4:  return 'RAW ADV';   // PAYLOAD_TYPE_ADVERT    (node advertisement)
-            case 5:  return 'RAW PUB';   // PAYLOAD_TYPE_GRP_TXT   (group text, undecryptable)
-            case 6:  return 'RAW DATA';  // PAYLOAD_TYPE_GRP_DATA  (group datagram)
-            case 7:  return 'RAW ANON';  // PAYLOAD_TYPE_ANON_REQ  (anonymous request)
-            case 8:  return 'RAW PATH';  // PAYLOAD_TYPE_PATH      (returned path)
-            case 9:  return 'RAW TRACE'; // PAYLOAD_TYPE_TRACE     (path trace with SNR)
-            case 10: return 'RAW MULTI'; // PAYLOAD_TYPE_MULTIPART (multi-part fragment)
-            case 11: return 'RAW CTRL';  // PAYLOAD_TYPE_CONTROL   (control / discovery)
-            case 15: return 'RAW CUST';  // PAYLOAD_TYPE_RAW_CUSTOM (app-defined)
-            default: return 'RAW';
+            case 0:  return 'REQ';   // PAYLOAD_TYPE_REQ      (encrypted request)
+            case 1:  return 'RESP';  // PAYLOAD_TYPE_RESPONSE  (encrypted response)
+            case 2:  return 'MSG';   // PAYLOAD_TYPE_TXT_MSG   (encrypted direct message)
+            case 3:  return 'ACK';   // PAYLOAD_TYPE_ACK       (4-byte CRC acknowledgment)
+            case 4:  return 'ADV';   // PAYLOAD_TYPE_ADVERT    (node advertisement fallback)
+            case 5:  return 'PUB';   // PAYLOAD_TYPE_GRP_TXT   (group text, undecryptable)
+            case 6:  return 'GRP DATA'; // PAYLOAD_TYPE_GRP_DATA (group datagram)
+            case 7:  return 'ANON';  // PAYLOAD_TYPE_ANON_REQ  (anonymous request)
+            case 8:  return 'PATH';  // PAYLOAD_TYPE_PATH      (returned path)
+            case 9:  return 'TRACE'; // PAYLOAD_TYPE_TRACE     (path trace with SNR)
+            case 10: return 'MULTI'; // PAYLOAD_TYPE_MULTIPART (multi-part fragment)
+            case 11: return 'CTRL';  // PAYLOAD_TYPE_CONTROL   (control / discovery)
+            case 15: return 'CUST';  // PAYLOAD_TYPE_RAW_CUSTOM (app-defined)
+            default: return 'PKT';
+        }
+    }
+
+    // Returns the decoded metadata JSON (parsed from hex payload) when decoded=true.
+    _getDecodedMeta() {
+        if (!this.data.decoded) return null;
+        const hex = this.data.payload ?? '';
+        if (!hex) return null;
+        try {
+            const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+            return JSON.parse(new TextDecoder().decode(bytes));
+        } catch (_e) {
+            return null;
+        }
+    }
+
+    // Returns a human-readable summary of decoded packet metadata, or null.
+    _getDecodedText() {
+        const meta = this._getDecodedMeta();
+        if (!meta) return null;
+        switch (this.getPayloadType()) {
+            case 0: // REQ
+            case 1: // RESP
+                if (meta.dest_hash !== undefined) {
+                    return `\u2192\u00A0${meta.dest_hash}\u2002\u2190\u00A0${meta.src_hash ?? '?'}`;
+                }
+                return null;
+            case 3: // ACK
+                return meta.crc ? `CRC\u00A0${meta.crc}` : null;
+            case 7: // ANON_REQ
+                if (meta.dest_hash !== undefined) {
+                    const from = meta.sender_pubkey ? meta.sender_pubkey.slice(0, 8) : '?';
+                    return `\u2192\u00A0${meta.dest_hash}\u2002from\u00A0${from}`;
+                }
+                return null;
+            case 8: // PATH
+                if (meta.returned_path !== undefined) {
+                    const pts = (meta.returned_path ?? []);
+                    const pathStr = pts.length ? pts.join('\u2192') : 'direct';
+                    return `path\u00A0${pathStr}\u2002extra\u00A0${meta.extra_type ?? '?'}`;
+                }
+                return null;
+            case 11: { // CTRL
+                const names = {8: 'DISC_REQ', 9: 'DISC_RESP'};
+                const subName = names[meta.sub_type] ?? `sub_type\u00A0${meta.sub_type ?? '?'}`;
+                const parts = [subName];
+                if (meta.type_filter !== undefined) parts.push(`filter\u00A0${meta.type_filter}`);
+                if (meta.tag !== undefined) parts.push(`tag\u00A0${meta.tag}`);
+                if (meta.node_type !== undefined) parts.push(`node\u00A0${meta.node_type}`);
+                if (meta.discover_snr !== undefined) parts.push(`snr\u00A0${meta.discover_snr}`);
+                if (meta.pubkey_prefix !== undefined) parts.push(`key\u00A0${meta.pubkey_prefix.slice(0, 8)}`);
+                return parts.join('\u2002');
+            }
+            default:
+                return null;
         }
     }
 
@@ -2256,6 +2311,18 @@ class MeshLogRawPacket extends MeshLogObject {
         spPath.innerText = this.data.path || "direct";
         divLine.append(spPath);
 
+        // Second line: decoded payload summary (only when PHP decoder stored metadata)
+        const decodedText = this._getDecodedText();
+        if (decodedText) {
+            const divDecoded = document.createElement('div');
+            divDecoded.classList.add('log-entry-msg', 'raw-decoded-line');
+            const spDecoded = document.createElement('span');
+            spDecoded.classList.add('sp', 'raw-decoded-text');
+            spDecoded.textContent = decodedText;
+            divDecoded.append(spDecoded);
+            divLog.append(divDecoded);
+        }
+
         this.dom = { container: divContainer, log: divLog };
         return this.dom;
     }
@@ -2266,8 +2333,10 @@ class MeshLogRawPacket extends MeshLogObject {
     }
 
     isVisible() {
-        return Settings.getBool('messageTypes.raw', false)
-            && this._meshlog.isReporterAllowed(this.data.reporter_id);
+        if (!Settings.getBool('messageTypes.raw', false)) return false;
+        if (!this._meshlog.isReporterAllowed(this.data.reporter_id)) return false;
+        // Per-subtype filter (defaults to true — all subtypes shown when master Raw is on)
+        return Settings.getBool(`messageTypes.rawtype.${this.getPayloadType()}`, true);
     }
 }
 
@@ -2843,11 +2912,41 @@ class MeshLog {
                     self.__onTypesChanged();
                 },
                 {
-                    title: 'Show or hide stored raw packets in the live feed'
+                    title: 'Show or hide stored raw packets in the live feed. Enable to use the per-type filters below.'
                 }
             )
             .button
         );
+
+        // Per-subtype raw packet filters (active when the Raw Packets master is on)
+        const rawSubTypes = [
+            { label: 'REQ',      type: 0,  title: 'PAYLOAD_TYPE_REQ — encrypted unicast request' },
+            { label: 'RESP',     type: 1,  title: 'PAYLOAD_TYPE_RESPONSE — encrypted unicast response' },
+            { label: 'MSG',      type: 2,  title: 'PAYLOAD_TYPE_TXT_MSG — encrypted direct text message' },
+            { label: 'ACK',      type: 3,  title: 'PAYLOAD_TYPE_ACK — 4-byte CRC acknowledgment' },
+            { label: 'ADV',      type: 4,  title: 'PAYLOAD_TYPE_ADVERT — advertisement (undecoded fallback)' },
+            { label: 'PUB',      type: 5,  title: 'PAYLOAD_TYPE_GRP_TXT — group message (undecryptable channel)' },
+            { label: 'GRP DATA', type: 6,  title: 'PAYLOAD_TYPE_GRP_DATA — group datagram (undecryptable channel)' },
+            { label: 'ANON',     type: 7,  title: 'PAYLOAD_TYPE_ANON_REQ — anonymous encrypted request' },
+            { label: 'PATH',     type: 8,  title: 'PAYLOAD_TYPE_PATH — returned path packet' },
+            { label: 'TRACE',    type: 9,  title: 'PAYLOAD_TYPE_TRACE — path trace with per-hop SNR' },
+            { label: 'MULTI',    type: 10, title: 'PAYLOAD_TYPE_MULTIPART — multi-part packet fragment' },
+            { label: 'CTRL',     type: 11, title: 'PAYLOAD_TYPE_CONTROL — control / discovery packet' },
+            { label: 'CUST',     type: 15, title: 'PAYLOAD_TYPE_RAW_CUSTOM — application-defined raw packet' },
+        ];
+        const rawSubRow = document.createElement('div');
+        rawSubRow.className = 'raw-subtype-row';
+        rawSubTypes.forEach(({ label, type, title }) => {
+            const key = `messageTypes.rawtype.${type}`;
+            const { button } = this.__createBadgeToggle(
+                label, key, true,
+                () => self.__onTypesChanged(),
+                { title }
+            );
+            button.classList.add('raw-subtype-btn');
+            rawSubRow.append(button);
+        });
+        this.dom_type_badges.append(rawSubRow);
 
         this.dom_type_badges.append(
             this.__createBadgeToggle(
@@ -2907,9 +3006,14 @@ class MeshLog {
     }
 
     isReporterAllowed(reporter_id) {
-        const selected = Settings.get('reporterFilter.selected', '');
-        if (!selected) return true;
-        return selected.split(',').some(s => s.trim() === String(reporter_id));
+        // Use readCookie directly to avoid auto-writing a default:
+        // undefined = no preference saved → allow all
+        // ''        = user explicitly deselected all → allow none
+        // 'id1,id2' = allow only those IDs
+        const raw = Settings.readCookie('reporterFilter.selected');
+        if (raw === undefined) return true;
+        if (!raw) return false;
+        return raw.split(',').some(s => s.trim() === String(reporter_id));
     }
 
     __init_collector_filter() {
@@ -2934,9 +3038,19 @@ class MeshLog {
         rowLabel.textContent = 'Collectors:';
         row.append(rowLabel);
 
+        // Read without writing a default — undefined means "all selected" (no preference stored).
+        const isAllDefault = () => Settings.readCookie('reporterFilter.selected') === undefined;
         const getSelected = () => {
-            const raw = Settings.get('reporterFilter.selected', '');
+            const raw = Settings.readCookie('reporterFilter.selected');
+            if (raw === undefined) return new Set();
             return new Set(raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []);
+        };
+        const refreshBtns = () => {
+            const defaultAll = isAllDefault();
+            const sel = getSelected();
+            row.querySelectorAll('.collector-btn').forEach(b => {
+                b.classList.toggle('active', defaultAll || sel.has(b.dataset.reporterId));
+            });
         };
 
         reporters.forEach(reporter => {
@@ -2947,17 +3061,23 @@ class MeshLog {
             btn.textContent = btnLabel;
             btn.dataset.reporterId = String(reporter.data.id);
             btn.title = `Filter live feed to collector: ${btnLabel}`;
-            if (getSelected().has(String(reporter.data.id))) {
+            // Active by default when no preference is saved (isAllDefault)
+            if (isAllDefault() || getSelected().has(String(reporter.data.id))) {
                 btn.classList.add('active');
             }
             btn.addEventListener('click', () => {
-                const sel = getSelected();
                 const rid = String(reporter.data.id);
+                let sel;
+                if (isAllDefault()) {
+                    // First interaction: expand implicit "all" into an explicit full set,
+                    // then toggle the clicked reporter out of it.
+                    sel = new Set(reporters.map(r => String(r.data.id)));
+                } else {
+                    sel = getSelected();
+                }
                 if (sel.has(rid)) { sel.delete(rid); } else { sel.add(rid); }
                 Settings.set('reporterFilter.selected', [...sel].join(','));
-                row.querySelectorAll('.collector-btn').forEach(b => {
-                    b.classList.toggle('active', getSelected().has(b.dataset.reporterId));
-                });
+                refreshBtns();
                 self.__onTypesChanged();
             });
             row.append(btn);

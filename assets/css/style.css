@@ -708,6 +708,36 @@ h2 {
     color: #c8e0ff;
 }
 
+/* Raw packet sub-type filter row (inside Live Feed Filters) */
+.raw-subtype-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    padding-left: 10px;
+    padding-top: 2px;
+    margin-bottom: 2px;
+    width: 100%;
+}
+
+.raw-subtype-btn {
+    font-size: 0.68rem !important;
+    padding: 1px 5px !important;
+    line-height: 1.4 !important;
+}
+
+/* Decoded payload summary line inside a raw packet feed entry */
+.raw-decoded-line {
+    padding-left: 6px;
+    padding-bottom: 2px;
+}
+
+.raw-decoded-text {
+    font-size: 0.78em;
+    color: rgba(240, 220, 180, 0.75);
+    font-family: monospace;
+    letter-spacing: 0.01em;
+}
+
 .settings-badge-row[hidden] {
     display: none !important;
 }
