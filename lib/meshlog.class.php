@@ -955,6 +955,12 @@ class MeshLog {
             return null;
         }
 
+        // Only compute time-sync data for repeater nodes (type = 2).
+        // Chat (1), room (3), and sensor (4) devices do not display the time-sync badge.
+        if (intval($advertisement['type'] ?? 0) !== 2) {
+            return null;
+        }
+
         $sentAtMs = $this->parseTimestampMs($advertisement['sender_at'] ?? null);
         $receivedAtMs = $this->parseTimestampMs(
             $advertisement['report_created_at'] ?? ($advertisement['created_at'] ?? null)

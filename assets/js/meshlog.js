@@ -2069,9 +2069,19 @@ class MeshLogRawPacket extends MeshLogObject {
 
     getTypeLabel() {
         switch (this.getPayloadType()) {
-            case 2: return 'RAW MSG';
-            case 4: return 'RAW ADV';
-            case 5: return 'RAW PUB';
+            case 0:  return 'RAW REQ';   // PAYLOAD_TYPE_REQ      (encrypted request)
+            case 1:  return 'RAW RESP';  // PAYLOAD_TYPE_RESPONSE  (encrypted response)
+            case 2:  return 'RAW MSG';   // PAYLOAD_TYPE_TXT_MSG   (encrypted direct message)
+            case 3:  return 'RAW ACK';   // PAYLOAD_TYPE_ACK       (4-byte CRC acknowledgment)
+            case 4:  return 'RAW ADV';   // PAYLOAD_TYPE_ADVERT    (node advertisement)
+            case 5:  return 'RAW PUB';   // PAYLOAD_TYPE_GRP_TXT   (group text, undecryptable)
+            case 6:  return 'RAW DATA';  // PAYLOAD_TYPE_GRP_DATA  (group datagram)
+            case 7:  return 'RAW ANON';  // PAYLOAD_TYPE_ANON_REQ  (anonymous request)
+            case 8:  return 'RAW PATH';  // PAYLOAD_TYPE_PATH      (returned path)
+            case 9:  return 'RAW TRACE'; // PAYLOAD_TYPE_TRACE     (path trace with SNR)
+            case 10: return 'RAW MULTI'; // PAYLOAD_TYPE_MULTIPART (multi-part fragment)
+            case 11: return 'RAW CTRL';  // PAYLOAD_TYPE_CONTROL   (control / discovery)
+            case 15: return 'RAW CUST';  // PAYLOAD_TYPE_RAW_CUSTOM (app-defined)
             default: return 'RAW';
         }
     }
@@ -3391,6 +3401,7 @@ class MeshLog {
                     contact.last = msg;
                     if (msg instanceof MeshLogAdvertisement) {
                         contact.adv = msg;
+                        contact.update(); // refresh sidebar badge + marker when a new ADV arrives
                     }
                 }
             }

@@ -9,9 +9,20 @@ class MeshLogMqttDecoder {
     const STRUCTURED_TYPES = array('ADV', 'MSG', 'PUB', 'SYS', 'TEL', 'RAW');
 
     // MeshCore binary payload types (bits 2-5 of the packet header byte).
-    const PAYLOAD_TYPE_ADVERT  = 4;  // PAYLOAD_TYPE_ADVERT  (0x04) - node advertisement, unencrypted
-    const PAYLOAD_TYPE_TXT_MSG = 2;  // PAYLOAD_TYPE_TXT_MSG (0x02) - direct text message, encrypted
-    const PAYLOAD_TYPE_GRP_TXT = 5;  // PAYLOAD_TYPE_GRP_TXT (0x05) - group text message, encrypted
+    // Full table from packet_format.md — values are the 4-bit PAYLOAD_TYPE field.
+    const PAYLOAD_TYPE_REQ        = 0x00; // Request (dest_hash + src_hash + MAC + ciphertext)
+    const PAYLOAD_TYPE_RESPONSE   = 0x01; // Response to REQ or ANON_REQ (encrypted)
+    const PAYLOAD_TYPE_TXT_MSG    = 0x02; // Direct text message (encrypted)
+    const PAYLOAD_TYPE_ACK        = 0x03; // Acknowledgment (4-byte CRC checksum, unencrypted)
+    const PAYLOAD_TYPE_ADVERT     = 0x04; // Node advertisement (unencrypted)
+    const PAYLOAD_TYPE_GRP_TXT    = 0x05; // Group text message (AES-128 encrypted)
+    const PAYLOAD_TYPE_GRP_DATA   = 0x06; // Group datagram (same structure as GRP_TXT, encrypted)
+    const PAYLOAD_TYPE_ANON_REQ   = 0x07; // Anonymous request (dest_hash + sender_pubkey + MAC + ciphertext)
+    const PAYLOAD_TYPE_PATH       = 0x08; // Returned path (path_length + path_hashes + extra_type + extra)
+    const PAYLOAD_TYPE_TRACE      = 0x09; // Trace packet (path with per-hop SNR data)
+    const PAYLOAD_TYPE_MULTIPART  = 0x0A; // Multi-part packet sequence fragment
+    const PAYLOAD_TYPE_CONTROL    = 0x0B; // Control / discovery data (unencrypted)
+    const PAYLOAD_TYPE_RAW_CUSTOM = 0x0F; // Custom packet (raw bytes, application-defined)
     const PUBLIC_GROUP_PSK_HEX = '8b3387e9c5cdea6ac9e5edbaa115cd72'; // MeshCore well-known Public channel 128-bit key
 
     // MeshCore route types (bits 0-1 of the packet header byte).
@@ -75,8 +86,62 @@ class MeshLogMqttDecoder {
                 if ($decoded !== null) return $decoded;
             }
 
-            // TXT_MSG (packet_type=2) is a unicast encrypted direct message;
-            // MeshLog does not attempt decryption — stored as RAW.
+            // GRP_DATA (packet_type=6) uses the identical outer structure as GRP_TXT.
+            // Attempt decryption; fall through to RAW if no channel matches.
+            if ($packetType === static::PAYLOAD_TYPE_GRP_DATA && !empty($channels)) {
+                $decoded = static::decodeGroupPacket(
+                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
+                );
+                if ($decoded !== null) return $decoded;
+            }
+
+            // ACK (packet_type=3): unencrypted 4-byte CRC — decode the checksum.
+            if ($packetType === static::PAYLOAD_TYPE_ACK) {
+                $decoded = static::decodeAckPacket(
+                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                );
+                if ($decoded !== null) return $decoded;
+            }
+
+            // PATH (packet_type=8): returned path — decode path hashes + extra payload type.
+            if ($packetType === static::PAYLOAD_TYPE_PATH) {
+                $decoded = static::decodeReturnedPathPacket(
+                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                );
+                if ($decoded !== null) return $decoded;
+            }
+
+            // CONTROL (packet_type=11): unencrypted control / discovery data.
+            // Decodes sub_type from the flags byte; handles DISCOVER_REQ (8) and DISCOVER_RESP (9).
+            if ($packetType === static::PAYLOAD_TYPE_CONTROL) {
+                $decoded = static::decodeControlPacket(
+                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                );
+                if ($decoded !== null) return $decoded;
+            }
+
+            // ANON_REQ (packet_type=7): destination hash + sender pubkey visible; ciphertext encrypted.
+            // Extracts the unencrypted routing fields and stores as a decoded RAW entry.
+            if ($packetType === static::PAYLOAD_TYPE_ANON_REQ) {
+                $decoded = static::decodeAnonReqPacket(
+                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                );
+                if ($decoded !== null) return $decoded;
+            }
+
+            // REQ (packet_type=0) and RESPONSE (packet_type=1): encrypted unicast frames.
+            // The destination and source node hashes are visible in the unencrypted header.
+            if ($packetType === static::PAYLOAD_TYPE_REQ || $packetType === static::PAYLOAD_TYPE_RESPONSE) {
+                $decoded = static::decodeDirectFramePacket(
+                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $packetType
+                );
+                if ($decoded !== null) return $decoded;
+            }
+
+            // TXT_MSG (packet_type=2): unicast encrypted direct message — not decrypted, stored as RAW.
+            // TRACE (packet_type=9): per-hop SNR trace — format not fully specified, stored as RAW.
+            // MULTIPART (packet_type=10): sequence fragment — requires reassembly, stored as RAW.
+            // RAW_CUSTOM (packet_type=15): application-defined — no standard format, stored as RAW.
 
             // Fall-through: store packet as a RAW entry.
             return array(
@@ -658,6 +723,192 @@ class MeshLogMqttDecoder {
         }
 
         return null; // no matching channel / MAC verification failed
+    }
+
+    /**
+     * Build a RAW packet return array with decoded metadata stored as JSON payload.
+     *
+     * @param  array  $layout    Packet layout from extractPacketLayout() (contains 'header').
+     * @param  string $path      Normalised routing path.
+     * @param  int    $hashSize  Path-hash byte length.
+     * @param  int|null $scope   Transport scope code or null.
+     * @param  int    $snr       SNR value.
+     * @param  int    $timestamp Local timestamp in milliseconds.
+     * @param  string $reporter  Reporter public key string.
+     * @param  array  $mqttMeta  MQTT metadata from extractMetadata().
+     * @param  string $payloadJson JSON-encoded decoded metadata to store as payload bytes.
+     * @return array             RAW data array for insertForReporter().
+     */
+    private static function buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta, $payloadJson) {
+        $serverTimestampMs = intval(floor(microtime(true) * 1000));
+        return array(
+            "type" => "RAW",
+            "reporter" => $reporter,
+            "time" => array(
+                "local" => $timestamp,
+                "sender" => $timestamp,
+                "server" => $serverTimestampMs,
+            ),
+            "packet" => array(
+                "header" => $layout['header'],
+                "path" => $path,
+                "payload" => strtoupper(bin2hex($payloadJson)),
+                "snr" => $snr,
+                "decoded" => true,
+                "hash_size" => $hashSize,
+                "scope" => $scope,
+            ),
+            "_mqtt" => $mqttMeta,
+        );
+    }
+
+    /**
+     * Decode an ACK packet (payload_type = 0x03).
+     * Payload: 4-byte CRC checksum (LE uint32) of the acknowledged message.
+     */
+    private static function decodeAckPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+        $bytes = hex2bin($rawHex);
+        $layout = static::extractPacketLayout($bytes);
+        if ($layout === null) return null;
+
+        $payloadBytes = substr($bytes, $layout['payload_offset']);
+        if (strlen($payloadBytes) < 4) return null;
+
+        $crc = unpack('V', substr($payloadBytes, 0, 4))[1];
+
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+            json_encode(array('crc' => sprintf('%08X', $crc)))
+        );
+    }
+
+    /**
+     * Decode a RETURNED_PATH packet (payload_type = 0x08).
+     * Payload: path_length(1) + path_hashes(path_length bytes, 1 byte each) + extra_type(1) + extra(variable)
+     */
+    private static function decodeReturnedPathPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+        $bytes = hex2bin($rawHex);
+        $layout = static::extractPacketLayout($bytes);
+        if ($layout === null) return null;
+
+        $payloadBytes = substr($bytes, $layout['payload_offset']);
+        // Minimum: path_length(1) + extra_type(1) = 2 bytes
+        if (strlen($payloadBytes) < 2) return null;
+
+        $pos = 0;
+        $returnedPathLen = ord($payloadBytes[$pos]);
+        $pos++;
+
+        if (strlen($payloadBytes) < 1 + $returnedPathLen + 1) return null;
+
+        $returnedPathHashes = array();
+        for ($i = 0; $i < $returnedPathLen; $i++) {
+            $returnedPathHashes[] = strtolower(bin2hex($payloadBytes[$pos]));
+            $pos++;
+        }
+
+        $extraType = ord($payloadBytes[$pos]);
+
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+            json_encode(array(
+                'returned_path' => $returnedPathHashes,
+                'extra_type' => $extraType,
+            ))
+        );
+    }
+
+    /**
+     * Decode a CONTROL packet (payload_type = 0x0B).
+     * Payload: flags(1, upper 4 bits = sub_type) + data(variable, unencrypted)
+     * Known sub_types: 8 = DISCOVER_REQ, 9 = DISCOVER_RESP
+     */
+    private static function decodeControlPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+        $bytes = hex2bin($rawHex);
+        $layout = static::extractPacketLayout($bytes);
+        if ($layout === null) return null;
+
+        $payloadBytes = substr($bytes, $layout['payload_offset']);
+        if (strlen($payloadBytes) < 1) return null;
+
+        $flags   = ord($payloadBytes[0]);
+        $subType = ($flags >> 4) & 0x0F;  // upper 4 bits
+
+        $meta = array('sub_type' => $subType, 'flags' => $flags);
+
+        // DISCOVER_REQ (sub_type=8): flags(1) + type_filter(1) + tag(4) + since(4, optional)
+        if ($subType === 8 && strlen($payloadBytes) >= 6) {
+            $meta['prefix_only']  = ($flags & 0x01) !== 0;
+            $meta['type_filter']  = ord($payloadBytes[1]);
+            $meta['tag']          = strtoupper(bin2hex(substr($payloadBytes, 2, 4)));
+            if (strlen($payloadBytes) >= 10) {
+                $meta['since'] = unpack('V', substr($payloadBytes, 6, 4))[1];
+            }
+        // DISCOVER_RESP (sub_type=9): flags(1) + snr(1, signed SNR*4) + tag(4) + pubkey(8 or 32)
+        } elseif ($subType === 9 && strlen($payloadBytes) >= 6) {
+            $meta['node_type']    = $flags & 0x0F;
+            $snrRaw               = ord($payloadBytes[1]);
+            $meta['discover_snr'] = ($snrRaw >= 128) ? intval($snrRaw - 256) : intval($snrRaw);
+            $meta['tag']          = strtoupper(bin2hex(substr($payloadBytes, 2, 4)));
+            $pubkeyLen = strlen($payloadBytes) - 6;
+            if ($pubkeyLen === 8 || $pubkeyLen === 32) {
+                $meta['pubkey_prefix'] = strtoupper(bin2hex(substr($payloadBytes, 6, $pubkeyLen)));
+            }
+        }
+
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+            json_encode($meta)
+        );
+    }
+
+    /**
+     * Decode an ANON_REQ packet (payload_type = 0x07).
+     * Payload: dest_hash(1) + sender_pubkey(32) + mac(2) + ciphertext(variable, encrypted)
+     * The destination hash and sender public key are in plaintext and can be extracted.
+     */
+    private static function decodeAnonReqPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+        $bytes = hex2bin($rawHex);
+        $layout = static::extractPacketLayout($bytes);
+        if ($layout === null) return null;
+
+        $payloadBytes = substr($bytes, $layout['payload_offset']);
+        // Minimum: dest_hash(1) + sender_pubkey(32) + mac(2) = 35 bytes
+        if (strlen($payloadBytes) < 35) return null;
+
+        $destHash     = strtolower(bin2hex($payloadBytes[0]));
+        $senderPubkey = strtoupper(bin2hex(substr($payloadBytes, 1, 32)));
+
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+            json_encode(array(
+                'dest_hash'     => $destHash,
+                'sender_pubkey' => $senderPubkey,
+            ))
+        );
+    }
+
+    /**
+     * Decode a REQ or RESPONSE packet (payload_type 0x00 or 0x01).
+     * Payload: dest_hash(1) + src_hash(1) + mac(2) + ciphertext(variable, encrypted)
+     * The destination and source hashes are in plaintext; the body is encrypted.
+     *
+     * @param int $packetType  PAYLOAD_TYPE_REQ (0) or PAYLOAD_TYPE_RESPONSE (1).
+     */
+    private static function decodeDirectFramePacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $packetType) {
+        $bytes = hex2bin($rawHex);
+        $layout = static::extractPacketLayout($bytes);
+        if ($layout === null) return null;
+
+        $payloadBytes = substr($bytes, $layout['payload_offset']);
+        // Minimum: dest_hash(1) + src_hash(1) + mac(2) = 4 bytes
+        if (strlen($payloadBytes) < 4) return null;
+
+        $destHash = strtolower(bin2hex($payloadBytes[0]));
+        $srcHash  = strtolower(bin2hex($payloadBytes[1]));
+
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+            json_encode(array(
+                'dest_hash' => $destHash,
+                'src_hash'  => $srcHash,
+            ))
+        );
     }
 }
 
