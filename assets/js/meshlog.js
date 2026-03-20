@@ -725,8 +725,29 @@ class MeshLogContact extends MeshLogObject {
         return reporter?.getTimeSync?.() ?? reporter?.data?.time_sync ?? null;
     }
 
+    // Client-side estimate of node clock drift using the ADV packet's own timestamp
+    // versus when the server received it.  Both timestamps are stored in the server's
+    // local timezone so their difference is timezone-independent (the offset cancels).
+    // Returns drift in ms (positive = node ahead of server, negative = behind), or null.
+    _getAdvTimeDriftMs() {
+        const sentAt   = parseMeshlogTimestamp(this.adv?.data?.sent_at);
+        const recvAt   = parseMeshlogTimestamp(this.adv?.data?.created_at);
+        if (!Number.isFinite(sentAt) || !Number.isFinite(recvAt)) return null;
+        return sentAt - recvAt;
+    }
+
     hasReporterTimeSyncWarning() {
-        return this.isRepeater() && !!this.getReporterTimeSync()?.warning;
+        if (!this.isRepeater()) return false;
+        // Server-side: reporter with NTP-aware time sync data (most accurate).
+        const ts = this.getReporterTimeSync();
+        if (ts?.available) return !!ts.warning;
+        // Client-side fallback: compare the ADV "sent_at" to "received_at".
+        // The ADV timestamps are both stored in the server's local timezone, so the
+        // subtraction is timezone-independent and gives the raw device clock drift.
+        // A 5-minute threshold matches the server-side default (TIME_SYNC_WARNING_THRESHOLD).
+        const driftMs = this._getAdvTimeDriftMs();
+        if (driftMs === null) return false;
+        return Math.abs(driftMs) >= 300000;
     }
 
     formatTimeSyncDrift(ms) {
@@ -748,15 +769,22 @@ class MeshLogContact extends MeshLogObject {
     }
 
     getTimeSyncWarningText() {
+        if (!this.isRepeater()) return '';
+        // Reporter path: server-computed with NTP reference.
         const timeSync = this.getReporterTimeSync();
-        if (!this.hasReporterTimeSyncWarning() || !timeSync) {
-            return '';
+        if (timeSync?.available) {
+            const driftMs = Number(timeSync.drift_ms ?? 0);
+            const direction = driftMs >= 0 ? 'ahead of' : 'behind';
+            const drift = this.formatTimeSyncDrift(driftMs);
+            return `Repeater clock is ${drift} ${direction} UTC (NTP reference). Time sync needed.`;
         }
-
-        const driftMs = Number(timeSync.drift_ms ?? 0);
+        // Contact fallback: client-side estimate from ADV timestamps.
+        const driftMs = this._getAdvTimeDriftMs();
+        if (driftMs === null) return 'Repeater clock status unknown.';
+        if (Math.abs(driftMs) < 300000) return '';
         const direction = driftMs >= 0 ? 'ahead of' : 'behind';
         const drift = this.formatTimeSyncDrift(driftMs);
-        return `Repeater clock is ${drift} ${direction} the MeshLog UTC reference. This repeater is not time-synced and needs to get time synced.`;
+        return `Repeater clock is ~${drift} ${direction} server reception time. Time sync likely needed.`;
     }
 
     getMarkerTooltip() {
@@ -2436,14 +2464,19 @@ class MeshLog {
     }
 
     _initMapPanes() {
-        const backgroundPane = this.map.createPane(MeshLog.MARKER_PANE_BACKGROUND);
-        backgroundPane.style.zIndex = '350';
-        backgroundPane.style.pointerEvents = 'auto';
-
+        // Route lines sit between tiles and markers so they're always visible beneath nodes.
         const routePane = this.map.createPane(MeshLog.ROUTE_PANE);
-        routePane.style.zIndex = '500';
+        routePane.style.zIndex = '450';
         routePane.style.pointerEvents = 'auto';
 
+        // Background (non-highlighted) markers sit ABOVE route lines so they stay clickable
+        // even when routes are displayed.  Previously this was 350 (below routes at 500),
+        // which let glow-lines and animation trails intercept click events on markers.
+        const backgroundPane = this.map.createPane(MeshLog.MARKER_PANE_BACKGROUND);
+        backgroundPane.style.zIndex = '520';
+        backgroundPane.style.pointerEvents = 'auto';
+
+        // Highlighted / active markers sit on top of everything.
         const routeMarkerPane = this.map.createPane(MeshLog.MARKER_PANE_ROUTE);
         routeMarkerPane.style.zIndex = '650';
         routeMarkerPane.style.pointerEvents = 'auto';
@@ -3725,9 +3758,11 @@ class MeshLog {
                 const innerWeight = animatedRoute ? ln_weight + 1 : ln_weight;
                 const dashArray = animatedRoute ? '10 10' : null;
 
-                // Three-layer rendering: wide semi-transparent glow → dark outline → colored inner
-                let lineGlow = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, color: reporterColor, weight: ln_glow, opacity: glowOpacity});
-                let line1    = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, color: linkOutlineColor, weight: ln_outline});
+                // Three-layer rendering: wide semi-transparent glow → dark outline → colored inner.
+                // Glow and outline are decorative only — mark non-interactive so they never
+                // intercept pointer events and block marker clicks underneath.
+                let lineGlow = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, interactive: false, color: reporterColor, weight: ln_glow, opacity: glowOpacity});
+                let line1    = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, interactive: false, color: linkOutlineColor, weight: ln_outline});
                 let line2    = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, color: reporterColor, weight: innerWeight, dashArray: dashArray});
 
                 if (!links.includes(line_id)) {
@@ -3907,13 +3942,15 @@ class MeshLog {
         };
         this.transientRouteAnimations.push(animationState);
 
-        const glowLine  = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, renderer: cr, color: color,     weight: 14, opacity: 0 }).addTo(animLayer);
-        const innerLine = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, renderer: cr, color: '#ffffff', weight: 2,  opacity: 0 }).addTo(animLayer);
+        // All animation shapes are purely visual — mark as non-interactive so they never
+        // intercept pointer events or block marker clicks during/after an animation.
+        const glowLine  = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, interactive: false, renderer: cr, color: color,     weight: 14, opacity: 0 }).addTo(animLayer);
+        const innerLine = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, interactive: false, renderer: cr, color: '#ffffff', weight: 2,  opacity: 0 }).addTo(animLayer);
         const dot = L.circleMarker(waypoints[0], {
-            pane: MeshLog.MARKER_PANE_ROUTE, renderer: cr, radius: 7, color: '#ffffff', fillColor: color, fillOpacity: 1, weight: 2, opacity: 1
+            pane: MeshLog.MARKER_PANE_ROUTE, interactive: false, renderer: cr, radius: 7, color: '#ffffff', fillColor: color, fillOpacity: 1, weight: 2, opacity: 1
         }).addTo(animLayer);
         const pulse = L.circleMarker(waypoints[waypoints.length - 1], {
-            pane: MeshLog.MARKER_PANE_ROUTE, renderer: cr, radius: 0, color: color, fillColor: color, fillOpacity: 0.35, weight: 2, opacity: 0
+            pane: MeshLog.MARKER_PANE_ROUTE, interactive: false, renderer: cr, radius: 0, color: color, fillColor: color, fillOpacity: 0.35, weight: 2, opacity: 0
         }).addTo(animLayer);
 
         const totalLen     = this._calcPathLength(waypoints);
