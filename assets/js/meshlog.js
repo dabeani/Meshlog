@@ -2576,17 +2576,20 @@ class MeshLog {
             section.append(heading, badgeRow);
             this.dom_settings_types.append(section);
 
-            return badgeRow;
+            return { badgeRow, section };
         };
 
-        this.dom_type_badges = createGroup(
+        const liveFeedGroup = createGroup(
             'Live Feed Filters',
             'Toggle which packet types appear in the live feed below. Choices are saved per browser.\n\nAdvertisements — periodic node beacons.\nChannel Messages — decoded group/channel messages.\nDirect Messages — unicast messages.\nRaw Packets — undecoded or encrypted packets.\nTelemetry — sensor and measurement updates.\nSystem Reports — self-reported device health and firmware data.\nNotifications — browser push alerts for new entries.'
         );
-        this.dom_channel_badges = createGroup(
+        this.dom_type_badges = liveFeedGroup.badgeRow;
+        this.dom_type_badges_section = liveFeedGroup.section;
+        const channelGroup = createGroup(
             'Channel Filters',
             'Show or hide individual channels in the live feed. Each channel has a unique color that matches its badge in the feed entries.\n\nChannels shown as grey/dim have been disabled in the Admin panel and cannot be toggled here.'
         );
+        this.dom_channel_badges = channelGroup.badgeRow;
     }
 
     __createInput(name, key, def, onchange) {
@@ -2906,16 +2909,20 @@ class MeshLog {
             this._collectorFilterRow = null;
         }
         const reporters = Object.values(this.reporters);
-        if (!this.dom_type_badges || reporters.length === 0) return;
+        // Append directly to the section (not inside the collapsible badgeRow)
+        // so the collector filter is always visible regardless of collapse state.
+        const container = this.dom_type_badges_section ?? this.dom_type_badges;
+        if (!container) return;
+        if (reporters.length === 0) return;
 
         const row = document.createElement('div');
         row.className = 'collector-filter-row';
         this._collectorFilterRow = row;
 
-        const label = document.createElement('span');
-        label.className = 'collector-filter-label';
-        label.textContent = 'Collectors:';
-        row.append(label);
+        const rowLabel = document.createElement('span');
+        rowLabel.className = 'collector-filter-label';
+        rowLabel.textContent = 'Collectors:';
+        row.append(rowLabel);
 
         const getSelected = () => {
             const raw = Settings.get('reporterFilter.selected', '');
@@ -2926,10 +2933,10 @@ class MeshLog {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'collector-btn';
-            const label = reporter.data.name || reporter.data.public_key.slice(0, 8);
-            btn.textContent = label;
+            const btnLabel = reporter.data.name || reporter.data.public_key.slice(0, 8);
+            btn.textContent = btnLabel;
             btn.dataset.reporterId = String(reporter.data.id);
-            btn.title = `Filter live feed to collector: ${label}`;
+            btn.title = `Filter live feed to collector: ${btnLabel}`;
             if (getSelected().has(String(reporter.data.id))) {
                 btn.classList.add('active');
             }
@@ -2946,7 +2953,7 @@ class MeshLog {
             row.append(btn);
         });
 
-        this.dom_type_badges.append(row);
+        container.append(row);
     }
 
     __init_warnings() {
