@@ -22,7 +22,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 13;
+    private $version = 14;
     private $ntpConfig = array(
         'enabled' => true,
         'host' => 'pool.ntp.org',
@@ -917,7 +917,7 @@ class MeshLog {
             SELECT
                 r.public_key,
                 a.type,
-                a.sent_at,
+                ar.sender_at,
                 a.created_at,
                 ar.created_at AS report_created_at
             FROM reporters r
@@ -955,7 +955,7 @@ class MeshLog {
             return null;
         }
 
-        $sentAtMs = $this->parseTimestampMs($advertisement['sent_at'] ?? null);
+        $sentAtMs = $this->parseTimestampMs($advertisement['sender_at'] ?? null);
         $receivedAtMs = $this->parseTimestampMs(
             $advertisement['report_created_at'] ?? ($advertisement['created_at'] ?? null)
         );
@@ -974,7 +974,7 @@ class MeshLog {
             'drift_ms' => $driftMs,
             'threshold_ms' => $thresholdMs,
             'source' => $referenceClock['source'] ?? 'platform',
-            'latest_sent_at' => $advertisement['sent_at'] ?? null,
+            'latest_sent_at' => $advertisement['sender_at'] ?? null,
             'latest_received_at' => $advertisement['report_created_at'] ?? ($advertisement['created_at'] ?? null),
             'latest_contact_type' => intval($advertisement['type'] ?? 0),
         );
@@ -1131,6 +1131,7 @@ class MeshLog {
                             'snr', r.snr,
                             'scope', r.scope,
                             'path', r.path,
+                            'sender_at', r.sender_at,
                             'received_at', r.received_at,
                             'created_at', r.created_at
                         )
