@@ -1031,6 +1031,10 @@ h2 {
     cursor: help;
 }
 
+.time-sync-badge[hidden] {
+    display: none;
+}
+
 .warn-tooltip {
     position: absolute;
     background: black;
