@@ -579,14 +579,14 @@ h2 {
 }
 
 .settings {
-    padding: 8px;
+    padding: 4px 8px;
     border-bottom: solid 1px #888;
 }
 
 .settings-card {
     display: grid;
-    gap: 6px;
-    padding: 8px 10px;
+    gap: 3px;
+    padding: 5px 8px;
     border-bottom: solid 1px rgba(255,255,255,0.08);
     background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0));
 }
@@ -607,6 +607,9 @@ h2 {
     font-size: 0.82rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    flex: 1;
 }
 
 .settings-help-btn {
@@ -661,7 +664,48 @@ h2 {
 .settings-badge-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 4px;
+}
+
+.collector-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    width: 100%;
+    padding-top: 2px;
+}
+
+.collector-filter-label {
+    font-size: 0.72rem;
+    color: rgba(200,220,240,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+
+.collector-btn {
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.04);
+    color: rgba(200,220,240,0.65);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+.collector-btn:hover {
+    background: rgba(255,255,255,0.13);
+    color: #fff;
+}
+
+.collector-btn.active {
+    background: rgba(82,130,200,0.3);
+    border-color: rgba(100,160,230,0.5);
+    color: #c8e0ff;
 }
 
 .settings-badge-row[hidden] {
@@ -814,6 +858,12 @@ h2 {
         flex: auto;
         background: #262626;
         height: 50vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #rightbar {
+        display: none;
     }
 
     #midbar {
@@ -823,6 +873,21 @@ h2 {
 
     .collapse-toggle {
         display: none;
+    }
+
+    .collector-filter-row {
+        gap: 5px;
+    }
+
+    .collector-btn {
+        padding: 3px 9px;
+        font-size: 0.75rem;
+        min-height: 28px;
+    }
+
+    .settings-badge-row > .btn,
+    .settings-badge-row > button {
+        min-height: 26px;
     }
 }
 

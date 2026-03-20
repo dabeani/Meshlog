@@ -1792,7 +1792,10 @@ class MeshLogAdvertisement extends MeshLogReportedObject {
     getName() { return {text: this.data.name, classList: []}; }
     getText() { return {text: "", classList: []}; }
     getPathTag() { return "ADV"; }
-    isVisible() { return Settings.getBool('messageTypes.advertisements', true); }
+    isVisible() {
+        if (!Settings.getBool('messageTypes.advertisements', true)) return false;
+        return this.reports.length === 0 || this.reports.some(r => this._meshlog.isReporterAllowed(r.data.reporter_id));
+    }
 }
 
 class MeshLogChannelMessage extends MeshLogReportedObject {
@@ -1823,7 +1826,8 @@ class MeshLogChannelMessage extends MeshLogReportedObject {
         let chid = this.data.channel_id;
         let ch = this._meshlog.channels[chid] ?? false;
         if (ch) ch = ch.isEnabled();
-        return Settings.getBool('messageTypes.channel', true) && ch;
+        if (!(Settings.getBool('messageTypes.channel', true) && ch)) return false;
+        return this.reports.length === 0 || this.reports.some(r => this._meshlog.isReporterAllowed(r.data.reporter_id));
     }
 }
 
@@ -1850,7 +1854,10 @@ class MeshLogDirectMessage extends MeshLogReportedObject {
     getName() { return {text: `${this.data.name}`, classList: ['t-bright'], background: str2color(this.data.name) }; }
     getText() { return {text: this.data.message, classList: ['t-white']}; }
     getPathTag() { return "DIR"; }
-    isVisible() { return Settings.getBool('messageTypes.direct', false); }
+    isVisible() {
+        if (!Settings.getBool('messageTypes.direct', false)) return false;
+        return this.reports.length === 0 || this.reports.some(r => this._meshlog.isReporterAllowed(r.data.reporter_id));
+    }
 }
 
 class MeshLogTelemetryMessage extends MeshLogObject {
@@ -1952,7 +1959,8 @@ class MeshLogTelemetryMessage extends MeshLogObject {
     }
 
     isVisible() {
-        return Settings.getBool('messageTypes.telemetry', false);
+        return Settings.getBool('messageTypes.telemetry', false)
+            && this._meshlog.isReporterAllowed(this.data.reporter_id);
     }
 }
 
@@ -2041,7 +2049,8 @@ class MeshLogSystemReportMessage extends MeshLogObject {
     }
 
     isVisible() {
-        return Settings.getBool('messageTypes.system', false);
+        return Settings.getBool('messageTypes.system', false)
+            && this._meshlog.isReporterAllowed(this.data.reporter_id);
     }
 }
 
@@ -2247,7 +2256,8 @@ class MeshLogRawPacket extends MeshLogObject {
     }
 
     isVisible() {
-        return Settings.getBool('messageTypes.raw', false);
+        return Settings.getBool('messageTypes.raw', false)
+            && this._meshlog.isReporterAllowed(this.data.reporter_id);
     }
 }
 
@@ -2548,13 +2558,15 @@ class MeshLog {
             badgeRow.hidden = initCollapsed;
             collapseBtn.innerText = initCollapsed ? '\u25B6' : '\u25BC';
             collapseBtn.title = initCollapsed ? 'Expand' : 'Collapse';
-            collapseBtn.addEventListener('click', () => {
+            const doToggle = () => {
                 const nowCollapsed = !badgeRow.hidden;
                 badgeRow.hidden = nowCollapsed;
                 collapseBtn.innerText = nowCollapsed ? '\u25B6' : '\u25BC';
                 collapseBtn.title = nowCollapsed ? 'Expand' : 'Collapse';
                 Settings.set(collapseKey, nowCollapsed);
-            });
+            };
+            collapseBtn.addEventListener('click', doToggle);
+            headingTitle.addEventListener('click', doToggle);
 
             const rightBtns = document.createElement('span');
             rightBtns.style.cssText = 'display:flex;gap:4px;align-items:center;flex-shrink:0';
@@ -2878,6 +2890,63 @@ class MeshLog {
             this.reporters[id].enabled = true;
             this.dom_settings_reporters.hidden = true;
         });
+        this.__init_collector_filter();
+    }
+
+    isReporterAllowed(reporter_id) {
+        const selected = Settings.get('reporterFilter.selected', '');
+        if (!selected) return true;
+        return selected.split(',').some(s => s.trim() === String(reporter_id));
+    }
+
+    __init_collector_filter() {
+        const self = this;
+        if (this._collectorFilterRow) {
+            this._collectorFilterRow.remove();
+            this._collectorFilterRow = null;
+        }
+        const reporters = Object.values(this.reporters);
+        if (!this.dom_type_badges || reporters.length === 0) return;
+
+        const row = document.createElement('div');
+        row.className = 'collector-filter-row';
+        this._collectorFilterRow = row;
+
+        const label = document.createElement('span');
+        label.className = 'collector-filter-label';
+        label.textContent = 'Collectors:';
+        row.append(label);
+
+        const getSelected = () => {
+            const raw = Settings.get('reporterFilter.selected', '');
+            return new Set(raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : []);
+        };
+
+        reporters.forEach(reporter => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'collector-btn';
+            const label = reporter.data.name || reporter.data.public_key.slice(0, 8);
+            btn.textContent = label;
+            btn.dataset.reporterId = String(reporter.data.id);
+            btn.title = `Filter live feed to collector: ${label}`;
+            if (getSelected().has(String(reporter.data.id))) {
+                btn.classList.add('active');
+            }
+            btn.addEventListener('click', () => {
+                const sel = getSelected();
+                const rid = String(reporter.data.id);
+                if (sel.has(rid)) { sel.delete(rid); } else { sel.add(rid); }
+                Settings.set('reporterFilter.selected', [...sel].join(','));
+                row.querySelectorAll('.collector-btn').forEach(b => {
+                    b.classList.toggle('active', getSelected().has(b.dataset.reporterId));
+                });
+                self.__onTypesChanged();
+            });
+            row.append(btn);
+        });
+
+        this.dom_type_badges.append(row);
     }
 
     __init_warnings() {
