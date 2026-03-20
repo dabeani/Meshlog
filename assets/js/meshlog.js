@@ -869,6 +869,10 @@ class MeshLogContact extends MeshLogObject {
             iconAnchor: [15, 42]
         });
 
+        // Keep a live DOM reference so updateMarker() can add/remove the
+        // time-sync badge without recreating the whole icon.
+        this.markerIconRoot = icdivroot;
+
         this.marker = L.marker(
             [this.adv.data.lat, this.adv.data.lon],
             {
@@ -1072,7 +1076,24 @@ class MeshLogContact extends MeshLogObject {
     }
 
     updateMarker() {
-        if (!this.marker) return;
+        if (!this.marker || !this.markerIconRoot) return;
+
+        // Sync the time-sync warning badge (the red "!" on the map bubble).
+        // This mirrors what updateDom() does for the sidebar badge: the icon DOM
+        // is live (Leaflet reuses it across pane moves) so we can mutate it
+        // directly without recreating the marker.
+        const timeSyncWarning = this.hasReporterTimeSyncWarning();
+        const badge = this.markerIconRoot.querySelector('.time-sync-badge');
+        if (timeSyncWarning && !badge) {
+            const newBadge = document.createElement('span');
+            newBadge.classList.add('marker-warning-badge', 'time-sync-badge');
+            newBadge.textContent = '!';
+            this.markerIconRoot.appendChild(newBadge);
+            this.updateTooltip(); // refresh tooltip text to include warning
+        } else if (!timeSyncWarning && badge) {
+            badge.remove();
+            this.updateTooltip(); // refresh tooltip text to remove warning
+        }
     }
 
     update() {
@@ -3873,6 +3894,7 @@ class MeshLog {
         }
         this.showWarning(warningsStr);
         this.fadeMarkers();
+        this.updateRoutePreview();
     }
 
     // Build ordered [lat,lon] waypoints for a path: sender → hops → reporter
@@ -4060,7 +4082,15 @@ class MeshLog {
 
         labelContacts.forEach(c => c.showLabel(true));
         const self = this;
-        setTimeout(() => { labelContacts.forEach(c => { if (self.visible_markers.size < 1) c.showLabel(false); }); }, 5000);
+        // Close each label individually once the contact is no longer part of an
+        // active highlighted route.  The old check (visible_markers.size < 1)
+        // was too strict: as long as ANY route was shown, ALL labels stayed open
+        // forever.
+        setTimeout(() => {
+            labelContacts.forEach(c => {
+                if (!self.visible_markers.has(c.data.id)) c.showLabel(false);
+            });
+        }, 5000);
     }
 
     // Only adds descriptors, not layers
