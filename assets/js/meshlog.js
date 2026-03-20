@@ -1723,6 +1723,7 @@ class MeshLogReportedObject extends MeshLogObject {
         if (this.expanded) {
             for (let i=0; i<this.reports.length; i++) {
                 let report = this.reports[i];
+                if (!this._meshlog.isReporterAllowed(report.data.reporter_id)) continue;
                 let dom = report.createDom(false);
                 if (dom) {
                     this.dom.reports.append(dom.container);
