@@ -24,7 +24,7 @@ dockerLog('INFO', "HTTP ingest received reporter={$reporter} auth={$maskedAuth} 
 $systime = floor(microtime(true) * 1000);
 $data["time"]["server"] = $systime;
 
-$meshlog = new MeshLog($config['db']);
+$meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
 $response = $meshlog->insert($data);
 $meshlog->maybeAutoPurge();
 if (is_array($response) && array_key_exists("error", $response)) {

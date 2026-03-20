@@ -256,6 +256,14 @@ class MeshLogReporter extends MeshLogObject {
 
         return this.contact_id;
     }
+
+    getTimeSync() {
+        return this.data.time_sync ?? null;
+    }
+
+    hasTimeSyncWarning() {
+        return !!this.getTimeSync()?.warning;
+    }
 }
 
 class MeshLogChannel extends MeshLogObject {
@@ -633,18 +641,22 @@ class MeshLogContact extends MeshLogObject {
         let imType = document.createElement("img");
         let spDate = document.createElement("span");
         let spHash = document.createElement("span");
+        let spTimeSync = document.createElement("span");
         let spName = document.createElement("span");
         let spTelemetry = document.createElement("span");
 
         imType.classList.add(...['ti']);
         spDate.classList.add(...['sp', 'c']);
         spHash.classList.add(...['sp', 'prio-4']);
+        spTimeSync.classList.add('time-sync-badge');
+        spTimeSync.hidden = true;
         spName.classList.add(...['sp', 't']);
         spTelemetry.classList.add(...['sp', 'sm']);
 
         divContact.append(spDate);
         divContact.append(imType);
         divContact.append(spHash);
+        divContact.append(spTimeSync);
         divContact.append(spName);
         divContact.append(spTelemetry);
 
@@ -692,6 +704,7 @@ class MeshLogContact extends MeshLogObject {
 
             contactDate: spDate,
             contactHash: spHash,
+            contactTimeSync: spTimeSync,
             contactName: spName,
             contactIcon: imType,
             contactTelemetry: spTelemetry,
@@ -705,6 +718,54 @@ class MeshLogContact extends MeshLogObject {
 
         divContact.instance = this;
         return this.dom;
+    }
+
+    getReporterTimeSync() {
+        const reporter = this.isReporter();
+        return reporter?.getTimeSync?.() ?? reporter?.data?.time_sync ?? null;
+    }
+
+    hasReporterTimeSyncWarning() {
+        return this.isRepeater() && !!this.getReporterTimeSync()?.warning;
+    }
+
+    formatTimeSyncDrift(ms) {
+        const totalMs = Math.abs(Number(ms) || 0);
+        if (totalMs < 1000) return `${totalMs} ms`;
+
+        const totalSeconds = totalMs / 1000;
+        if (totalSeconds < 60) {
+            return `${totalSeconds.toFixed(totalSeconds >= 10 ? 0 : 1)} s`;
+        }
+
+        const totalMinutes = totalSeconds / 60;
+        if (totalMinutes < 60) {
+            return `${totalMinutes.toFixed(totalMinutes >= 10 ? 0 : 1)} min`;
+        }
+
+        const totalHours = totalMinutes / 60;
+        return `${totalHours.toFixed(totalHours >= 10 ? 0 : 1)} h`;
+    }
+
+    getTimeSyncWarningText() {
+        const timeSync = this.getReporterTimeSync();
+        if (!this.hasReporterTimeSyncWarning() || !timeSync) {
+            return '';
+        }
+
+        const driftMs = Number(timeSync.drift_ms ?? 0);
+        const direction = driftMs >= 0 ? 'ahead of' : 'behind';
+        const drift = this.formatTimeSyncDrift(driftMs);
+        return `Repeater clock is ${drift} ${direction} the MeshLog UTC reference. This repeater is not time-synced and needs to get time synced.`;
+    }
+
+    getMarkerTooltip() {
+        const base = `<p class="tooltip-title">${this.adv.data.name} <span class="tooltip-hash">[${this.hash}]</span></p><p class="tooltip-detail">Last heard: ${this.last.data.created_at}</p>`;
+        if (!this.hasReporterTimeSyncWarning()) {
+            return base;
+        }
+
+        return `${base}<p class="tooltip-detail tooltip-warning"><span class="tooltip-warning-badge">!</span> ${this.getTimeSyncWarningText()}</p>`;
     }
 
     addToMap(map) {
@@ -816,7 +877,7 @@ class MeshLogContact extends MeshLogObject {
             this.marker.unbindTooltip();
 
             if (tooltip === undefined) {
-                tooltip = `<p class="tooltip-title">${this.adv.data.name} <span class="tooltip-hash">[${this.hash}]</span></p><p class="tooltip-detail">Last heard: ${this.last.data.created_at}</p>`;
+                tooltip = this.getMarkerTooltip();
             }
 
             this.markerTooltip = tooltip;
@@ -900,6 +961,11 @@ class MeshLogContact extends MeshLogObject {
         this.dom.contactName.innerText = this.adv.data.name;
         this.dom.contactDate.innerText = this.last.data.created_at;
         this.dom.contactHash.innerText = `[${hashstr}]`;
+
+        const timeSyncWarning = this.hasReporterTimeSyncWarning();
+        this.dom.contactTimeSync.hidden = !timeSyncWarning;
+        this.dom.contactTimeSync.textContent = timeSyncWarning ? '!' : '';
+        createTooltip(this.dom.contactTimeSync, timeSyncWarning ? this.getTimeSyncWarningText() : '');
 
         if (this.telemetry) {
             let channels = {};
@@ -3659,20 +3725,30 @@ function str2color(str, saturation = 65, lightness = 45) {
 }
 
 function createTooltip(element, contents) {
-    let tooltip = document.createElement("div");
-    tooltip.textContent = contents;
-    tooltip.classList.add('warn-tooltip');
+    if (!element) return;
 
-    element.append(tooltip);
+    let tooltip = element._warnTooltip;
+    if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.classList.add('warn-tooltip');
+        element.append(tooltip);
+        element._warnTooltip = tooltip;
 
-    element.addEventListener("mouseenter", (e) => {
-        const rect = element.getBoundingClientRect();
-        tooltip.style.display = "block";
-        tooltip.style.left = (rect.right + window.scrollX + 8) + "px";
-        tooltip.style.top = (rect.top + window.scrollY + (rect.height / 2) - (tooltip.offsetHeight / 2)) + "px";
-    });
+        element.addEventListener("mouseenter", () => {
+            if (!tooltip.textContent) return;
+            const rect = element.getBoundingClientRect();
+            tooltip.style.display = "block";
+            tooltip.style.left = (rect.right + window.scrollX + 8) + "px";
+            tooltip.style.top = (rect.top + window.scrollY + (rect.height / 2) - (tooltip.offsetHeight / 2)) + "px";
+        });
 
-    element.addEventListener("mouseleave", () => {
+        element.addEventListener("mouseleave", () => {
+            tooltip.style.display = "none";
+        });
+    }
+
+    tooltip.textContent = contents || '';
+    if (!tooltip.textContent) {
         tooltip.style.display = "none";
-    });
+    }
 }

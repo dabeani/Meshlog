@@ -51,6 +51,13 @@ MeshLog can ingest MeshCore packet logs from MQTT (for example from [meshcoretom
    - `php mqtt.php`
    - Optional: set `$config['mqtt']['debug'] = true` to print topic, reporter-key resolution, and mismatch diagnostics.
 
+## Repeater time-sync warning
+MeshLog can compare each reporter repeater's latest advertisement timestamp with a cached UTC reference from NTP and flag repeaters whose clocks drift too far from the platform time.
+
+- Configure the optional `ntp` block in `config.php` for the NTP server, timeout, and cache behavior
+- Adjust the warning threshold in the admin Settings page via `TIME_SYNC_WARNING_THRESHOLD`
+- NTP lookups are cached in the system temp directory to avoid querying on every refresh
+
 The worker listens to packet topics. Unencrypted ADVERT packets (packet_type=4) are fully decoded and stored as ADV entries in the database; encrypted packet types (TXT_MSG, GRP_TXT, etc.) are stored as RAW packets. MQTT `path` values are normalized and hash prefix size is detected from the binary `path_len` byte (supports 1/2/3-byte routing hashes, MeshCore 1.14+ compatible).
 
 ### Message recognition over MQTT

@@ -25,6 +25,14 @@ $config = array(
         'keepalive' => 30,
         'qos' => 0,
         'path' => '/mqtt',
+    ),
+    'ntp' => array(
+        'enabled' => true,
+        'host' => 'pool.ntp.org',
+        'port' => 123,
+        'timeout_ms' => 1500,
+        'cache_ttl' => 300,
+        'warning_threshold_seconds' => 300,
     )
 );
 

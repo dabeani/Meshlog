@@ -11,6 +11,7 @@ class MeshLogSetting extends MeshLogEntity {
     const KEY_DATA_RETENTION_MSG = "DATA_RETENTION_MSG";
     const KEY_DATA_RETENTION_RAW = "DATA_RETENTION_RAW";
     const KEY_LAST_PURGE_AT = "LAST_PURGE_AT";
+    const KEY_TIME_SYNC_WARNING_THRESHOLD = "TIME_SYNC_WARNING_THRESHOLD";
 
     public static function getAdminDefinitions() {
         return array(
@@ -37,6 +38,10 @@ class MeshLogSetting extends MeshLogEntity {
             static::KEY_DATA_RETENTION_RAW => array(
                 'type' => 'number',
                 'default' => 604800,
+            ),
+            static::KEY_TIME_SYNC_WARNING_THRESHOLD => array(
+                'type' => 'number',
+                'default' => 300,
             ),
         );
     }

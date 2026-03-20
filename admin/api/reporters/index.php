@@ -153,9 +153,21 @@
         }
     } else {
         $results = MeshLogReporter::getAll($meshlog, array('secret' => true, 'order' => 'ASC'));
+        $publicKeys = array();
+        foreach (($results['objects'] ?? array()) as $row) {
+            if (!empty($row['public_key'])) {
+                $publicKeys[] = $row['public_key'];
+            }
+        }
+        $timeSyncMap = $meshlog->getReporterTimeSyncMap($publicKeys);
         $objects = array();
         foreach (($results['objects'] ?? array()) as $row) {
-            $objects[] = enrichReporterRow($meshlog, $row, $connectedAgeSeconds);
+            $enriched = enrichReporterRow($meshlog, $row, $connectedAgeSeconds);
+            $timeSync = $timeSyncMap[strtoupper(strval($row['public_key'] ?? ''))] ?? null;
+            if ($timeSync) {
+                $enriched['time_sync'] = $timeSync;
+            }
+            $objects[] = $enriched;
         }
         $results['objects'] = $objects;
     }

@@ -106,7 +106,7 @@
 
             if ($stmt->fetchColumn() > 0) {
                 // Table exists
-                $meshlog = new MeshLog($config['db']);
+                $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
                 $current_version = $meshlog->getDbVersion();
             }
 

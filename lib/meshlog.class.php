@@ -22,6 +22,14 @@ define("DEFAULT_COUNT", 500);
 class MeshLog {
     private $error = '';
     private $version = 12;
+    private $ntpConfig = array(
+        'enabled' => true,
+        'host' => 'pool.ntp.org',
+        'port' => 123,
+        'timeout_ms' => 1500,
+        'cache_ttl' => 300,
+        'warning_threshold_seconds' => 300,
+    );
     const PURGE_INTERVAL_SECONDS = 3600;
     private $settings = array(
         MeshlogSetting::KEY_DB_VERSION => 0,
@@ -34,6 +42,7 @@ class MeshLog {
         MeshlogSetting::KEY_DATA_RETENTION_MSG => 604800,
         MeshlogSetting::KEY_DATA_RETENTION_RAW => 604800,
         MeshlogSetting::KEY_LAST_PURGE_AT => 0,
+        MeshlogSetting::KEY_TIME_SYNC_WARNING_THRESHOLD => 300,
     );
 
     function __construct($config) {
@@ -41,6 +50,13 @@ class MeshLog {
         $name = $config['database'] ?? die("Invalid db config");
         $user = $config['user'] ?? die("Invalid db config");
         $pass = $config['password'] ?? die("Invalid db config");
+        if (isset($config['ntp']) && is_array($config['ntp'])) {
+            $this->ntpConfig = array_merge($this->ntpConfig, $config['ntp']);
+        }
+        $this->settings[MeshlogSetting::KEY_TIME_SYNC_WARNING_THRESHOLD] = max(
+            0,
+            intval($this->ntpConfig['warning_threshold_seconds'] ?? 300)
+        );
         $this->pdo = new PDO("mysql:host=$host;dbname=$name;charset=utf8mb4", $user, $pass);
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->loadSettings();
@@ -77,6 +93,7 @@ class MeshLog {
                     MeshlogSetting::KEY_DATA_RETENTION_MSG,
                     MeshlogSetting::KEY_DATA_RETENTION_RAW,
                     MeshlogSetting::KEY_LAST_PURGE_AT,
+                    MeshlogSetting::KEY_TIME_SYNC_WARNING_THRESHOLD,
                 ), true)) {
                     $v = (int)$v;
                 }
@@ -656,6 +673,289 @@ class MeshLog {
         $contact->hash_size = $hashSize;
     }
 
+    private function getNtpCacheFile() {
+        $host = strval($this->ntpConfig['host'] ?? 'pool.ntp.org');
+        $port = intval($this->ntpConfig['port'] ?? 123);
+        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . 'meshlog-ntp-'
+            . md5($host . ':' . $port)
+            . '.json';
+    }
+
+    private function readNtpCache() {
+        $cacheFile = $this->getNtpCacheFile();
+        if (!is_file($cacheFile) || !is_readable($cacheFile)) {
+            return null;
+        }
+
+        $raw = @file_get_contents($cacheFile);
+        if ($raw === false || $raw === '') {
+            return null;
+        }
+
+        $data = json_decode($raw, true);
+        if (!is_array($data)) {
+            return null;
+        }
+
+        if (!isset($data['reference_time_ms'], $data['platform_time_ms'], $data['fetched_at_ms'])) {
+            return null;
+        }
+
+        return $data;
+    }
+
+    private function writeNtpCache($referenceTimeMs, $platformTimeMs) {
+        $payload = json_encode(array(
+            'reference_time_ms' => intval($referenceTimeMs),
+            'platform_time_ms' => intval($platformTimeMs),
+            'fetched_at_ms' => intval(round(microtime(true) * 1000)),
+        ));
+        if ($payload === false) {
+            return;
+        }
+
+        @file_put_contents($this->getNtpCacheFile(), $payload, LOCK_EX);
+    }
+
+    private function queryNtpTimeMs() {
+        $host = strval($this->ntpConfig['host'] ?? 'pool.ntp.org');
+        $port = intval($this->ntpConfig['port'] ?? 123);
+        $timeoutMs = max(100, intval($this->ntpConfig['timeout_ms'] ?? 1500));
+
+        $socket = @stream_socket_client(
+            "udp://{$host}:{$port}",
+            $errno,
+            $errstr,
+            $timeoutMs / 1000
+        );
+
+        if (!$socket) {
+            throw new RuntimeException("NTP connection failed: {$errstr} ({$errno})");
+        }
+
+        stream_set_timeout(
+            $socket,
+            intdiv($timeoutMs, 1000),
+            ($timeoutMs % 1000) * 1000
+        );
+
+        $request = str_repeat("\0", 48);
+        $request[0] = chr(0x1B);
+
+        $written = @fwrite($socket, $request);
+        if ($written === false || $written < 48) {
+            fclose($socket);
+            throw new RuntimeException('Failed to write complete NTP request');
+        }
+
+        $response = @fread($socket, 48);
+        $meta = stream_get_meta_data($socket);
+        fclose($socket);
+
+        if (!is_string($response) || strlen($response) < 48) {
+            throw new RuntimeException('Incomplete NTP response');
+        }
+        if (!empty($meta['timed_out'])) {
+            throw new RuntimeException('Timed out waiting for NTP response');
+        }
+
+        $parts = unpack('Nseconds/Nfraction', substr($response, 40, 8));
+        if (!$parts) {
+            throw new RuntimeException('Failed to decode NTP response');
+        }
+
+        $seconds = intval($parts['seconds']) - 2208988800;
+        $fractionMs = (int) round((intval($parts['fraction']) / 4294967296) * 1000);
+
+        return ($seconds * 1000) + $fractionMs;
+    }
+
+    private function getReferenceClock() {
+        $platformNowMs = intval(round(microtime(true) * 1000));
+        $warningThresholdMs = max(
+            1000,
+            intval($this->getConfig(
+                MeshlogSetting::KEY_TIME_SYNC_WARNING_THRESHOLD,
+                $this->ntpConfig['warning_threshold_seconds'] ?? 300
+            )) * 1000
+        );
+        $cacheTtlMs = max(1000, intval($this->ntpConfig['cache_ttl'] ?? 300) * 1000);
+
+        $fallback = array(
+            'source' => 'platform',
+            'reference_time_ms' => $platformNowMs,
+            'platform_time_ms' => $platformNowMs,
+            'offset_ms' => 0,
+            'warning_threshold_ms' => $warningThresholdMs,
+        );
+
+        if (empty($this->ntpConfig['enabled'])) {
+            return $fallback;
+        }
+
+        $cache = $this->readNtpCache();
+        if ($cache) {
+            $cacheAgeMs = max(0, $platformNowMs - intval($cache['fetched_at_ms']));
+            if ($cacheAgeMs <= $cacheTtlMs) {
+                $offsetMs = intval($cache['reference_time_ms']) - intval($cache['platform_time_ms']);
+                return array(
+                    'source' => 'ntp-cache',
+                    'reference_time_ms' => $platformNowMs + $offsetMs,
+                    'platform_time_ms' => $platformNowMs,
+                    'offset_ms' => $offsetMs,
+                    'warning_threshold_ms' => $warningThresholdMs,
+                );
+            }
+        }
+
+        try {
+            $referenceTimeMs = $this->queryNtpTimeMs();
+            $this->writeNtpCache($referenceTimeMs, $platformNowMs);
+            return array(
+                'source' => 'ntp',
+                'reference_time_ms' => $referenceTimeMs,
+                'platform_time_ms' => $platformNowMs,
+                'offset_ms' => $referenceTimeMs - $platformNowMs,
+                'warning_threshold_ms' => $warningThresholdMs,
+            );
+        } catch (Throwable $e) {
+            error_log('MeshLog NTP lookup failed: ' . $e->getMessage());
+            if ($cache) {
+                $offsetMs = intval($cache['reference_time_ms']) - intval($cache['platform_time_ms']);
+                return array(
+                    'source' => 'ntp-stale-cache',
+                    'reference_time_ms' => $platformNowMs + $offsetMs,
+                    'platform_time_ms' => $platformNowMs,
+                    'offset_ms' => $offsetMs,
+                    'warning_threshold_ms' => $warningThresholdMs,
+                );
+            }
+        }
+
+        return $fallback;
+    }
+
+    private function parseTimestampMs($value) {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?$/', $value, $matches)) {
+            $fraction = str_pad($matches[2] ?? '0', 6, '0', STR_PAD_RIGHT);
+            $date = DateTimeImmutable::createFromFormat('Y-m-d H:i:s.u', $matches[1] . '.' . $fraction);
+            if ($date instanceof DateTimeImmutable) {
+                $secondsMs = intval($date->format('U')) * 1000;
+                $microsecondsMs = intdiv(intval($date->format('u')), 1000);
+                return $secondsMs + $microsecondsMs;
+            }
+        }
+
+        $timestamp = strtotime($value);
+        if ($timestamp === false) {
+            return null;
+        }
+
+        return intval($timestamp) * 1000;
+    }
+
+    private function getReporterLatestAdvertisements($publicKeys) {
+        $publicKeys = array_values(array_unique(array_filter(array_map(function ($value) {
+            return strtoupper(trim(strval($value)));
+        }, $publicKeys))));
+
+        if (count($publicKeys) < 1) {
+            return array();
+        }
+
+        $placeholders = implode(',', array_fill(0, count($publicKeys), '?'));
+        $sql = "
+            SELECT
+                c.public_key,
+                c.id AS contact_id,
+                a.type,
+                a.sent_at,
+                a.created_at
+            FROM contacts c
+            INNER JOIN (
+                SELECT contact_id, MAX(id) AS latest_id
+                FROM advertisements
+                GROUP BY contact_id
+            ) latest ON latest.contact_id = c.id
+            INNER JOIN advertisements a ON a.id = latest.latest_id
+            WHERE c.public_key IN ($placeholders)
+        ";
+
+        $query = $this->pdo->prepare($sql);
+        foreach ($publicKeys as $index => $publicKey) {
+            $query->bindValue($index + 1, $publicKey, PDO::PARAM_STR);
+        }
+        $query->execute();
+
+        $rows = $query->fetchAll(PDO::FETCH_ASSOC);
+        $lookup = array();
+        foreach ($rows as $row) {
+            $lookup[strtoupper($row['public_key'])] = $row;
+        }
+
+        return $lookup;
+    }
+
+    private function buildReporterTimeSync($advertisement, $referenceClock) {
+        if (!is_array($advertisement)) {
+            return null;
+        }
+
+        $sentAtMs = $this->parseTimestampMs($advertisement['sent_at'] ?? null);
+        $receivedAtMs = $this->parseTimestampMs($advertisement['created_at'] ?? null);
+        if ($sentAtMs === null || $receivedAtMs === null) {
+            return null;
+        }
+
+        $referenceAtReceiveMs = $receivedAtMs + intval($referenceClock['offset_ms'] ?? 0);
+        $driftMs = $sentAtMs - $referenceAtReceiveMs;
+        $thresholdMs = intval($referenceClock['warning_threshold_ms'] ?? 300000);
+
+        return array(
+            'available' => true,
+            'warning' => abs($driftMs) >= $thresholdMs,
+            'in_sync' => abs($driftMs) < $thresholdMs,
+            'drift_ms' => $driftMs,
+            'threshold_ms' => $thresholdMs,
+            'source' => $referenceClock['source'] ?? 'platform',
+            'latest_sent_at' => $advertisement['sent_at'] ?? null,
+            'latest_received_at' => $advertisement['created_at'] ?? null,
+            'latest_contact_type' => intval($advertisement['type'] ?? 0),
+        );
+    }
+
+    public function getReporterTimeSyncMap($publicKeys) {
+        $referenceClock = $this->getReferenceClock();
+        $latestAdvertisements = $this->getReporterLatestAdvertisements($publicKeys);
+        $timeSyncMap = array();
+
+        foreach ($publicKeys as $publicKey) {
+            $normalizedKey = strtoupper(trim(strval($publicKey)));
+            if ($normalizedKey === '') {
+                continue;
+            }
+
+            $latestAdvertisement = $latestAdvertisements[$normalizedKey] ?? null;
+            $timeSync = $this->buildReporterTimeSync($latestAdvertisement, $referenceClock);
+            if ($timeSync) {
+                $timeSyncMap[$normalizedKey] = $timeSync;
+            }
+        }
+
+        return $timeSyncMap;
+    }
+
     // getters
     public function getReporters($params) {
         // Reporters are reference data for feed entries, not feed entries themselves.
@@ -669,6 +969,15 @@ class MeshLog {
             'authorized = 1'
         );
         $results = MeshLogReporter::getAll($this, $params);
+        $referenceClock = $this->getReferenceClock();
+
+        $publicKeys = array();
+        foreach ($results['objects'] as $reporter) {
+            if (!empty($reporter['public_key'])) {
+                $publicKeys[] = $reporter['public_key'];
+            }
+        }
+        $timeSyncMap = $this->getReporterTimeSyncMap($publicKeys);
 
         // find contact
         $out = [];
@@ -679,6 +988,12 @@ class MeshLog {
                 $r['contact_id'] = $c->getId();
                 $r['contact'] = $c->asArray();
             }
+
+            $timeSync = $timeSyncMap[strtoupper($pk)] ?? null;
+            if ($timeSync) {
+                $r['time_sync'] = $timeSync;
+            }
+
             $out[] = $r;
         }
 

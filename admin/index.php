@@ -4,7 +4,7 @@ require_once __DIR__ . '/../config.php';
 
 session_start();
 
-$meshlog = new MeshLog($config['db']);
+$meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
 $user = null;
 
 if (isset($_SESSION['user'])) {
@@ -529,6 +529,47 @@ if (!$user && isset($_POST['login'])) {
             min-width: 150px;
         }
 
+        .sync-cell {
+            min-width: 220px;
+        }
+
+        .sync-state {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .sync-state.ok {
+            background: rgba(60, 170, 115, 0.16);
+            color: #81e3a6;
+            border: 1px solid rgba(60, 170, 115, 0.35);
+        }
+
+        .sync-state.warn {
+            background: rgba(216, 180, 32, 0.16);
+            color: #f0d465;
+            border: 1px solid rgba(216, 180, 32, 0.35);
+        }
+
+        .sync-state.unknown {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--admin-muted);
+            border: 1px solid var(--admin-line);
+        }
+
+        .sync-note {
+            font-size: 0.78rem;
+            color: var(--admin-muted);
+            margin-top: 4px;
+            white-space: normal;
+            line-height: 1.4;
+        }
+
         .reporter-key { min-width: 180px; }
 
         .device-status {
@@ -670,6 +711,7 @@ if (!$user && isset($_POST['login'])) {
                                 <th><span class="help-inline">Style <button type="button" class="help-trigger" data-help-title="Style Colors" data-help-body="Left color picker sets the fill/text color, right sets the border/stroke color. The label preview updates live.">?</button></span></th>
                                 <th><span class="help-inline">Enabled <button type="button" class="help-trigger" data-help-title="Reporter Enabled" data-help-body="Only enabled reporters are accepted for ingest. Disable a device without deleting its historic data.">?</button></span></th>
                                 <th>Status</th>
+                                <th><span class="help-inline">Time Sync <button type="button" class="help-trigger" data-help-title="Reporter Time Sync" data-help-body="Shows the current clock drift between the reporter repeater and the MeshLog UTC reference. A warning appears when the absolute drift is at or above the configured threshold.">?</button></span></th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -889,6 +931,47 @@ if (!$user && isset($_POST['login'])) {
             }
         }
 
+        function formatSyncDuration(ms) {
+            const totalMs = Math.abs(Number(ms) || 0);
+            if (totalMs < 1000) return `${totalMs} ms`;
+
+            const totalSeconds = totalMs / 1000;
+            if (totalSeconds < 60) return `${totalSeconds.toFixed(totalSeconds >= 10 ? 0 : 1)} s`;
+
+            const totalMinutes = totalSeconds / 60;
+            if (totalMinutes < 60) return `${totalMinutes.toFixed(totalMinutes >= 10 ? 0 : 1)} min`;
+
+            const totalHours = totalMinutes / 60;
+            return `${totalHours.toFixed(totalHours >= 10 ? 0 : 1)} h`;
+        }
+
+        function renderReporterSyncCell(cell, reporter) {
+            cell.innerHTML = '';
+            const sync = reporter.time_sync ?? null;
+            const badge = document.createElement('span');
+            const note = document.createElement('div');
+
+            note.className = 'sync-note';
+
+            if (!sync || !sync.available) {
+                badge.className = 'sync-state unknown';
+                badge.innerText = 'Unknown';
+                note.innerText = 'No recent repeater advertisement with a usable sender timestamp.';
+                cell.append(badge, note);
+                return;
+            }
+
+            const driftMs = Number(sync.drift_ms ?? 0);
+            const thresholdMs = Number(sync.threshold_ms ?? 0);
+            const direction = driftMs >= 0 ? 'ahead' : 'behind';
+
+            badge.className = `sync-state ${sync.warning ? 'warn' : 'ok'}`;
+            badge.innerText = `${sync.warning ? 'Warning' : 'In sync'} · ${formatSyncDuration(driftMs)}`;
+
+            note.innerText = `Repeater is ${formatSyncDuration(driftMs)} ${direction}. Threshold: ${formatSyncDuration(thresholdMs)}.`;
+            cell.append(badge, note);
+        }
+
         function getReporterTypeLabel(type) {
             if (type === 2) return 'Repeater';
             if (type === 3) return 'Room';
@@ -992,6 +1075,13 @@ if (!$user && isset($_POST['login'])) {
             const statusCell  = row.insertCell();
             statusCell.classList.add('status-cell');
             renderReporterStatusCell(statusCell, reporter);
+            const syncCell = row.insertCell();
+            syncCell.classList.add('sync-cell');
+            if (reporter.isAddRow) {
+                syncCell.innerHTML = '<span class="sync-note">Available after the first repeater advertisement is received.</span>';
+            } else {
+                renderReporterSyncCell(syncCell, reporter);
+            }
             const actionsCell = row.insertCell();
 
             const collectReporter = () => ({
@@ -1168,8 +1258,10 @@ if (!$user && isset($_POST['login'])) {
                 (result.objects ?? []).forEach(r => {
                     const m = adminMarkers[r.id];
                     const row = reporters.querySelector(`tr[data-id="${r.id}"]`);
-                    const statusCell = row?.cells?.[9] ?? null;
+                    const statusCell = row?.querySelector('.status-cell') ?? null;
+                    const syncCell = row?.querySelector('.sync-cell') ?? null;
                     if (statusCell) renderReporterStatusCell(statusCell, r);
+                    if (syncCell) renderReporterSyncCell(syncCell, r);
                     if (!m) return;
 
                     const newHeard = r.last_heard_at ?? r.contact?.last_heard_at ?? null;
@@ -1319,6 +1411,16 @@ if (!$user && isset($_POST['login'])) {
         const saveSettingsButton = document.getElementById('setting-save-btn');
 
         const SETTINGS_DEFINITIONS = [
+            {
+                key: 'TIME_SYNC_WARNING_THRESHOLD',
+                label: 'Repeater time-sync warning threshold',
+                type: 'number',
+                placeholder: '300',
+                unit: 'seconds',
+                description: 'Show the yellow warning badge when a repeater clock differs from the platform UTC reference by at least this amount.',
+                help: 'Default: 300 seconds (5 minutes).\n\nMeshLog compares the latest repeater advertisement timestamp with the platform UTC reference derived from NTP. When the absolute drift reaches this threshold, the repeater gets a yellow ! badge in the UI and tooltip.',
+                formatHint: (v) => formatDurationHint(v, 'Warn when drift exceeds')
+            },
             {
                 key: 'MAX_CONTACT_AGE',
                 label: 'Contact visibility age',

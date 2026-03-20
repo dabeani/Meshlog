@@ -3,7 +3,7 @@ require_once "../../../lib/meshlog.class.php";
 require_once "../../../config.php";
 include "../utils.php";
 
-$meshlog = new MeshLog($config['db']);
+$meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
 $err = $meshlog->getError();
 
 if ($err) {

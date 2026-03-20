@@ -49,7 +49,7 @@ while (true) {
         // wait_timeout after 8+ hours of inactivity) the old PDO handle throws on
         // the first query, and a new MeshLog here ensures the next cycle starts
         // with a healthy connection instead of looping in a permanent error state.
-        $meshlog = new MeshLog($config['db']);
+        $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
         $client = new MeshLogMqttClient($mqttConfig);
         mqttLog(
             "INFO",
