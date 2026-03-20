@@ -2401,7 +2401,7 @@ class MeshLogLinkLayer {
 
 
 class MeshLog {
-    static MAX_ROUTE_PREVIEWS = 3;
+
     static MAX_TRANSIENT_ROUTE_ANIMATIONS = 8;
     static MARKER_PANE_BACKGROUND = 'meshlog-marker-background';
     static MARKER_PANE_ROUTE = 'meshlog-marker-route';
@@ -2477,7 +2477,6 @@ class MeshLog {
         this.__init_contact_order();
         this.__init_contact_types();
         this.__init_warnings();
-        this.__init_route_preview();
 
         this.link_layers.addTo(this.map);
 
@@ -3163,13 +3162,6 @@ class MeshLog {
         this.dom_warning.append(this.dom_warning_messages_btn);
     }
 
-    __init_route_preview() {
-        this.dom_route_preview = document.createElement("div");
-        this.dom_route_preview.classList.add("map-route-preview");
-        this.dom_route_preview.hidden = true;
-        this.map.getContainer().append(this.dom_route_preview);
-    }
-
     __addObject(dataset, id, obj) {
         if (dataset.hasOwnProperty(id)) {
             dataset[id].merge(obj.data);
@@ -3236,117 +3228,6 @@ class MeshLog {
         const contact = this.contacts[contactId] ?? false;
         if (!contact) return null;
         return contact.adv?.data?.name ?? contact.data?.name ?? `Node ${contactId}`;
-    }
-
-    removeConsecutiveDuplicates(values) {
-        return values.filter((value, index, items) => value && (index === 0 || value !== items[index - 1]));
-    }
-
-    getRouteSequence(desc) {
-        if (!desc) return [];
-
-        if (desc.paths && desc.paths.length > 0) {
-            const reversed = [...desc.paths].reverse();
-            const ids = [];
-
-            if (reversed[0]?.to?.contact_id) {
-                ids.push(reversed[0].to.contact_id);
-            }
-
-            reversed.forEach(segment => {
-                if (segment.from?.contact_id) {
-                    ids.push(segment.from.contact_id);
-                }
-            });
-
-            return this.removeConsecutiveDuplicates(
-                ids.map(contactId => this.getContactLabel(contactId))
-            );
-        }
-
-        return Array.from(desc.markers ?? [])
-            .map(contactId => this.getContactLabel(contactId))
-            .filter(Boolean);
-    }
-
-    updateRoutePreview() {
-        if (!this.dom_route_preview) return;
-
-        const previews = Object.values(this.layer_descs)
-            .filter(desc => desc.preview)
-            .slice(0, MeshLog.MAX_ROUTE_PREVIEWS);
-
-        this.dom_route_preview.replaceChildren();
-
-        if (previews.length < 1) {
-            this.dom_route_preview.hidden = true;
-            return;
-        }
-
-        const header = document.createElement("div");
-        header.classList.add("map-route-preview-header");
-        header.textContent = previews.length > 1 ? `Live packet routes · ${previews.length}` : 'Live packet route';
-        this.dom_route_preview.append(header);
-
-        previews.forEach(desc => {
-            const preview = desc.preview;
-            const card = document.createElement("div");
-            const title = document.createElement("div");
-            const subtitle = document.createElement("div");
-            const chips = document.createElement("div");
-            const flow = document.createElement("div");
-
-            card.classList.add("map-route-card");
-            card.style.setProperty("--route-accent", preview.accent ?? '#4ea4c4');
-
-            title.classList.add("map-route-title");
-            title.textContent = preview.title ?? 'Route';
-
-            subtitle.classList.add("map-route-subtitle");
-            subtitle.textContent = preview.subtitle ?? '';
-
-            chips.classList.add("map-route-chips");
-            (preview.chips ?? []).forEach(chipText => {
-                const chip = document.createElement("span");
-                chip.classList.add("map-route-chip");
-                chip.textContent = chipText;
-                chips.append(chip);
-            });
-
-            const sequence = this.getRouteSequence(desc);
-            if (sequence.length > 0) {
-                flow.classList.add("map-route-flow");
-                sequence.forEach((step, index) => {
-                    const stepEl = document.createElement("span");
-                    stepEl.classList.add("map-route-step");
-                    stepEl.textContent = step;
-                    flow.append(stepEl);
-
-                    if (index < sequence.length - 1) {
-                        const arrow = document.createElement("span");
-                        arrow.classList.add("map-route-arrow");
-                        arrow.textContent = '→';
-                        flow.append(arrow);
-                    }
-                });
-            }
-
-            card.append(title);
-            if (preview.subtitle) card.append(subtitle);
-            if (chips.childElementCount > 0) card.append(chips);
-            if (flow.childElementCount > 0) card.append(flow);
-
-            if (preview.footer) {
-                const footer = document.createElement("div");
-                footer.classList.add("map-route-footer");
-                footer.textContent = preview.footer;
-                card.append(footer);
-            }
-
-            this.dom_route_preview.append(card);
-        });
-
-        this.dom_route_preview.hidden = false;
     }
 
     showError(message, timeout=0) {
@@ -3894,7 +3775,6 @@ class MeshLog {
         }
         this.showWarning(warningsStr);
         this.fadeMarkers();
-        this.updateRoutePreview();
     }
 
     // Build ordered [lat,lon] waypoints for a path: sender → hops → reporter
