@@ -15,6 +15,7 @@
     include 'migrations/010_add_reporter_hash_size.php';
     include 'migrations/011_add_audit_log.php';
     include 'migrations/012_add_transport_scope.php';
+    include 'migrations/013_add_system_reports.php';
 
     // Must be in order!
     $migrationClasses = array(
@@ -31,6 +32,7 @@
         'Migration_010',
         'Migration_011',
         'Migration_012',
+        'Migration_013',
     );
 
     session_start();

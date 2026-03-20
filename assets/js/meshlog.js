@@ -1846,6 +1846,198 @@ class MeshLogDirectMessage extends MeshLogReportedObject {
     isVisible() { return Settings.getBool('messageTypes.direct', false); }
 }
 
+class MeshLogTelemetryMessage extends MeshLogObject {
+    static idPrefix = "t";
+
+    constructor(meshlog, data) {
+        super(meshlog, data);
+        this.dom = null;
+        this.time = parseMeshlogTimestamp(data.created_at);
+    }
+
+    getTelemetryRows() {
+        try {
+            const parsed = typeof this.data.data === 'string'
+                ? JSON.parse(this.data.data || '[]')
+                : (this.data.data ?? []);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_error) {
+            return [];
+        }
+    }
+
+    getSummary() {
+        const rows = this.getTelemetryRows();
+        if (rows.length < 1) return 'Telemetry update';
+
+        return rows
+            .filter(row => row && row.name)
+            .slice(0, 3)
+            .map(row => `${row.name}: ${row.value}`)
+            .join(', ');
+    }
+
+    createDom(recreate = false) {
+        if (this.dom && !recreate) return this.dom;
+
+        if (this.dom && this.dom.container && this.dom.container.parentNode) {
+            this.dom.container.parentNode.removeChild(this.dom.container);
+            this.dom = null;
+        }
+
+        const divContainer = document.createElement('div');
+        const divLog = document.createElement('div');
+        const divLine1 = document.createElement('div');
+        const divLine2 = document.createElement('div');
+
+        divContainer.dataset.time = this.time;
+        divContainer.dataset.type = 'TEL';
+        divLog.classList = 'log-entry';
+        divLog.instance = this;
+        divLine1.classList.add('log-entry-info');
+        divLine2.classList.add('log-entry-msg');
+        divLog.append(divLine1, divLine2);
+        divContainer.append(divLog);
+
+        const spDate = document.createElement('span');
+        spDate.classList.add('sp', 'c');
+        spDate.innerText = this.data.created_at;
+        divLine1.append(spDate);
+
+        const spTag = document.createElement('span');
+        spTag.classList.add('sp', 'tag', 'type-badge');
+        spTag.innerText = 'TEL';
+        applyPresentation(spTag, { title: 'Telemetry packet with sensor readings' });
+        divLine1.append(spTag);
+
+        const reporter = this._meshlog.reporters[this.data.reporter_id] ?? null;
+        if (reporter) {
+            const spDot = document.createElement('span');
+            spDot.classList.add('dot');
+            spDot.innerText = reporter.data.name;
+            const style = reporter.getStyle();
+            const textColor = style.color;
+            const strokeColor = style.stroke ?? textColor;
+            const strokeWeight = style.weight ?? '1px';
+            spDot.style.color = textColor;
+            spDot.style.border = `solid ${strokeWeight} ${strokeColor}`;
+            divLine1.append(spDot);
+        }
+
+        const contact = this.data.contact_id ? this._meshlog.contacts[this.data.contact_id] ?? null : null;
+        const spName = document.createElement('span');
+        spName.classList.add('sp', 't');
+        spName.innerText = contact?.adv?.data?.name ?? contact?.data?.name ?? 'Unknown node';
+        divLine1.append(spName);
+
+        const spText = document.createElement('span');
+        spText.classList.add('m');
+        spText.innerText = this.getSummary();
+        divLine2.append(spText);
+
+        this.dom = { container: divContainer, log: divLog };
+        return this.dom;
+    }
+
+    updateDom() {
+        if (!this.dom) return;
+        this.dom.container.hidden = !this.isVisible();
+    }
+
+    isVisible() {
+        return Settings.getBool('messageTypes.telemetry', false);
+    }
+}
+
+class MeshLogSystemReportMessage extends MeshLogObject {
+    static idPrefix = "s";
+
+    constructor(meshlog, data) {
+        super(meshlog, data);
+        this.dom = null;
+        this.time = parseMeshlogTimestamp(data.created_at);
+    }
+
+    formatUptime(seconds) {
+        const value = Number(seconds);
+        if (!Number.isFinite(value) || value < 0) return '';
+        const days = Math.floor(value / 86400);
+        const hours = Math.floor((value % 86400) / 3600);
+        const minutes = Math.floor((value % 3600) / 60);
+        if (days > 0) return `${days}d ${hours}h`;
+        if (hours > 0) return `${hours}h ${minutes}m`;
+        return `${minutes}m`;
+    }
+
+    getSummary() {
+        const parts = [];
+        if (this.data.version) parts.push(`v${this.data.version}`);
+        if (Number.isFinite(Number(this.data.rssi))) parts.push(`RSSI ${this.data.rssi}`);
+        if (Number.isFinite(Number(this.data.heap_free)) && Number.isFinite(Number(this.data.heap_total))) {
+            parts.push(`heap ${this.data.heap_free}/${this.data.heap_total}`);
+        }
+        if (Number.isFinite(Number(this.data.uptime))) parts.push(`uptime ${this.formatUptime(this.data.uptime)}`);
+        return parts.join(' · ') || 'System report';
+    }
+
+    createDom(recreate = false) {
+        if (this.dom && !recreate) return this.dom;
+
+        if (this.dom && this.dom.container && this.dom.container.parentNode) {
+            this.dom.container.parentNode.removeChild(this.dom.container);
+            this.dom = null;
+        }
+
+        const divContainer = document.createElement('div');
+        const divLog = document.createElement('div');
+        const divLine1 = document.createElement('div');
+        const divLine2 = document.createElement('div');
+
+        divContainer.dataset.time = this.time;
+        divContainer.dataset.type = 'SYS';
+        divLog.classList = 'log-entry';
+        divLog.instance = this;
+        divLine1.classList.add('log-entry-info');
+        divLine2.classList.add('log-entry-msg');
+        divLog.append(divLine1, divLine2);
+        divContainer.append(divLog);
+
+        const spDate = document.createElement('span');
+        spDate.classList.add('sp', 'c');
+        spDate.innerText = this.data.created_at;
+        divLine1.append(spDate);
+
+        const spTag = document.createElement('span');
+        spTag.classList.add('sp', 'tag', 'type-badge');
+        spTag.innerText = 'SYS';
+        applyPresentation(spTag, { title: 'System/self report from a reporter device' });
+        divLine1.append(spTag);
+
+        const reporter = this._meshlog.reporters[this.data.reporter_id] ?? null;
+        const spName = document.createElement('span');
+        spName.classList.add('sp', 't');
+        spName.innerText = reporter?.data?.name ?? 'Unknown reporter';
+        divLine1.append(spName);
+
+        const spText = document.createElement('span');
+        spText.classList.add('m');
+        spText.innerText = this.getSummary();
+        divLine2.append(spText);
+
+        this.dom = { container: divContainer, log: divLog };
+        return this.dom;
+    }
+
+    updateDom() {
+        if (!this.dom) return;
+        this.dom.container.hidden = !this.isVisible();
+    }
+
+    isVisible() {
+        return Settings.getBool('messageTypes.system', false);
+    }
+}
+
 class MeshLogRawPacket extends MeshLogObject {
     static idPrefix = "r";
 
@@ -2368,7 +2560,7 @@ class MeshLog {
 
         this.dom_type_badges = createGroup(
             'Live Feed Filters',
-            'Toggle which packet types appear in the live feed below. Choices are saved per browser.\n\nAdvertisements — periodic node beacons.\nChannel Messages — decoded group/channel messages.\nDirect Messages — unicast messages.\nRaw Packets — undecoded or encrypted packets.\nNotifications — browser push alerts for new entries.'
+            'Toggle which packet types appear in the live feed below. Choices are saved per browser.\n\nAdvertisements — periodic node beacons.\nChannel Messages — decoded group/channel messages.\nDirect Messages — unicast messages.\nRaw Packets — undecoded or encrypted packets.\nTelemetry — sensor and measurement updates.\nSystem Reports — self-reported device health and firmware data.\nNotifications — browser push alerts for new entries.'
         );
         this.dom_channel_badges = createGroup(
             'Channel Filters',
@@ -2618,6 +2810,36 @@ class MeshLog {
                 },
                 {
                     title: 'Show or hide stored raw packets in the live feed'
+                }
+            )
+            .button
+        );
+
+        this.dom_type_badges.append(
+            this.__createBadgeToggle(
+                "Telemetry",
+                'messageTypes.telemetry',
+                false,
+                (e) => {
+                    self.__onTypesChanged();
+                },
+                {
+                    title: 'Show or hide telemetry packets in the live feed'
+                }
+            )
+            .button
+        );
+
+        this.dom_type_badges.append(
+            this.__createBadgeToggle(
+                "System Reports",
+                'messageTypes.system',
+                false,
+                (e) => {
+                    self.__onTypesChanged();
+                },
+                {
+                    title: 'Show or hide system/self reports in the live feed'
                 }
             )
             .button
@@ -2906,6 +3128,8 @@ class MeshLog {
         let oldest_adv = this.latest;
         let oldest_grp = this.latest;
         let oldest_dm  = this.latest;
+        let oldest_tel = this.latest;
+        let oldest_sys = this.latest;
 
         Object.entries(this.messages).forEach(([k,v]) => {
             if (v instanceof MeshLogAdvertisement) {
@@ -2914,6 +3138,10 @@ class MeshLog {
                 if (v.time < oldest_grp) oldest_grp = v.time;
             } else if (v instanceof MeshLogDirectMessage) {
                 if (v.time < oldest_dm) oldest_dm = v.time;
+            } else if (v instanceof MeshLogTelemetryMessage) {
+                if (v.time < oldest_tel) oldest_tel = v.time;
+            } else if (v instanceof MeshLogSystemReportMessage) {
+                if (v.time < oldest_sys) oldest_sys = v.time;
             }
         });
 
@@ -2937,6 +3165,20 @@ class MeshLog {
             self.onLoadAll();
             if (onload) onload();
         });
+
+        this.__fetchQuery({ "before_ms": oldest_tel }, 'api/v1/telemetry', data => {
+            const rep = self.__loadObjects(self.messages, data, MeshLogTelemetryMessage);
+            if (rep.length) console.log(`${rep.length} telemetry packets loaded`);
+            self.onLoadAll();
+            if (onload) onload();
+        });
+
+        this.__fetchQuery({ "before_ms": oldest_sys }, 'api/v1/system_reports', data => {
+            const rep = self.__loadObjects(self.messages, data, MeshLogSystemReportMessage);
+            if (rep.length) console.log(`${rep.length} system reports loaded`);
+            self.onLoadAll();
+            if (onload) onload();
+        });
     }
 
     loadAll(params={}, onload=null) {
@@ -2954,6 +3196,8 @@ class MeshLog {
             const rep5 = this.__loadObjects(this.messages, data.channel_messages, MeshLogChannelMessage);
             const rep6 = this.__loadObjects(this.messages, data.direct_messages, MeshLogDirectMessage);
             const rep7 = this.__loadObjects(this.messages, data.raw_packets ?? {objects: []}, MeshLogRawPacket);
+            const rep8 = this.__loadObjects(this.messages, data.telemetry ?? {objects: []}, MeshLogTelemetryMessage);
+            const rep9 = this.__loadObjects(this.messages, data.system_reports ?? {objects: []}, MeshLogSystemReportMessage);
 
             if (rep1.length) console.log(`${rep1.length} reporters loaded`);
             if (rep2.length) console.log(`${rep2.length} contacts loaded`);
@@ -2962,6 +3206,8 @@ class MeshLog {
             if (rep5.length) console.log(`${rep5.length} group messages loaded`);
             if (rep6.length) console.log(`${rep6.length} direct messages loaded`);
             if (rep7.length) console.log(`${rep7.length} raw packets loaded`);
+            if (rep8.length) console.log(`${rep8.length} telemetry packets loaded`);
+            if (rep9.length) console.log(`${rep9.length} system reports loaded`);
 
             this.__init_reporters();
             this.onLoadAll();
@@ -2976,6 +3222,8 @@ class MeshLog {
                     channel_messages: rep5,
                     direct_messages: rep6,
                     raw_packets: rep7,
+                    telemetry: rep8,
+                    system_reports: rep9,
                 });
             }
         });
@@ -3140,6 +3388,22 @@ class MeshLog {
         this.__fetchQuery(params, 'api/v1/direct_messages', data => {
             const sz = this.__loadObjects(this.direct_messages, data, MeshLogDirectMessage);
             console.log(`${sz} direct messages loaded`);
+            if (onload) onload();
+        });
+    }
+
+    loadTelemetry(params={}, onload=null) {
+        this.__fetchQuery(params, 'api/v1/telemetry', data => {
+            const sz = this.__loadObjects(this.messages, data, MeshLogTelemetryMessage);
+            console.log(`${sz} telemetry packets loaded`);
+            if (onload) onload();
+        });
+    }
+
+    loadSystemReports(params={}, onload=null) {
+        this.__fetchQuery(params, 'api/v1/system_reports', data => {
+            const sz = this.__loadObjects(this.messages, data, MeshLogSystemReportMessage);
+            console.log(`${sz} system reports loaded`);
             if (onload) onload();
         });
     }

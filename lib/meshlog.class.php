@@ -13,6 +13,7 @@ require_once 'meshlog.telemetry.class.php';
 require_once 'meshlog.user.class.php';
 require_once 'meshlog.report.class.php';
 require_once 'meshlog.raw_packet.class.php';
+require_once 'meshlog.system_report.class.php';
 require_once 'meshlog.mqtt_decoder.class.php';
 require_once 'meshlog.audit_log.class.php';
 
@@ -21,7 +22,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 12;
+    private $version = 13;
     private $ntpConfig = array(
         'enabled' => true,
         'host' => 'pool.ntp.org',
@@ -59,6 +60,7 @@ class MeshLog {
         );
         $this->pdo = new PDO("mysql:host=$host;dbname=$name;charset=utf8mb4", $user, $pass);
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $this->syncDatabaseSessionTimezone();
         $this->loadSettings();
 
         $this->error = $this->checkUpdates();
@@ -134,6 +136,17 @@ class MeshLog {
 
     function setConfig($key, $value) {
         $this->settings[$key] = $value;
+    }
+
+    private function syncDatabaseSessionTimezone() {
+        try {
+            $offset = (new DateTimeImmutable('now'))->format('P');
+            $stmt = $this->pdo->prepare('SET time_zone = :offset');
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_STR);
+            $stmt->execute();
+        } catch (Throwable $e) {
+            error_log('MeshLog failed to set DB session timezone: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -630,8 +643,8 @@ class MeshLog {
 
     // TODO
     private function insertSelfReport($data, $reporter) {
-        if (!$reporter) return;
-        if (!$data['contact'] || !$data['sys']) return;
+        if (!$reporter) return $this->repError('no reporter');
+        if (empty($data['contact']) || empty($data['sys'])) return $this->repError('missing sys payload');
 
         $lat = $data['contact']['lat'] ?? null;
         $lon = $data['contact']['lon'] ?? null;
@@ -642,7 +655,26 @@ class MeshLog {
 
         $reporter->updateLocation($this, $lat, $lon, $vdata);
 
-        $pubkey = $data['contact']['pubkey'];
+        $pubkey = $data['contact']['pubkey'] ?? null;
+        $contact = null;
+        if ($pubkey) {
+            $contact = MeshLogContact::findBy("public_key", $pubkey, $this, array(), false, true);
+            if ($contact) {
+                $contact->name = $data['contact']['name'] ?? $contact->name;
+            } else {
+                $contact = MeshLogContact::fromJson($data, $this);
+                $contact->name = $data['contact']['name'] ?? null;
+            }
+            if ($contact && !$contact->save($this)) return $this->repError('failed to save contact');
+        }
+
+        $sys = MeshLogSystemReport::fromJson($data, $this);
+        $sys->reporter_ref = $reporter;
+        $sys->contact_ref = $contact;
+        if (!$sys->save($this)) {
+            return $this->repError('failed to save system report');
+        }
+
         $heap_total = $data['sys']['heap_total'];
         $heap_free = $data['sys']['heap_free'];
         $rssi = $data['sys']['rssi'];
@@ -658,6 +690,12 @@ class MeshLog {
 
         $line = "mc_reporter,contact=$pubkey,name=$cname heap_total=$heap_total,heap_free=$heap_free,rssi=$rssi,uptime=$uptime";
         $error = $this->writeInfluxDb($line);
+
+        if (!empty($error)) {
+            return $this->repError($error);
+        }
+
+        return true;
     }
 
     private function repError($msg, $extra = array()) {
@@ -1349,6 +1387,16 @@ class MeshLog {
         $params['where'] = array();
         $results = MeshLogRawPacket::getAll($this, $params);
         return $results;
+    }
+
+    public function getTelemetry($params) {
+        $params['where'] = array();
+        return MeshLogTelemetry::getAll($this, $params);
+    }
+
+    public function getSystemReports($params) {
+        $params['where'] = array();
+        return MeshLogSystemReport::getAll($this, $params);
     }
 };
 

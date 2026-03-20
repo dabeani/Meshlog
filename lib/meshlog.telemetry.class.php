@@ -86,6 +86,16 @@ class MeshLogTelemetry extends MeshLogEntity {
             "received_at" => array($this->received_at, PDO::PARAM_STR)
         );
     }
+
+    public static function getPublicFields($prefix='t') {
+        return "$prefix.id,
+                $prefix.contact_id,
+                $prefix.reporter_id,
+                $prefix.data,
+                $prefix.sent_at,
+                $prefix.received_at,
+                $prefix.created_at";
+    }
 }
 
 ?>
