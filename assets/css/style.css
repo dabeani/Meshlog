@@ -881,6 +881,7 @@ h2 {
    text-align: center;
    z-index: 2;
    fill: #607e8c;
+    pointer-events: none;
 }
 
 .custom-div-icon span {
@@ -892,6 +893,18 @@ h2 {
     margin: 10px auto;
     text-align: center;
     z-index: 2;
+    pointer-events: none;
+}
+
+.marker-warning-badge {
+    top: -2px;
+    right: -2px;
+    left: auto;
+    margin: 0;
+    width: 15px;
+    height: 15px;
+    font-size: 11px;
+    z-index: 3;
 }
 
 .tooltip-title {

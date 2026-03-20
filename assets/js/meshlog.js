@@ -778,15 +778,10 @@ class MeshLogContact extends MeshLogObject {
 
         let iconUrl = 'assets/img/tower.svg';
         let kl = 'marker-pin';
-        let receipt = false;
-        const reporter = this.isReporter();
+        const timeSyncWarning = this.hasReporterTimeSyncWarning();
 
         if (this.isClient()) {
-            if (reporter) {
-                receipt = reporter.getStyle().color;
-            } else {
-                iconUrl = 'assets/img/person.svg';
-            }
+            iconUrl = 'assets/img/person.svg';
         } else if (this.isRepeater()) {
             iconUrl = 'assets/img/tower.svg';
         } else if (this.isRoom()) {
@@ -795,10 +790,6 @@ class MeshLogContact extends MeshLogObject {
             iconUrl = 'assets/img/sensor.svg';
         } else {
             iconUrl = 'assets/img/unknown.svg';
-        }
-
-        if (reporter) {
-            receipt = reporter.getStyle().color;
         }
 
         const extractEmoji = (str) => {
@@ -812,13 +803,16 @@ class MeshLogContact extends MeshLogObject {
         if (emoji) {
             innerIcon = document.createElement('span');
             innerIcon.innerText = emoji;
-        } else if (receipt) {
-            const hw = '20px';
-            innerIcon = document.createElement('span');
-            innerIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="${hw}" viewBox="0 -960 960 960" width="${hw}" fill="${receipt}"><path d="M240-80q-50 0-85-35t-35-85v-120h120v-560l60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60 60 60 60-60v680q0 50-35 85t-85 35H240Zm480-80q17 0 28.5-11.5T760-200v-560H320v440h360v120q0 17 11.5 28.5T720-160ZM360-600v-80h240v80H360Zm0 120v-80h240v80H360Zm320-120q-17 0-28.5-11.5T640-640q0-17 11.5-28.5T680-680q17 0 28.5 11.5T720-640q0 17-11.5 28.5T680-600Zm0 120q-17 0-28.5-11.5T640-520q0-17 11.5-28.5T680-560q17 0 28.5 11.5T720-520q0 17-11.5 28.5T680-480ZM240-160h360v-80H200v40q0 17 11.5 28.5T240-160Zm-40 0v-80 80Z"/></svg>`;
         } else {
             innerIcon = document.createElement('img');
             innerIcon.src = iconUrl;
+        }
+
+        let warningBadge = null;
+        if (timeSyncWarning) {
+            warningBadge = document.createElement('span');
+            warningBadge.classList.add('marker-warning-badge', 'time-sync-badge');
+            warningBadge.textContent = '!';
         }
 
         let icdivroot = document.createElement("div");
@@ -826,6 +820,9 @@ class MeshLogContact extends MeshLogObject {
         icdivch1.classList.add(kl);
         icdivroot.appendChild(icdivch1);
         icdivroot.appendChild(innerIcon);
+        if (warningBadge) {
+            icdivroot.appendChild(warningBadge);
+        }
 
         innerIcon.classList.add('marker-icon-img');
 
@@ -851,6 +848,17 @@ class MeshLogContact extends MeshLogObject {
                 pane: this.markerPane ?? this._meshlog.getMarkerPaneName(false)
             }
         ).addTo(map);
+        this.marker.on('click', () => {
+            this.expanded = !this.expanded;
+            this.updateDom();
+            this.dom?.container?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        });
+        this.marker.on('mouseover', () => {
+            MeshLogContact.onmouseover.call(this, { target: this.marker });
+        });
+        this.marker.on('mouseout', () => {
+            MeshLogContact.onmouseout.call(this, { target: this.marker });
+        });
         this.markerPane = this.marker.options.pane;
         this.updateTooltip(this.markerTooltip);
     }
@@ -915,7 +923,6 @@ class MeshLogContact extends MeshLogObject {
         this.dom.container.dataset.name = this.__removeEmojis(this.adv.data.name).trim();
         this.dom.container.dataset.hash = hashstr;
         this.dom.container.dataset.first_seen = parseMeshlogTimestamp(this.data.created_at);
-
         this.dom.details.hidden = !this.expanded;
 
         if (this.isVeryExpired()) { // 3 days
@@ -2341,6 +2348,7 @@ class MeshLog {
     _initMapPanes() {
         const backgroundPane = this.map.createPane(MeshLog.MARKER_PANE_BACKGROUND);
         backgroundPane.style.zIndex = '350';
+        backgroundPane.style.pointerEvents = 'auto';
 
         const routePane = this.map.createPane(MeshLog.ROUTE_PANE);
         routePane.style.zIndex = '500';
@@ -2348,6 +2356,7 @@ class MeshLog {
 
         const routeMarkerPane = this.map.createPane(MeshLog.MARKER_PANE_ROUTE);
         routeMarkerPane.style.zIndex = '650';
+        routeMarkerPane.style.pointerEvents = 'auto';
     }
 
     getMarkerPaneName(active = false) {

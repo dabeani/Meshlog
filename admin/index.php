@@ -711,7 +711,6 @@ if (!$user && isset($_POST['login'])) {
                                 <th><span class="help-inline">Style <button type="button" class="help-trigger" data-help-title="Style Colors" data-help-body="Left color picker sets the fill/text color, right sets the border/stroke color. The label preview updates live.">?</button></span></th>
                                 <th><span class="help-inline">Enabled <button type="button" class="help-trigger" data-help-title="Reporter Enabled" data-help-body="Only enabled reporters are accepted for ingest. Disable a device without deleting its historic data.">?</button></span></th>
                                 <th>Status</th>
-                                <th><span class="help-inline">Time Sync <button type="button" class="help-trigger" data-help-title="Reporter Time Sync" data-help-body="Shows the current clock drift between the reporter repeater and the MeshLog UTC reference. A warning appears when the absolute drift is at or above the configured threshold.">?</button></span></th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -1075,13 +1074,6 @@ if (!$user && isset($_POST['login'])) {
             const statusCell  = row.insertCell();
             statusCell.classList.add('status-cell');
             renderReporterStatusCell(statusCell, reporter);
-            const syncCell = row.insertCell();
-            syncCell.classList.add('sync-cell');
-            if (reporter.isAddRow) {
-                syncCell.innerHTML = '<span class="sync-note">Available after the first repeater advertisement is received.</span>';
-            } else {
-                renderReporterSyncCell(syncCell, reporter);
-            }
             const actionsCell = row.insertCell();
 
             const collectReporter = () => ({
@@ -1259,9 +1251,7 @@ if (!$user && isset($_POST['login'])) {
                     const m = adminMarkers[r.id];
                     const row = reporters.querySelector(`tr[data-id="${r.id}"]`);
                     const statusCell = row?.querySelector('.status-cell') ?? null;
-                    const syncCell = row?.querySelector('.sync-cell') ?? null;
                     if (statusCell) renderReporterStatusCell(statusCell, r);
-                    if (syncCell) renderReporterSyncCell(syncCell, r);
                     if (!m) return;
 
                     const newHeard = r.last_heard_at ?? r.contact?.last_heard_at ?? null;
