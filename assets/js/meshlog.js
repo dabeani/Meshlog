@@ -884,18 +884,30 @@ class MeshLogContact extends MeshLogObject {
         const stats = this._meshlog.getContactPacketStats(this.data.id, statsWindowHours);
         const windowButtons = [1, 24, 36].map(hours => {
             const active = hours === statsWindowHours ? ' device-popup-range-active' : '';
-            return `<button type="button" class="device-popup-range${active}" data-contact-id="${this.data.id}" data-hours="${hours}" onclick="window.__meshlogPopupAction && window.__meshlogPopupAction(${this.data.id}, 'range', ${hours})">${hours}h</button>`;
+            return `<button type="button" class="device-popup-range${active}" data-contact-id="${this.data.id}" data-hours="${hours}">${hours}h</button>`;
         }).join('');
 
+        const renderValue = (value) => {
+            if (stats.isLoading && !stats.hasData) return 'Loading...';
+            return escapeXml(String(value));
+        };
+
+        const noteLine = stats.hasError
+            ? 'Unable to load long-term database stats right now.'
+            : (stats.isLoading && !stats.hasData
+                ? 'Loading long-term database history for this device.'
+                : stats.note);
+
         const longTermLines = [
-            `Loaded packet history span: ${escapeXml(stats.loadedSpanLabel)}`,
-            `Loaded packets total: ${stats.totalLoaded}`,
-            `Last 1h: ${stats.last1h} packets`,
-            `Last 24h: ${stats.last24h} packets`,
-            `Last 36h: ${stats.last36h} packets`,
-            `Newest loaded packet: ${escapeXml(stats.newestLabel)}`,
-            `Oldest loaded packet: ${escapeXml(stats.oldestLabel)}`,
-            `Packet mix: ${escapeXml(stats.packetMixLabel)}`,
+            `History source: ${renderValue(stats.sourceLabel)}`,
+            `Packet history span: ${renderValue(stats.loadedSpanLabel)}`,
+            `Packets total: ${renderValue(stats.totalLoaded)}`,
+            `Last 1h: ${renderValue(stats.last1h)} packets`,
+            `Last 24h: ${renderValue(stats.last24h)} packets`,
+            `Last 36h: ${renderValue(stats.last36h)} packets`,
+            `Newest packet: ${renderValue(stats.newestLabel)}`,
+            `Oldest packet: ${renderValue(stats.oldestLabel)}`,
+            `Packet mix: ${renderValue(stats.packetMixLabel)}`,
         ];
 
         return `
@@ -908,7 +920,8 @@ class MeshLogContact extends MeshLogObject {
                     <div class="device-popup-section-title">Packets in last ${statsWindowHours}h</div>
                     <div class="device-popup-range-group">${windowButtons}</div>
                 </div>
-                <div class="device-popup-note">Based on currently loaded packets for this device in the live page.</div>
+                <div class="device-popup-note">${escapeXml(noteLine)}</div>
+                <div class="device-popup-note">${escapeXml(stats.rawSupportNote)}</div>
                 ${stats.chartSvg}
             </div>
         `;
@@ -934,8 +947,8 @@ class MeshLogContact extends MeshLogObject {
                     <span class="device-popup-badge device-popup-badge-status">${escapeXml(this.getMarkerStatusLabel())}</span>
                 </div>
                 <div class="device-popup-tabs" data-contact-id="${this.data.id}">
-                    <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-tab="general" onclick="window.__meshlogPopupAction && window.__meshlogPopupAction(${this.data.id}, 'tab', 'general')">General</button>
-                    <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-tab="stats" onclick="window.__meshlogPopupAction && window.__meshlogPopupAction(${this.data.id}, 'tab', 'stats')">Stats</button>
+                    <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-tab="general">General</button>
+                    <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-tab="stats">Stats</button>
                 </div>
                 <div class="device-popup-panel">${bodyHtml}</div>
             </div>
@@ -2714,7 +2727,6 @@ class MeshLog {
         this.dom_settings_types = document.getElementById(stypesid);
         this.dom_settings_reporters = document.getElementById(sreportersid);
         this.dom_settings_contacts = document.getElementById(scontactsid);
-        window.__meshlogPopupAction = (contactId, action, value) => this.handlePopupAction(contactId, action, value);
 
         this.__init_filter_layout();
 
@@ -2741,8 +2753,7 @@ class MeshLog {
 
         this.link_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
-        this._boundPopupUiHandler = (event) => this._handleMapPopupUiClick(event);
-        document.addEventListener('click', this._boundPopupUiHandler, true);
+        this.contactPacketStatsCache = new Map();
         this._popupStatsRefreshTimer = setInterval(() => {
             if (this.selectedMarkerId && this.popupUiState?.tab === 'stats') {
                 this.updateSelectedContactPopup();
@@ -2852,26 +2863,6 @@ class MeshLog {
         if (!this._mapSearch?.results) return;
         this._mapSearch.results.hidden = true;
         this._mapSearch.results.innerHTML = '';
-    }
-
-    _handleMapPopupUiClick(event) {
-        const target = event.target instanceof Element ? event.target : null;
-        if (!target) return;
-
-        const tabBtn = target.closest('.device-popup-tab');
-        if (tabBtn) {
-            event.preventDefault();
-            event.stopPropagation();
-            this.handlePopupAction(Number(tabBtn.dataset.contactId), 'tab', tabBtn.dataset.tab);
-            return;
-        }
-
-        const rangeBtn = target.closest('.device-popup-range');
-        if (rangeBtn) {
-            event.preventDefault();
-            event.stopPropagation();
-            this.handlePopupAction(Number(rangeBtn.dataset.contactId), 'range', Number(rangeBtn.dataset.hours));
-        }
     }
 
     handlePopupAction(contactId, action, value) {
@@ -3029,7 +3020,26 @@ class MeshLog {
         if (popupElement) {
             L.DomEvent.disableClickPropagation(popupElement);
             L.DomEvent.disableScrollPropagation(popupElement);
+            this._wirePopupControls(popupElement);
         }
+    }
+
+    _wirePopupControls(popupElement) {
+        popupElement.querySelectorAll('.device-popup-tab').forEach((button) => {
+            button.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.handlePopupAction(Number(button.dataset.contactId), 'tab', button.dataset.tab);
+            };
+        });
+
+        popupElement.querySelectorAll('.device-popup-range').forEach((button) => {
+            button.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.handlePopupAction(Number(button.dataset.contactId), 'range', Number(button.dataset.hours));
+            };
+        });
     }
 
     updateSelectedContactPopup() {
@@ -3049,52 +3059,30 @@ class MeshLog {
         return 'OTHER';
     }
 
-    getContactPacketStats(contactId, windowHours = 24) {
-        const allMessages = Object.values(this.messages).filter(msg => Number(msg?.data?.contact_id) === Number(contactId) && Number.isFinite(msg?.time));
-        const now = Date.now();
-        const last1hMs = 1 * 60 * 60 * 1000;
-        const last24hMs = 24 * 60 * 60 * 1000;
-        const last36hMs = 36 * 60 * 60 * 1000;
-        const oldestTime = allMessages.length > 0 ? Math.min(...allMessages.map(msg => msg.time)) : NaN;
-        const newestTime = allMessages.length > 0 ? Math.max(...allMessages.map(msg => msg.time)) : NaN;
-        const loadedSpanHours = Number.isFinite(oldestTime) && Number.isFinite(newestTime)
-            ? Math.max(0, (newestTime - oldestTime) / (60 * 60 * 1000))
-            : 0;
+    _getStatsBucketCount(windowHours = 24) {
+        if (windowHours === 24) return 24;
+        if (windowHours === 36) return 18;
+        return 12;
+    }
 
-        const byType = {};
-        allMessages.forEach(msg => {
-            const key = this.getPacketTypeLabelForStats(msg);
-            byType[key] = (byType[key] ?? 0) + 1;
-        });
-
-        const countSince = (ms) => allMessages.filter(msg => (now - msg.time) <= ms).length;
-
-        let bucketCount = 12;
-        if (windowHours === 24) bucketCount = 24;
-        if (windowHours === 36) bucketCount = 18;
-        const windowMs = windowHours * 60 * 60 * 1000;
-        const bucketMs = windowMs / bucketCount;
-        const buckets = new Array(bucketCount).fill(0);
-
-        allMessages.forEach(msg => {
-            const age = now - msg.time;
-            if (age < 0 || age > windowMs) return;
-            const idx = Math.min(bucketCount - 1, Math.floor((windowMs - age) / bucketMs));
-            buckets[idx] += 1;
-        });
-
-        const maxBucket = Math.max(1, ...buckets);
+    _buildStatsChartSvg(buckets, windowHours = 24) {
+        const safeBuckets = Array.isArray(buckets) && buckets.length > 0
+            ? buckets
+            : new Array(this._getStatsBucketCount(windowHours)).fill(0);
+        const bucketCount = safeBuckets.length;
+        const maxBucket = Math.max(1, ...safeBuckets);
         const chartWidth = 284;
         const chartHeight = 110;
         const barGap = 3;
         const barWidth = Math.max(4, Math.floor((chartWidth - ((bucketCount - 1) * barGap)) / bucketCount));
-        const barsSvg = buckets.map((count, index) => {
+        const barsSvg = safeBuckets.map((count, index) => {
             const height = Math.max(count > 0 ? 4 : 0, Math.round((count / maxBucket) * 72));
             const x = index * (barWidth + barGap);
             const y = 82 - height;
             return `<rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="2" ry="2"></rect>`;
         }).join('');
-        const chartSvg = `
+
+        return `
             <div class="device-popup-chart-wrap">
                 <svg class="device-popup-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" aria-label="Packet activity chart">
                     <line x1="0" y1="82.5" x2="${chartWidth}" y2="82.5" class="device-popup-chart-axis"></line>
@@ -3104,20 +3092,155 @@ class MeshLog {
                 </svg>
             </div>
         `;
+    }
 
-        const packetMixLabel = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([key, count]) => `${key} ${count}`).join(', ') || 'No packets loaded';
+    _getEmptyContactPacketStats(windowHours = 24, overrides = {}) {
+        const bucketCount = this._getStatsBucketCount(windowHours);
+        const buckets = Array.isArray(overrides.buckets) && overrides.buckets.length === bucketCount
+            ? overrides.buckets
+            : new Array(bucketCount).fill(0);
 
         return {
-            totalLoaded: allMessages.length,
-            last1h: countSince(last1hMs),
-            last24h: countSince(last24hMs),
-            last36h: countSince(last36hMs),
-            loadedSpanLabel: allMessages.length > 0 ? `${loadedSpanHours.toFixed(1)} h` : 'No loaded history',
+            totalLoaded: overrides.totalLoaded ?? 0,
+            last1h: overrides.last1h ?? 0,
+            last24h: overrides.last24h ?? 0,
+            last36h: overrides.last36h ?? 0,
+            loadedSpanLabel: overrides.loadedSpanLabel ?? 'No database history',
+            newestLabel: overrides.newestLabel ?? '-',
+            oldestLabel: overrides.oldestLabel ?? '-',
+            packetMixLabel: overrides.packetMixLabel ?? 'No packets recorded',
+            chartSvg: this._buildStatsChartSvg(buckets, windowHours),
+            sourceLabel: overrides.sourceLabel ?? 'Database',
+            note: overrides.note ?? 'Includes contact-linked packets stored in the database.',
+            rawSupportNote: overrides.rawSupportNote ?? 'RAW packets are excluded because they are stored per reporter, not per contact.',
+            isLoading: overrides.isLoading ?? false,
+            hasError: overrides.hasError ?? false,
+            hasData: overrides.hasData ?? false,
+        };
+    }
+
+    _normalizeContactPacketStatsResponse(response, windowHours = 24) {
+        const oldestTime = parseMeshlogTimestamp(response?.oldest_created_at);
+        const newestTime = parseMeshlogTimestamp(response?.newest_created_at);
+        const loadedSpanHours = Number.isFinite(oldestTime) && Number.isFinite(newestTime)
+            ? Math.max(0, (newestTime - oldestTime) / (60 * 60 * 1000))
+            : 0;
+        const packetMixLabel = Object.entries(response?.packet_mix ?? {})
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+            .map(([key, count]) => `${key} ${count}`)
+            .join(', ') || 'No packets recorded';
+        const buckets = Array.isArray(response?.chart_buckets)
+            ? response.chart_buckets.map(value => Number(value) || 0)
+            : [];
+        const totalLoaded = Number(response?.total_packets) || 0;
+
+        return this._getEmptyContactPacketStats(windowHours, {
+            totalLoaded,
+            last1h: Number(response?.last_1h) || 0,
+            last24h: Number(response?.last_24h) || 0,
+            last36h: Number(response?.last_36h) || 0,
+            loadedSpanLabel: totalLoaded > 0 ? `${loadedSpanHours.toFixed(1)} h` : 'No database history',
             newestLabel: Number.isFinite(newestTime) ? new Date(newestTime).toLocaleString() : '-',
             oldestLabel: Number.isFinite(oldestTime) ? new Date(oldestTime).toLocaleString() : '-',
             packetMixLabel,
-            chartSvg,
-        };
+            buckets,
+            sourceLabel: 'Database',
+            note: response?.note ?? 'Includes contact-linked packets stored in the database.',
+            rawSupportNote: response?.raw_note ?? 'RAW packets are excluded because they are stored per reporter, not per contact.',
+            hasData: totalLoaded > 0,
+        });
+    }
+
+    _loadContactPacketStats(contactId, windowHours = 24, forceRefresh = false) {
+        const numericContactId = Number(contactId);
+        const numericWindowHours = Number(windowHours);
+        if (!Number.isFinite(numericContactId) || !Number.isFinite(numericWindowHours)) return;
+
+        const key = `${numericContactId}:${numericWindowHours}`;
+        const now = Date.now();
+        const cacheTtlMs = 60 * 60 * 1000;
+        const cached = this.contactPacketStatsCache.get(key) ?? null;
+
+        if (!forceRefresh && cached?.status === 'ready' && (now - cached.fetchedAt) < cacheTtlMs) {
+            return;
+        }
+
+        if (cached?.status === 'loading') {
+            return;
+        }
+
+        const loadingData = cached?.data
+            ? { ...cached.data, isLoading: true, hasError: false }
+            : this._getEmptyContactPacketStats(numericWindowHours, { isLoading: true });
+
+        this.contactPacketStatsCache.set(key, {
+            status: 'loading',
+            fetchedAt: cached?.fetchedAt ?? 0,
+            data: loadingData,
+        });
+
+        this.__fetchJson(
+            'api/v1/contact_stats',
+            { contact_id: numericContactId, window_hours: numericWindowHours },
+            (data) => {
+                const normalized = data?.error
+                    ? this._getEmptyContactPacketStats(numericWindowHours, {
+                        hasError: true,
+                        note: data.error,
+                    })
+                    : this._normalizeContactPacketStatsResponse(data, numericWindowHours);
+
+                this.contactPacketStatsCache.set(key, {
+                    status: data?.error ? 'error' : 'ready',
+                    fetchedAt: Date.now(),
+                    data: {
+                        ...normalized,
+                        isLoading: false,
+                        hasError: Boolean(data?.error),
+                    },
+                });
+
+                if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'stats' && Number(this.popupUiState?.statsWindowHours) === numericWindowHours) {
+                    this.updateSelectedContactPopup();
+                }
+            },
+            () => {
+                this.contactPacketStatsCache.set(key, {
+                    status: 'error',
+                    fetchedAt: Date.now(),
+                    data: this._getEmptyContactPacketStats(numericWindowHours, {
+                        hasError: true,
+                        note: 'Failed to fetch database-backed stats.',
+                    }),
+                });
+
+                if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'stats' && Number(this.popupUiState?.statsWindowHours) === numericWindowHours) {
+                    this.updateSelectedContactPopup();
+                }
+            }
+        );
+    }
+
+    getContactPacketStats(contactId, windowHours = 24) {
+        const key = `${Number(contactId)}:${Number(windowHours)}`;
+        const cached = this.contactPacketStatsCache.get(key) ?? null;
+        const cacheTtlMs = 60 * 60 * 1000;
+
+        if (!cached) {
+            this._loadContactPacketStats(contactId, windowHours);
+            return this._getEmptyContactPacketStats(windowHours, { isLoading: true });
+        }
+
+        if (cached.status === 'ready' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
+            this._loadContactPacketStats(contactId, windowHours, true);
+            return { ...cached.data, isLoading: true };
+        }
+
+        if (cached.status === 'error' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
+            this._loadContactPacketStats(contactId, windowHours, true);
+        }
+
+        return cached.data;
     }
 
     _initMapPanes() {
@@ -3906,8 +4029,7 @@ class MeshLog {
         return query;
     }
 
-    __fetchQuery(params, url, onResponse) {
-        const query = this.__prepareQuery(params);
+    __fetchJson(url, query, onResponse, onError = null) {
         const urlparams = new URLSearchParams();
 
         for (const key in query) {
@@ -3924,7 +4046,17 @@ class MeshLog {
 
         fetch(`${url}?${urlparams.toString()}`)
             .then(response => response.json())
-            .then(data => onResponse(data));
+            .then(data => onResponse(data))
+            .catch(error => {
+                if (typeof onError === 'function') {
+                    onError(error);
+                }
+            });
+    }
+
+    __fetchQuery(params, url, onResponse, onError = null) {
+        const query = this.__prepareQuery(params);
+        this.__fetchJson(url, query, onResponse, onError);
     }
 
     showWarning(msg) {

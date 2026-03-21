@@ -1365,6 +1365,154 @@ class MeshLog {
 
     }
 
+    public function getContactPacketStats($contactId, $windowHours = 24) {
+        $contactId = intval($contactId);
+        $windowHours = intval($windowHours);
+
+        if ($contactId <= 0) {
+            return array('error' => 'invalid contact_id');
+        }
+
+        if (!in_array($windowHours, array(1, 24, 36), true)) {
+            $windowHours = 24;
+        }
+
+        $bucketCount = 12;
+        if ($windowHours === 24) $bucketCount = 24;
+        if ($windowHours === 36) $bucketCount = 18;
+
+        $bucketSeconds = max(1, intval(($windowHours * 3600) / $bucketCount));
+        $bucketMaxIndex = $bucketCount - 1;
+
+        $unionSql = "
+            SELECT 'ADV' AS packet_type, created_at
+            FROM advertisements
+            WHERE contact_id = :contact_id_adv
+
+            UNION ALL
+
+            SELECT 'DIR' AS packet_type, created_at
+            FROM direct_messages
+            WHERE contact_id = :contact_id_dir
+
+            UNION ALL
+
+            SELECT 'PUB' AS packet_type, created_at
+            FROM channel_messages
+            WHERE contact_id = :contact_id_pub
+
+            UNION ALL
+
+            SELECT 'TEL' AS packet_type, created_at
+            FROM telemetry
+            WHERE contact_id = :contact_id_tel
+
+            UNION ALL
+
+            SELECT 'SYS' AS packet_type, created_at
+            FROM system_reports
+            WHERE contact_id = :contact_id_sys
+        ";
+
+        $bindContact = function($stmt) use ($contactId) {
+            $stmt->bindValue(':contact_id_adv', $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_dir', $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_pub', $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_tel', $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_sys', $contactId, PDO::PARAM_INT);
+        };
+
+        $summarySql = "
+            SELECT
+                COUNT(*) AS total_packets,
+                MIN(created_at) AS oldest_created_at,
+                MAX(created_at) AS newest_created_at,
+                SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR) THEN 1 ELSE 0 END) AS last_1h,
+                SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) THEN 1 ELSE 0 END) AS last_24h,
+                SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 36 HOUR) THEN 1 ELSE 0 END) AS last_36h
+            FROM (
+                $unionSql
+            ) packets
+        ";
+
+        $summaryStmt = $this->pdo->prepare($summarySql);
+        $bindContact($summaryStmt);
+        $summaryStmt->execute();
+        $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: array();
+
+        $mixSql = "
+            SELECT packet_type, COUNT(*) AS packet_count
+            FROM (
+                $unionSql
+            ) packets
+            GROUP BY packet_type
+            ORDER BY packet_count DESC, packet_type ASC
+        ";
+
+        $mixStmt = $this->pdo->prepare($mixSql);
+        $bindContact($mixStmt);
+        $mixStmt->execute();
+
+        $packetMix = array();
+        while ($row = $mixStmt->fetch(PDO::FETCH_ASSOC)) {
+            $packetMix[$row['packet_type']] = intval($row['packet_count']);
+        }
+
+        $bucketSql = "
+            SELECT bucket_index, COUNT(*) AS packet_count
+            FROM (
+                SELECT
+                    GREATEST(
+                        0,
+                        LEAST(
+                            :bucket_max_index,
+                            :bucket_max_index - FLOOR(TIMESTAMPDIFF(SECOND, created_at, NOW()) / :bucket_seconds)
+                        )
+                    ) AS bucket_index
+                FROM (
+                    $unionSql
+                ) packets
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+                  AND created_at <= NOW()
+            ) bucketed
+            GROUP BY bucket_index
+            ORDER BY bucket_index ASC
+        ";
+
+        $bucketStmt = $this->pdo->prepare($bucketSql);
+        $bucketStmt->bindValue(':bucket_max_index', $bucketMaxIndex, PDO::PARAM_INT);
+        $bucketStmt->bindValue(':bucket_seconds', $bucketSeconds, PDO::PARAM_INT);
+        $bucketStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $bindContact($bucketStmt);
+        $bucketStmt->execute();
+
+        $buckets = array_fill(0, $bucketCount, 0);
+        while ($row = $bucketStmt->fetch(PDO::FETCH_ASSOC)) {
+            $index = intval($row['bucket_index']);
+            if ($index >= 0 && $index < $bucketCount) {
+                $buckets[$index] = intval($row['packet_count']);
+            }
+        }
+
+        return array(
+            'contact_id' => $contactId,
+            'window_hours' => $windowHours,
+            'bucket_count' => $bucketCount,
+            'bucket_seconds' => $bucketSeconds,
+            'total_packets' => intval($summary['total_packets'] ?? 0),
+            'last_1h' => intval($summary['last_1h'] ?? 0),
+            'last_24h' => intval($summary['last_24h'] ?? 0),
+            'last_36h' => intval($summary['last_36h'] ?? 0),
+            'oldest_created_at' => $summary['oldest_created_at'] ?? null,
+            'newest_created_at' => $summary['newest_created_at'] ?? null,
+            'packet_mix' => $packetMix,
+            'chart_buckets' => $buckets,
+            'note' => 'Includes contact-linked packets stored in the database.',
+            'raw_supported' => false,
+            'raw_note' => 'RAW packets are excluded because they are stored per reporter, not per contact.',
+        );
+    }
+
     public function getChannelMessages($params, $reports = false) {
         $params['where'] = array();
         if (isset($params['id'])) {
