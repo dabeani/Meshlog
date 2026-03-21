@@ -884,7 +884,7 @@ class MeshLogContact extends MeshLogObject {
         const stats = this._meshlog.getContactPacketStats(this.data.id, statsWindowHours);
         const windowButtons = [1, 24, 36].map(hours => {
             const active = hours === statsWindowHours ? ' device-popup-range-active' : '';
-            return `<button type="button" class="device-popup-range${active}" data-contact-id="${this.data.id}" data-hours="${hours}">${hours}h</button>`;
+            return `<button type="button" class="device-popup-range${active}" data-contact-id="${this.data.id}" data-hours="${hours}" onclick="window.__meshlogPopupAction && window.__meshlogPopupAction(${this.data.id}, 'range', ${hours})">${hours}h</button>`;
         }).join('');
 
         const longTermLines = [
@@ -934,8 +934,8 @@ class MeshLogContact extends MeshLogObject {
                     <span class="device-popup-badge device-popup-badge-status">${escapeXml(this.getMarkerStatusLabel())}</span>
                 </div>
                 <div class="device-popup-tabs" data-contact-id="${this.data.id}">
-                    <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-tab="general">General</button>
-                    <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-tab="stats">Stats</button>
+                    <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-tab="general" onclick="window.__meshlogPopupAction && window.__meshlogPopupAction(${this.data.id}, 'tab', 'general')">General</button>
+                    <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-tab="stats" onclick="window.__meshlogPopupAction && window.__meshlogPopupAction(${this.data.id}, 'tab', 'stats')">Stats</button>
                 </div>
                 <div class="device-popup-panel">${bodyHtml}</div>
             </div>
@@ -2714,6 +2714,7 @@ class MeshLog {
         this.dom_settings_types = document.getElementById(stypesid);
         this.dom_settings_reporters = document.getElementById(sreportersid);
         this.dom_settings_contacts = document.getElementById(scontactsid);
+        window.__meshlogPopupAction = (contactId, action, value) => this.handlePopupAction(contactId, action, value);
 
         this.__init_filter_layout();
 
@@ -2861,13 +2862,7 @@ class MeshLog {
         if (tabBtn) {
             event.preventDefault();
             event.stopPropagation();
-            const contactId = Number(tabBtn.dataset.contactId);
-            if (!Number.isFinite(contactId) || this.selectedMarkerId !== contactId) return;
-            this.popupUiState = {
-                ...this.popupUiState,
-                tab: tabBtn.dataset.tab === 'stats' ? 'stats' : 'general'
-            };
-            this.updateSelectedContactPopup();
+            this.handlePopupAction(Number(tabBtn.dataset.contactId), 'tab', tabBtn.dataset.tab);
             return;
         }
 
@@ -2875,9 +2870,24 @@ class MeshLog {
         if (rangeBtn) {
             event.preventDefault();
             event.stopPropagation();
-            const contactId = Number(rangeBtn.dataset.contactId);
-            const hours = Number(rangeBtn.dataset.hours);
-            if (!Number.isFinite(contactId) || this.selectedMarkerId !== contactId) return;
+            this.handlePopupAction(Number(rangeBtn.dataset.contactId), 'range', Number(rangeBtn.dataset.hours));
+        }
+    }
+
+    handlePopupAction(contactId, action, value) {
+        if (!Number.isFinite(contactId) || this.selectedMarkerId !== contactId) return;
+
+        if (action === 'tab') {
+            this.popupUiState = {
+                ...this.popupUiState,
+                tab: value === 'stats' ? 'stats' : 'general'
+            };
+            this.updateSelectedContactPopup();
+            return;
+        }
+
+        if (action === 'range') {
+            const hours = Number(value);
             if (![1, 24, 36].includes(hours)) return;
             this.popupUiState = {
                 ...this.popupUiState,
