@@ -3,6 +3,10 @@
         "/^php -l assets/js/meshlog\\.js 2>&1; grep -n \"new Date\\(data\\\\\\.created_at\\\\\\|new Date\\(o\\\\\\.created_at\" assets/js/meshlog\\.js$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^npm run lint:js && php -l admin/index\\.php$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }
