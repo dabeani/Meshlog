@@ -2740,6 +2740,8 @@ class MeshLog {
 
         this.link_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
+        this._boundPopupUiHandler = (event) => this._handleMapPopupUiClick(event);
+        document.addEventListener('click', this._boundPopupUiHandler, true);
         this._popupStatsRefreshTimer = setInterval(() => {
             if (this.selectedMarkerId && this.popupUiState?.tab === 'stats') {
                 this.updateSelectedContactPopup();
@@ -2852,7 +2854,10 @@ class MeshLog {
     }
 
     _handleMapPopupUiClick(event) {
-        const tabBtn = event.target.closest('.device-popup-tab');
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+
+        const tabBtn = target.closest('.device-popup-tab');
         if (tabBtn) {
             event.preventDefault();
             event.stopPropagation();
@@ -2866,7 +2871,7 @@ class MeshLog {
             return;
         }
 
-        const rangeBtn = event.target.closest('.device-popup-range');
+        const rangeBtn = target.closest('.device-popup-range');
         if (rangeBtn) {
             event.preventDefault();
             event.stopPropagation();
@@ -3014,11 +3019,6 @@ class MeshLog {
         if (popupElement) {
             L.DomEvent.disableClickPropagation(popupElement);
             L.DomEvent.disableScrollPropagation(popupElement);
-            if (this._boundPopupUiHandler) {
-                popupElement.removeEventListener('click', this._boundPopupUiHandler);
-            }
-            this._boundPopupUiHandler = (event) => this._handleMapPopupUiClick(event);
-            popupElement.addEventListener('click', this._boundPopupUiHandler);
         }
     }
 
