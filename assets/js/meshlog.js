@@ -2522,8 +2522,11 @@ class MeshLog {
         this.link_layers.addTo(this.map);
 
         // Close lingering marker tooltips when the map is interactively moved or zoomed.
-        this.map.on('zoomstart', () => { this.closeAllMarkerTooltips(); });
-        this.map.on('movestart', () => { this.closeAllMarkerTooltips(); });
+        // Use a debounced prune to avoid heavy DOM churn during continuous events.
+        const prune = () => { this.closeAllMarkerTooltips(true); };
+        ['zoomstart','movestart','zoomend','moveend','viewreset','layeradd'].forEach(ev => {
+            this.map.on(ev, prune);
+        });
 
         this.last = '2025-01-01 00:00:00';
     }
@@ -2588,20 +2591,40 @@ class MeshLog {
     // Close any open tooltips bound to markers to avoid lingering boxes after
     // programmatic map interactions (zoom/pan) where Leaflet may not emit
     // mouseout events for every marker.
-    closeAllMarkerTooltips() {
+    closeAllMarkerTooltips(debounce = false) {
+        if (debounce) {
+            if (this._tooltipPruneTimer) clearTimeout(this._tooltipPruneTimer);
+            this._tooltipPruneTimer = setTimeout(() => this.closeAllMarkerTooltips(false), 100);
+            return;
+        }
+
+        // Close/unbind tooltips on all known marker instances
         try {
             Object.values(this.contacts).forEach(c => {
-                if (c && c.marker && typeof c.marker.closeTooltip === 'function') {
+                if (c && c.marker) {
                     try { c.marker.closeTooltip(); } catch (_) {}
+                    try { c.marker.unbindTooltip(); } catch (_) {}
                 }
             });
         } catch (_) {}
         try {
             Object.values(this.reporters).forEach(r => {
-                if (r && r.marker && typeof r.marker.closeTooltip === 'function') {
+                if (r && r.marker) {
                     try { r.marker.closeTooltip(); } catch (_) {}
+                    try { r.marker.unbindTooltip(); } catch (_) {}
                 }
             });
+        } catch (_) {}
+
+        // Remove any leftover tooltip DOM nodes inside the map container
+        try {
+            const container = this.map && this.map.getContainer ? this.map.getContainer() : document;
+            const tooltips = container.querySelectorAll ? container.querySelectorAll('.leaflet-tooltip') : [];
+            for (const t of tooltips) {
+                if (t && t.parentNode) {
+                    t.parentNode.removeChild(t);
+                }
+            }
         } catch (_) {}
     }
 
