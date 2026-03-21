@@ -1319,6 +1319,15 @@ class MeshLog {
                     LIMIT 1
                 ) AS advertisement,
 
+                -- All unique reporter IDs that have ever heard this contact.
+                -- Used client-side for the collector filter on the map.
+                (
+                    SELECT JSON_ARRAYAGG(DISTINCT ar.reporter_id)
+                    FROM advertisement_reports ar
+                    INNER JOIN advertisements ax ON ax.id = ar.advertisement_id
+                    WHERE ax.contact_id = t.id
+                ) AS reporter_ids,
+
                 -- Latest telemetry
                 (
                     SELECT l.data
@@ -1348,6 +1357,7 @@ class MeshLog {
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $row['telemetry'] = json_decode($row['telemetry'], true);
             $row['advertisement'] = json_decode($row['advertisement'], true);
+            $row['reporter_ids'] = json_decode($row['reporter_ids'], true) ?? [];
             $results[] = $row;
         }
 

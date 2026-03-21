@@ -1101,6 +1101,33 @@ class MeshLogContact extends MeshLogObject {
         this.updateMarker();
     }
 
+    // Returns true when this contact should be shown based on the active
+    // collector (reporter) filter.  Uses data.reporter_ids provided by the
+    // contacts API — the set of all reporters that have ever heard this node.
+    isAllowedByCollectorFilter() {
+        const raw = Settings.readCookie('reporterFilter.selected');
+        if (raw === undefined) return true;  // no preference → show all
+        if (!raw) return false;              // all deselected → show none
+        const allowed = new Set(raw.split(',').map(s => s.trim()));
+        const ids = this.data.reporter_ids ?? [];
+        if (ids.length === 0) return true; // no reporter data yet → keep visible
+        return ids.some(rid => allowed.has(String(rid)));
+    }
+
+    // Show or hide the Leaflet map marker based on the collector filter.
+    // Safe to call any time; no-ops when no marker exists.
+    syncMarkerVisibility() {
+        if (!this.marker) return;
+        const allowed = this.isAllowedByCollectorFilter();
+        const onMap   = this._meshlog.map.hasLayer(this.marker);
+        if (allowed && !onMap) {
+            this.marker.addTo(this._meshlog.map);
+            this.updateTooltip(); // re-bind tooltip after re-add
+        } else if (!allowed && onMap) {
+            this.marker.remove();
+        }
+    }
+
     isClient() {
         return this.adv && this.adv.data.type == 1;
     }
@@ -2745,6 +2772,12 @@ class MeshLog {
 
     __onTypesChanged() {
         this.updateMessagesDom();
+        this.updateMarkersForFilter();
+    }
+
+    // Show/hide every contact map marker based on the active collector filter.
+    updateMarkersForFilter() {
+        Object.values(this.contacts).forEach(c => c.syncMarkerVisibility());
     }
 
     sortContacts(fn=undefined, reverse=false) {
@@ -3406,6 +3439,7 @@ class MeshLog {
 
             this.addContact(contact);
             contact.addToMap(this.map);
+            contact.syncMarkerVisibility();
         });
         this.updateContactsDom();
     }
@@ -3473,6 +3507,7 @@ class MeshLog {
 
     updateContactsDom() {
         this.sortContacts();
+        this.updateMarkersForFilter();
     }
 
     updateMessagesDom() {

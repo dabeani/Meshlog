@@ -296,7 +296,14 @@ class MeshLogMqttDecoder {
                 return ($num > 10000000000) ? $num : ($num * 1000);
             }
 
-            $ts = strtotime($trimmed);
+            // MeshCore firmware and MQTT bridges always emit UTC timestamps.
+            // strtotime() interprets strings without a timezone indicator as
+            // the server's local timezone, which causes a false drift equal to
+            // the UTC offset (e.g. -3 600 000 ms for UTC-1).  Append the UTC
+            // offset explicitly so the conversion is always timezone-neutral.
+            $hasTimezone = (bool) preg_match('/Z$|[+-]\d{2}:?\d{2}$/', $trimmed);
+            $lookupStr   = $hasTimezone ? $trimmed : ($trimmed . '+00:00');
+            $ts = strtotime($lookupStr);
             if ($ts !== false && $ts >= 0) {
                 return intval($ts) * 1000;
             }
