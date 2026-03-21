@@ -3001,6 +3001,17 @@ class MeshLog {
                 closeOnClick: false,
                 autoClose: false,
             });
+            const wirePopupControls = () => {
+                requestAnimationFrame(() => {
+                    const popupElement = this.activeContactPopup?.getElement?.();
+                    if (!popupElement) return;
+                    L.DomEvent.disableClickPropagation(popupElement);
+                    L.DomEvent.disableScrollPropagation(popupElement);
+                    this._wirePopupControls(popupElement);
+                });
+            };
+            this.activeContactPopup.on('add', wirePopupControls);
+            this.activeContactPopup.on('contentupdate', wirePopupControls);
             this.activeContactPopup.on('remove', () => {
                 if (this.activeContactPopup && !this.map.hasLayer(this.activeContactPopup)) {
                     this.activeContactPopup = null;
@@ -3014,13 +3025,6 @@ class MeshLog {
 
         if (!this.map.hasLayer(popup)) {
             popup.addTo(this.map);
-        }
-
-        const popupElement = popup.getElement?.();
-        if (popupElement) {
-            L.DomEvent.disableClickPropagation(popupElement);
-            L.DomEvent.disableScrollPropagation(popupElement);
-            this._wirePopupControls(popupElement);
         }
     }
 
