@@ -902,6 +902,9 @@ class MeshLogContact extends MeshLogObject {
         if (this.markerPane === targetPane) return;
 
         const wasTooltipOpen = !!this.marker.getTooltip() && this.marker.isTooltipOpen();
+        // Ensure any open tooltip is closed and unbound before removing the marker
+        this.marker?.closeTooltip();
+        this.marker?.unbindTooltip();
         this.marker.remove();
         this.marker.options.pane = targetPane;
         this.marker.addTo(this._meshlog.map);
@@ -1124,6 +1127,9 @@ class MeshLogContact extends MeshLogObject {
             this.marker.addTo(this._meshlog.map);
             this.updateTooltip(); // re-bind tooltip after re-add
         } else if (!allowed && onMap) {
+            // Close/unbind any tooltips before removing the marker to avoid lingering boxes
+            this.marker?.closeTooltip();
+            this.marker?.unbindTooltip();
             this.marker.remove();
         }
     }
