@@ -862,6 +862,9 @@ class MeshLogContact extends MeshLogObject {
         const reporterHtml = this.isReporter()
             ? `<div class="device-popup-row"><span class="device-popup-key">Reporter</span><span class="device-popup-value">Yes</span></div>`
             : '';
+        const neighborsHtml = !this.isClient()
+            ? `<div class="device-popup-section"><button type="button" class="device-popup-tab device-popup-neighbors-btn${this.neighbors_visible ? ' device-popup-tab-active' : ''}" data-contact-id="${this.data.id}">${this.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors'}</button></div>`
+            : '';
 
         return `
             <div class="device-popup-section">
@@ -877,6 +880,7 @@ class MeshLogContact extends MeshLogObject {
             </div>
             ${telemetryHtml}
             ${timeSyncHtml}
+            ${neighborsHtml}
         `;
     }
 
@@ -3059,7 +3063,7 @@ class MeshLog {
     }
 
     _wirePopupControls(popupElement) {
-        popupElement.querySelectorAll('.device-popup-tab').forEach((button) => {
+        popupElement.querySelectorAll('.device-popup-tab:not(.device-popup-neighbors-btn)').forEach((button) => {
             button.onclick = (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -3072,6 +3076,22 @@ class MeshLog {
                 event.preventDefault();
                 event.stopPropagation();
                 this.handlePopupAction(Number(button.dataset.contactId), 'range', Number(button.dataset.hours));
+            };
+        });
+
+        popupElement.querySelectorAll('.device-popup-neighbors-btn').forEach((button) => {
+            button.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const contact = this.contacts[Number(button.dataset.contactId)];
+                if (!contact) return;
+                if (contact.neighbors_visible) {
+                    contact.hideNeighbors();
+                } else {
+                    contact.showNeighbors();
+                }
+                button.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
+                button.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
             };
         });
     }
