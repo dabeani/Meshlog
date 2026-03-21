@@ -1699,26 +1699,34 @@ class MeshLogReportedObject extends MeshLogObject {
         spText.innerHTML = text.text.linkify();
 
         if (text.text) {
-            // message
+            // message (chat-like: direct or channel)
             divLine1.append(spDate);
             divLine1.append(spHashSize);
             divLine1.append(spHops);
             divLine1.append(spSnr);
             divLine1.append(spReportCount);
             divLine1.append(spPrefix);
-            divLine1.append(spScope);
-            divLine1.append(spTag);
+
+            // Channel messages should show the scope next to the channel tag;
+            // direct messages show the scope in the info line as before.
+            if (this instanceof MeshLogChannelMessage) {
+                divLine1.append(spTag);
+                divLine1.append(spScope);
+            } else {
+                divLine1.append(spScope);
+                divLine1.append(spTag);
+            }
+
             divLine2.append(spName);
             divLine2.append(spText);
         } else {
-            // advert
+            // advert — do not show region scope in advert lines
             divLine1.append(spDate);
             divLine1.append(spHashSize);
             divLine1.append(spHops);
             divLine1.append(spSnr);
             divLine1.append(spReportCount);
             // divLine1.append(spPrefix);
-            divLine1.append(spScope);
             // divLine1.append(spTag);
             divLine1.append(spName);
         }
@@ -2372,7 +2380,7 @@ class MeshLogRawPacket extends MeshLogObject {
         spTag.classList.add('sp', 'tag', 'type-badge', 'type-badge-raw');
         spTag.innerText = this.getTypeLabel();
         applyPresentation(spTag, { title: 'Stored raw packet subtype derived from the packet header' }, this.getTypeLabel());
-        divLine.append(spScope);
+        // Do not show region scope for raw packets here; scope is only relevant for chat messages
         divLine.append(spTag);
 
         let reporter = this._meshlog.reporters[this.data.reporter_id] ?? false;
