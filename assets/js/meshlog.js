@@ -2521,6 +2521,10 @@ class MeshLog {
 
         this.link_layers.addTo(this.map);
 
+        // Close lingering marker tooltips when the map is interactively moved or zoomed.
+        this.map.on('zoomstart', () => { this.closeAllMarkerTooltips(); });
+        this.map.on('movestart', () => { this.closeAllMarkerTooltips(); });
+
         this.last = '2025-01-01 00:00:00';
     }
 
@@ -2579,6 +2583,26 @@ class MeshLog {
                 this.map.removeLayer(animation.layer);
             }
         }
+    }
+
+    // Close any open tooltips bound to markers to avoid lingering boxes after
+    // programmatic map interactions (zoom/pan) where Leaflet may not emit
+    // mouseout events for every marker.
+    closeAllMarkerTooltips() {
+        try {
+            Object.values(this.contacts).forEach(c => {
+                if (c && c.marker && typeof c.marker.closeTooltip === 'function') {
+                    try { c.marker.closeTooltip(); } catch (_) {}
+                }
+            });
+        } catch (_) {}
+        try {
+            Object.values(this.reporters).forEach(r => {
+                if (r && r.marker && typeof r.marker.closeTooltip === 'function') {
+                    try { r.marker.closeTooltip(); } catch (_) {}
+                }
+            });
+        } catch (_) {}
     }
 
     _startRouteLineAnimation(lineGlow, line2, baseWeight) {
