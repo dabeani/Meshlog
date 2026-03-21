@@ -2605,7 +2605,7 @@ class MeshLog {
         // Close lingering marker tooltips when the map is interactively moved or zoomed.
         // Use a debounced prune to avoid heavy DOM churn during continuous events.
         const prune = () => { this.closeAllMarkerTooltips(true); };
-        ['zoomstart','movestart','zoomend','moveend','viewreset','layeradd'].forEach(ev => {
+        ['zoomstart','movestart','zoomend','moveend','viewreset'].forEach(ev => {
             this.map.on(ev, prune);
         });
 
@@ -2682,12 +2682,12 @@ class MeshLog {
             return;
         }
 
-        // Close/unbind tooltips on all known marker instances
+        // Close marker hover tooltips on all known marker instances.
+        // Keep them bound so ordinary hover remains stable and usable.
         try {
             Object.values(this.contacts).forEach(c => {
                 if (c && c.marker) {
                     try { c.marker.closeTooltip(); } catch (_) {}
-                    try { c.marker.unbindTooltip(); } catch (_) {}
                 }
             });
         } catch (_) {}
@@ -2695,15 +2695,15 @@ class MeshLog {
             Object.values(this.reporters).forEach(r => {
                 if (r && r.marker) {
                     try { r.marker.closeTooltip(); } catch (_) {}
-                    try { r.marker.unbindTooltip(); } catch (_) {}
                 }
             });
         } catch (_) {}
 
-        // Remove any leftover tooltip DOM nodes inside the map container
+        // Remove any leftover marker mini-tooltip DOM nodes inside the map container.
+        // Do not touch other tooltip types such as route hop distance tooltips.
         try {
             const container = this.map && this.map.getContainer ? this.map.getContainer() : document;
-            const tooltips = container.querySelectorAll ? container.querySelectorAll('.leaflet-tooltip') : [];
+            const tooltips = container.querySelectorAll ? container.querySelectorAll('.leaflet-tooltip.mini-tooltip') : [];
             for (const t of tooltips) {
                 if (t && t.parentNode) {
                     t.parentNode.removeChild(t);
