@@ -954,26 +954,31 @@ class MeshLogContact extends MeshLogObject {
 
     updateTooltip(tooltip = undefined) {
         if (this.marker) {
+            // Do not bind the full information as a tooltip (large box) —
+            // we will show a compact mini-tooltip on hover and a popup on click.
             this.marker.unbindTooltip();
-
             if (tooltip === undefined) {
                 tooltip = this.getMarkerTooltip();
             }
-
-            this.markerTooltip = tooltip;
-
-            if (tooltip) {
-                this.marker.bindTooltip(tooltip);
-            }
+            this.markerTooltip = tooltip; // keep content for popups on click
         }
     }
 
     showLabel(show) {
+        if (!this.marker) return;
         if (show) {
-            this.updateTooltip();
-            this.marker?.openTooltip();
+            // show a small compact tooltip next to the marker
+            try {
+                const mini = `<div class="tooltip-title">${this.adv?.data?.name ?? this.data.public_key}</div>` +
+                             `<div class="tooltip-detail">${this.last?.data?.created_at ?? ''}</div>`;
+                this.marker.bindTooltip(mini, { className: 'mini-tooltip', direction: 'auto', offset: [0, -10], sticky: false });
+                this.marker.openTooltip();
+            } catch (err) {}
         } else {
-            this.marker?.closeTooltip();
+            try {
+                this.marker.closeTooltip();
+                this.marker.unbindTooltip();
+            } catch (err) {}
         }
     }
 
