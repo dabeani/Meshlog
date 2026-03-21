@@ -787,13 +787,100 @@ class MeshLogContact extends MeshLogObject {
         return `Repeater clock is ~${drift} ${direction} server reception time. Time sync likely needed.`;
     }
 
-    getMarkerTooltip() {
-        const base = `<p class="tooltip-title">${this.adv.data.name} <span class="tooltip-hash">[${this.hash}]</span></p><p class="tooltip-detail">Last heard: ${this.last.data.created_at}</p>`;
-        if (!this.hasReporterTimeSyncWarning()) {
-            return base;
+    getContactTypeLabel() {
+        if (this.isClient()) return 'Chat';
+        if (this.isRepeater()) return 'Repeater';
+        if (this.isRoom()) return 'Room';
+        if (this.isSensor()) return 'Sensor';
+        return 'Unknown';
+    }
+
+    getMarkerStatusLabel() {
+        if (this.isVeryExpired()) return 'Inactive';
+        if (this.isExpired()) return 'Stale';
+        return 'Live';
+    }
+
+    getMarkerTelemetryLines() {
+        if (!this.telemetry || this.telemetry.length < 1) return [];
+
+        const channels = {};
+        for (let i = 0; i < this.telemetry.length; i++) {
+            const sensor = this.telemetry[i];
+            if (!channels.hasOwnProperty(sensor.channel)) {
+                channels[sensor.channel] = {};
+            }
+            if (!channels[sensor.channel].hasOwnProperty(sensor.name)) {
+                channels[sensor.channel][sensor.name] = [];
+            }
+            channels[sensor.channel][sensor.name].push(sensor.value);
         }
 
-        return `${base}<p class="tooltip-detail tooltip-warning"><span class="tooltip-warning-badge">!</span> ${this.getTimeSyncWarningText()}</p>`;
+        const lines = [];
+        const addMeasurement = (src, dst, key, scale, precision, unit) => {
+            if (!src.hasOwnProperty(key)) return;
+            if (!src[key] || src[key].length < 1) return;
+            let val = (src[key][0] / scale).toFixed(precision);
+            let str = `${val}`;
+            if (unit) str += ` ${unit}`;
+            dst.push(str);
+        };
+
+        Object.entries(channels).forEach(([ch, data], index) => {
+            const meas = [];
+            addMeasurement(data, meas, 'voltage', 1, 2, 'V');
+            addMeasurement(data, meas, 'current', 1, 3, 'mA');
+            addMeasurement(data, meas, 'temperature', 1, 2, '°C');
+            addMeasurement(data, meas, 'humidity', 2, 1, '%');
+            addMeasurement(data, meas, 'pressure', 1, 1, 'hPa');
+            if (meas.length > 0) {
+                lines.push(`Ch${index + 1}: ${meas.join(', ')}`);
+            }
+        });
+
+        return lines;
+    }
+
+    getMarkerTooltip() {
+        const coords = Number.isFinite(Number(this.adv?.data?.lat)) && Number.isFinite(Number(this.adv?.data?.lon))
+            ? `${Number(this.adv.data.lat).toFixed(5)}, ${Number(this.adv.data.lon).toFixed(5)}`
+            : 'Unknown';
+        const telemetryLines = this.getMarkerTelemetryLines();
+        const telemetryHtml = telemetryLines.length > 0
+            ? `<div class="device-popup-section"><div class="device-popup-section-title">Telemetry</div>${telemetryLines.map(line => `<div class="device-popup-list-row">${line}</div>`).join('')}</div>`
+            : '';
+        const timeSyncHtml = this.hasReporterTimeSyncWarning()
+            ? `<div class="device-popup-section device-popup-warning"><div class="device-popup-section-title">Clock Warning</div><div class="device-popup-note">${this.getTimeSyncWarningText()}</div></div>`
+            : '';
+        const reporterHtml = this.isReporter()
+            ? `<div class="device-popup-row"><span class="device-popup-key">Reporter</span><span class="device-popup-value">Yes</span></div>`
+            : '';
+
+        return `
+            <div class="device-popup-card">
+                <div class="device-popup-header">
+                    <div class="device-popup-title">${this.adv.data.name}</div>
+                    <div class="device-popup-subtitle">[${this.hash}]</div>
+                </div>
+                <div class="device-popup-badges">
+                    <span class="device-popup-badge">${this.getContactTypeLabel()}</span>
+                    <span class="device-popup-badge device-popup-badge-status">${this.getMarkerStatusLabel()}</span>
+                </div>
+                <div class="device-popup-section">
+                    <div class="device-popup-row"><span class="device-popup-key">Last heard</span><span class="device-popup-value">${this.last?.data?.created_at ?? '-'}</span></div>
+                    <div class="device-popup-row"><span class="device-popup-key">First seen</span><span class="device-popup-value">${this.data?.created_at ?? '-'}</span></div>
+                    <div class="device-popup-row"><span class="device-popup-key">Coordinates</span><span class="device-popup-value">${coords}</span></div>
+                    ${reporterHtml}
+                </div>
+                <div class="device-popup-section">
+                    <div class="device-popup-section-title">Identity</div>
+                    <div class="device-popup-key-block">Public Key</div>
+                    <div class="device-popup-mono">${this.data?.public_key ?? '-'}</div>
+                </div>
+                ${telemetryHtml}
+                ${timeSyncHtml}
+            </div>
+        `;
     }
 
     addToMap(map) {

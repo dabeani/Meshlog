@@ -494,53 +494,143 @@ h2 {
 
 .leaflet-popup.compact-marker-popup .leaflet-popup-content-wrapper {
     padding: 0;
-    border-radius: 4px;
-    background: rgba(18, 18, 20, 0.96);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(24, 24, 28, 0.98), rgba(16, 16, 20, 0.98));
     color: #f4f4f4;
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.38);
 }
 
 .leaflet-popup.compact-marker-popup .leaflet-popup-content {
-    margin: 4px 6px;
-    line-height: 1.05;
+    margin: 0;
+    line-height: 1.2;
     min-width: 0;
 }
 
 .leaflet-popup.compact-marker-popup .leaflet-popup-tip {
-    background: rgba(18, 18, 20, 0.96);
+    background: rgba(16, 16, 20, 0.98);
 }
 
 .leaflet-popup.compact-marker-popup .leaflet-popup-close-button {
-    top: 0;
-    right: 1px;
-    padding: 0 4px;
-    color: rgba(255,255,255,0.68);
+    top: 4px;
+    right: 5px;
+    padding: 0 5px;
+    color: rgba(255,255,255,0.72);
+    font-size: 18px;
 }
 
 .leaflet-popup.compact-marker-popup .leaflet-popup-close-button:hover {
     color: #fff;
 }
 
-.leaflet-popup.compact-marker-popup .tooltip-title,
-.leaflet-popup.compact-marker-popup .tooltip-detail,
-.leaflet-popup.compact-marker-popup .tooltip-hash {
-    margin: 0;
-    line-height: 1.05;
+.device-popup-card {
+    min-width: 250px;
+    max-width: 320px;
+    padding: 10px 10px 9px;
 }
 
-.leaflet-popup.compact-marker-popup .tooltip-title {
-    font-size: 0.74rem;
+.device-popup-header {
+    margin-bottom: 8px;
+    padding-right: 18px;
+}
+
+.device-popup-title {
     color: #fff;
-    padding-right: 10px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.1;
+    word-break: break-word;
 }
 
-.leaflet-popup.compact-marker-popup .tooltip-detail,
-.leaflet-popup.compact-marker-popup .tooltip-hash {
-    font-size: 0.65rem;
-    color: rgba(255,255,255,0.82);
+.device-popup-subtitle {
+    color: rgba(255,255,255,0.72);
+    font-size: 0.7rem;
+    font-family: monospace;
+    margin-top: 3px;
 }
 
-.leaflet-popup.compact-marker-popup .tooltip-warning {
-    margin-top: 2px;
+.device-popup-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 8px;
+}
+
+.device-popup-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.device-popup-badge-status {
+    background: rgba(79, 169, 108, 0.16);
+}
+
+.device-popup-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.device-popup-section:first-of-type {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.device-popup-section-title {
+    color: rgba(255,255,255,0.92);
+    font-size: 0.69rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 5px;
+}
+
+.device-popup-row {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+    margin-top: 4px;
+}
+
+.device-popup-key,
+.device-popup-key-block {
+    color: rgba(255,255,255,0.64);
+    font-size: 0.68rem;
+}
+
+.device-popup-value,
+.device-popup-note,
+.device-popup-list-row {
+    color: #fff;
+    font-size: 0.72rem;
+    word-break: break-word;
+}
+
+.device-popup-key-block {
+    margin-bottom: 4px;
+}
+
+.device-popup-mono {
+    font-family: monospace;
+    font-size: 0.68rem;
+    color: rgba(255,255,255,0.88);
+    word-break: break-all;
+}
+
+.device-popup-warning {
+    background: rgba(180, 82, 58, 0.1);
+    border-radius: 6px;
+    padding: 8px;
+    border-top: none;
 }
 
 @media (max-width: 640px) {
@@ -550,17 +640,26 @@ h2 {
         max-width: 110px;
     }
 
-    .leaflet-popup.compact-marker-popup .leaflet-popup-content {
-        margin: 3px 5px;
+    .device-popup-card {
+        min-width: 220px;
+        max-width: 270px;
+        padding: 9px 9px 8px;
     }
 
-    .leaflet-popup.compact-marker-popup .tooltip-title {
-        font-size: 0.7rem;
+    .device-popup-title {
+        font-size: 0.84rem;
     }
 
-    .leaflet-popup.compact-marker-popup .tooltip-detail,
-    .leaflet-popup.compact-marker-popup .tooltip-hash {
-        font-size: 0.61rem;
+    .device-popup-row {
+        grid-template-columns: 70px minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    .device-popup-value,
+    .device-popup-note,
+    .device-popup-list-row,
+    .device-popup-mono {
+        font-size: 0.67rem;
     }
 }
 
