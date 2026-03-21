@@ -2806,9 +2806,16 @@ class MeshLog {
                 <span class="map-search-result-name">${contact.adv?.data?.name ?? contact.data?.public_key ?? 'Unknown'}</span>
                 <span class="map-search-result-meta">[${contact.hash}] ${contact.getContactTypeLabel()}</span>
             `;
-            item.addEventListener('click', () => {
+            const activatePreview = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
                 this.previewContact(contact);
                 this._hideMapSearchResults();
+            };
+            item.addEventListener('mousedown', activatePreview);
+            item.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
             });
             results.append(item);
         });
