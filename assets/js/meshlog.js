@@ -2989,13 +2989,28 @@ class MeshLog {
     openContactPopup(contact) {
         if (!contact?.adv) return;
         const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
-        const popup = L.popup({
-            className: 'compact-marker-popup',
-            maxWidth: 360,
-            closeOnClick: false,
-            autoClose: false,
-        }).setLatLng(latLng).setContent(contact.getMarkerTooltip(this.popupUiState));
-        popup.addTo(this.map);
+        if (!this.activeContactPopup) {
+            this.activeContactPopup = L.popup({
+                className: 'compact-marker-popup',
+                maxWidth: 360,
+                closeOnClick: false,
+                autoClose: false,
+            });
+            this.activeContactPopup.on('remove', () => {
+                if (this.activeContactPopup && !this.map.hasLayer(this.activeContactPopup)) {
+                    this.activeContactPopup = null;
+                }
+            });
+        }
+
+        const popup = this.activeContactPopup
+            .setLatLng(latLng)
+            .setContent(contact.getMarkerTooltip(this.popupUiState));
+
+        if (!this.map.hasLayer(popup)) {
+            popup.addTo(this.map);
+        }
+
         const popupElement = popup.getElement?.();
         if (popupElement) {
             L.DomEvent.disableClickPropagation(popupElement);
@@ -3007,7 +3022,6 @@ class MeshLog {
         if (!this.selectedMarkerId) return;
         const contact = this.contacts[this.selectedMarkerId] ?? null;
         if (!contact?.adv) return;
-        try { this.map.closePopup(); } catch (_) {}
         this.openContactPopup(contact);
     }
 
@@ -3204,6 +3218,7 @@ class MeshLog {
             this._hideMapSearchResults?.();
             // close any open popups
             try { this.map.closePopup(); } catch (_) {}
+            this.activeContactPopup = null;
             // remove leftover popup DOM nodes
             try {
                 const container = this.map && this.map.getContainer ? this.map.getContainer() : document;
