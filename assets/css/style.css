@@ -567,7 +567,9 @@ h2 {
     line-height: 1.1;
 }
 
+.leaflet-popup.compact-marker-popup,
 .leaflet-popup.compact-marker-popup .leaflet-popup-content-wrapper {
+    pointer-events: auto;
     padding: 0;
     border-radius: 10px;
     background: linear-gradient(180deg, rgba(24, 24, 28, 0.98), rgba(16, 16, 20, 0.98));
@@ -577,6 +579,7 @@ h2 {
 }
 
 .leaflet-popup.compact-marker-popup .leaflet-popup-content {
+    pointer-events: auto;
     margin: 0;
     line-height: 1.2;
     min-width: 0;
@@ -599,6 +602,7 @@ h2 {
 }
 
 .device-popup-card {
+    pointer-events: auto;
     min-width: 250px;
     max-width: 320px;
     padding: 10px 10px 9px;
@@ -632,6 +636,7 @@ h2 {
 }
 
 .device-popup-tabs {
+    pointer-events: auto;
     display: flex;
     gap: 6px;
     margin-bottom: 8px;
@@ -668,6 +673,7 @@ h2 {
 }
 
 .device-popup-panel {
+    pointer-events: auto;
     min-height: 120px;
 }
 

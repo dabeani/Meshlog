@@ -3028,6 +3028,8 @@ class MeshLog {
                 maxWidth: 360,
                 closeOnClick: false,
                 autoClose: false,
+                interactive: true,
+                bubblingMouseEvents: false,
             });
             const wirePopupControls = () => {
                 requestAnimationFrame(() => {
