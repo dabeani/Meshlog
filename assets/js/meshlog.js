@@ -3044,6 +3044,24 @@ class MeshLog {
                     this._wirePopupControls(popupElement);
                 });
             };
+            // Delegated listener for the Neighbors button — attached once to the container
+            // so it survives every content update without needing re-wiring.
+            this.activeContactPopup.on('add', () => {
+                requestAnimationFrame(() => {
+                    const popupElement = this.activeContactPopup?.getElement?.();
+                    if (!popupElement) return;
+                    popupElement.addEventListener('click', (ev) => {
+                        const btn = ev.target.closest('.device-popup-neighbors-btn');
+                        if (!btn) return;
+                        ev.stopPropagation();
+                        const contact = this.contacts[Number(btn.dataset.contactId)];
+                        if (!contact) return;
+                        contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
+                        btn.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
+                        btn.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
+                    });
+                });
+            });
             this.activeContactPopup.on('add', wirePopupControls);
             this.activeContactPopup.on('contentupdate', wirePopupControls);
             this.activeContactPopup.on('remove', () => {
@@ -3076,22 +3094,6 @@ class MeshLog {
                 event.preventDefault();
                 event.stopPropagation();
                 this.handlePopupAction(Number(button.dataset.contactId), 'range', Number(button.dataset.hours));
-            };
-        });
-
-        popupElement.querySelectorAll('.device-popup-neighbors-btn').forEach((button) => {
-            button.onclick = (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const contact = this.contacts[Number(button.dataset.contactId)];
-                if (!contact) return;
-                if (contact.neighbors_visible) {
-                    contact.hideNeighbors();
-                } else {
-                    contact.showNeighbors();
-                }
-                button.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
-                button.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
             };
         });
     }
