@@ -2732,7 +2732,7 @@ class MeshLog {
 
                 const items = this._getSearchableContacts(input.value);
                 if (items.length < 1) return;
-                this.focusContact(items[0]);
+                this.previewContact(items[0]);
                 this._hideMapSearchResults();
             });
 
@@ -2799,7 +2799,7 @@ class MeshLog {
                 <span class="map-search-result-meta">[${contact.hash}] ${contact.getContactTypeLabel()}</span>
             `;
             item.addEventListener('click', () => {
-                this.focusContact(contact);
+                this.previewContact(contact);
                 this._hideMapSearchResults();
             });
             results.append(item);
@@ -2838,6 +2838,40 @@ class MeshLog {
         this.visible_markers.add(contact.data.id);
         this.fadeMarkers();
         contact.showLabel(true);
+
+        if (this._mapSearch?.input) {
+            this._mapSearch.input.value = contact.adv?.data?.name ?? '';
+        }
+    }
+
+    previewContact(contact) {
+        if (!contact?.marker || !contact?.adv) return;
+
+        this.clearSelection();
+        this.previewFocusedContactId = contact.data.id;
+
+        try {
+            contact.marker.closeTooltip();
+            if (contact._markerHoverCloseTimer) {
+                clearTimeout(contact._markerHoverCloseTimer);
+                contact._markerHoverCloseTimer = null;
+            }
+        } catch (_) {}
+
+        const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
+        const targetZoom = Math.max(this.map.getZoom(), 12);
+        let labelOpened = false;
+        const openLabel = () => {
+            if (labelOpened) return;
+            labelOpened = true;
+            if (this.previewFocusedContactId !== contact.data.id) return;
+            contact.showLabel(true);
+        };
+
+        this.map.once('moveend', openLabel);
+        this.map.once('zoomend', openLabel);
+        setTimeout(openLabel, 420);
+        this.map.flyTo(latLng, targetZoom, { duration: 0.35 });
 
         if (this._mapSearch?.input) {
             this._mapSearch.input.value = contact.adv?.data?.name ?? '';
@@ -2943,6 +2977,11 @@ class MeshLog {
 
     clearSelection() {
         try {
+            if (this.previewFocusedContactId) {
+                const previewContact = this.contacts[this.previewFocusedContactId] ?? null;
+                try { previewContact?.showLabel(false); } catch (_) {}
+            }
+            this.previewFocusedContactId = null;
             this.selectedMarkerId = null;
             this._hideMapSearchResults?.();
             // close any open popups
