@@ -647,6 +647,11 @@ h2 {
     font-size: 0.7rem;
     font-weight: 700;
     cursor: pointer;
+    pointer-events: auto;
+    position: relative;
+    z-index: 2;
+    appearance: none;
+    -webkit-appearance: none;
 }
 
 .device-popup-tab:hover,

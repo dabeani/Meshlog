@@ -2754,6 +2754,9 @@ class MeshLog {
         this.link_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
         this.contactPacketStatsCache = new Map();
+        this._boundPopupControlPointerHandler = (event) => this._handlePopupControlPointer(event);
+        document.addEventListener('pointerdown', this._boundPopupControlPointerHandler, true);
+        document.addEventListener('click', this._boundPopupControlPointerHandler, true);
         this._popupStatsRefreshTimer = setInterval(() => {
             if (this.selectedMarkerId && this.popupUiState?.tab === 'stats') {
                 this.updateSelectedContactPopup();
@@ -2863,6 +2866,26 @@ class MeshLog {
         if (!this._mapSearch?.results) return;
         this._mapSearch.results.hidden = true;
         this._mapSearch.results.innerHTML = '';
+    }
+
+    _handlePopupControlPointer(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+
+        const tabButton = target.closest('.device-popup-tab');
+        if (tabButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.handlePopupAction(Number(tabButton.dataset.contactId), 'tab', tabButton.dataset.tab);
+            return;
+        }
+
+        const rangeButton = target.closest('.device-popup-range');
+        if (rangeButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.handlePopupAction(Number(rangeButton.dataset.contactId), 'range', Number(rangeButton.dataset.hours));
+        }
     }
 
     handlePopupAction(contactId, action, value) {
