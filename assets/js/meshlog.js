@@ -3108,21 +3108,30 @@ class MeshLog {
         const maxBucket = Math.max(1, ...safeBuckets);
         const chartWidth = 284;
         const chartHeight = 110;
+        const yAxisWidth = 30;   // left margin for Y-axis labels
+        const barsWidth = chartWidth - yAxisWidth;
+        const barsTop = 6;
+        const barsBottom = 82;
+        const barsHeight = barsBottom - barsTop;
         const barGap = 3;
-        const barWidth = Math.max(4, Math.floor((chartWidth - ((bucketCount - 1) * barGap)) / bucketCount));
+        const barWidth = Math.max(4, Math.floor((barsWidth - ((bucketCount - 1) * barGap)) / bucketCount));
         const barsSvg = safeBuckets.map((count, index) => {
-            const height = Math.max(count > 0 ? 4 : 0, Math.round((count / maxBucket) * 72));
-            const x = index * (barWidth + barGap);
-            const y = 82 - height;
+            const height = Math.max(count > 0 ? 4 : 0, Math.round((count / maxBucket) * barsHeight));
+            const x = yAxisWidth + index * (barWidth + barGap);
+            const y = barsBottom - height;
             return `<rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="2" ry="2"></rect>`;
         }).join('');
 
         return `
             <div class="device-popup-chart-wrap">
                 <svg class="device-popup-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" aria-label="Packet activity chart">
-                    <line x1="0" y1="82.5" x2="${chartWidth}" y2="82.5" class="device-popup-chart-axis"></line>
+                    <line x1="${yAxisWidth}" y1="${barsTop}" x2="${yAxisWidth}" y2="${barsBottom + 0.5}" class="device-popup-chart-axis"></line>
+                    <line x1="${yAxisWidth}" y1="${barsBottom + 0.5}" x2="${chartWidth}" y2="${barsBottom + 0.5}" class="device-popup-chart-axis"></line>
                     <g class="device-popup-chart-bars">${barsSvg}</g>
-                    <text x="0" y="102" class="device-popup-chart-label">-${windowHours}h</text>
+                    <text x="${yAxisWidth - 4}" y="${barsTop + 5}" text-anchor="end" class="device-popup-chart-label">${maxBucket}</text>
+                    <text x="${yAxisWidth - 4}" y="${barsBottom}" text-anchor="end" class="device-popup-chart-label">0</text>
+                    <text x="${yAxisWidth - 4}" y="102" text-anchor="end" class="device-popup-chart-label">pkts</text>
+                    <text x="${yAxisWidth}" y="102" class="device-popup-chart-label">-${windowHours}h</text>
                     <text x="${chartWidth}" y="102" text-anchor="end" class="device-popup-chart-label">now</text>
                 </svg>
             </div>
