@@ -928,7 +928,7 @@ class MeshLogContact extends MeshLogObject {
     }
 
     getMarkerTooltip(options = {}) {
-        const activeTab = options.activeTab ?? 'general';
+        const activeTab = options.tab ?? 'general';
         const statsWindowHours = Number(options.statsWindowHours ?? 24);
         const generalActive = activeTab === 'general' ? ' device-popup-tab-active' : '';
         const statsActive = activeTab === 'stats' ? ' device-popup-tab-active' : '';
