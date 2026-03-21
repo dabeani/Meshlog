@@ -863,7 +863,7 @@ class MeshLogContact extends MeshLogObject {
             ? `<div class="device-popup-row"><span class="device-popup-key">Reporter</span><span class="device-popup-value">Yes</span></div>`
             : '';
         const neighborsHtml = !this.isClient()
-            ? `<div class="device-popup-section"><button type="button" class="device-popup-tab device-popup-neighbors-btn${this.neighbors_visible ? ' device-popup-tab-active' : ''}" data-contact-id="${this.data.id}">${this.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors'}</button></div>`
+            ? `<div class="device-popup-section"><button type="button" class="device-popup-neighbors-btn${this.neighbors_visible ? ' device-popup-tab-active' : ''}" data-contact-id="${this.data.id}">${this.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors'}</button></div>`
             : '';
 
         return `
@@ -3044,24 +3044,6 @@ class MeshLog {
                     this._wirePopupControls(popupElement);
                 });
             };
-            // Delegated listener for the Neighbors button — attached once to the container
-            // so it survives every content update without needing re-wiring.
-            this.activeContactPopup.on('add', () => {
-                requestAnimationFrame(() => {
-                    const popupElement = this.activeContactPopup?.getElement?.();
-                    if (!popupElement) return;
-                    popupElement.addEventListener('click', (ev) => {
-                        const btn = ev.target.closest('.device-popup-neighbors-btn');
-                        if (!btn) return;
-                        ev.stopPropagation();
-                        const contact = this.contacts[Number(btn.dataset.contactId)];
-                        if (!contact) return;
-                        contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
-                        btn.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
-                        btn.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
-                    });
-                });
-            });
             this.activeContactPopup.on('add', wirePopupControls);
             this.activeContactPopup.on('contentupdate', wirePopupControls);
             this.activeContactPopup.on('remove', () => {
@@ -3081,7 +3063,7 @@ class MeshLog {
     }
 
     _wirePopupControls(popupElement) {
-        popupElement.querySelectorAll('.device-popup-tab:not(.device-popup-neighbors-btn)').forEach((button) => {
+        popupElement.querySelectorAll('.device-popup-tab').forEach((button) => {
             button.onclick = (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -3094,6 +3076,18 @@ class MeshLog {
                 event.preventDefault();
                 event.stopPropagation();
                 this.handlePopupAction(Number(button.dataset.contactId), 'range', Number(button.dataset.hours));
+            };
+        });
+
+        popupElement.querySelectorAll('.device-popup-neighbors-btn').forEach((button) => {
+            button.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const contact = this.contacts[Number(button.dataset.contactId)];
+                if (!contact) return;
+                contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
+                button.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
+                button.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
             };
         });
     }

@@ -643,7 +643,8 @@ h2 {
 }
 
 .device-popup-tab,
-.device-popup-range {
+.device-popup-range,
+.device-popup-neighbors-btn {
     border: 1px solid rgba(255,255,255,0.12);
     background: rgba(255,255,255,0.04);
     color: rgba(255,255,255,0.82);
@@ -660,7 +661,8 @@ h2 {
 }
 
 .device-popup-tab:hover,
-.device-popup-range:hover {
+.device-popup-range:hover,
+.device-popup-neighbors-btn:hover {
     background: rgba(255,255,255,0.09);
     color: #fff;
 }
