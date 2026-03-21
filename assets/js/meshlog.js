@@ -2992,10 +2992,15 @@ class MeshLog {
         const popup = L.popup({
             className: 'compact-marker-popup',
             maxWidth: 360,
-            closeOnClick: true,
+            closeOnClick: false,
             autoClose: false,
         }).setLatLng(latLng).setContent(contact.getMarkerTooltip(this.popupUiState));
         popup.addTo(this.map);
+        const popupElement = popup.getElement?.();
+        if (popupElement) {
+            L.DomEvent.disableClickPropagation(popupElement);
+            L.DomEvent.disableScrollPropagation(popupElement);
+        }
     }
 
     updateSelectedContactPopup() {
