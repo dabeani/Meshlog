@@ -2945,11 +2945,14 @@ class MeshLog {
             return;
         }
 
+        const preservedId = this.selectedMarkerId ?? this.previewFocusedContactId ?? null;
+
         // Close marker hover tooltips on all known marker instances.
         // Keep them bound so ordinary hover remains stable and usable.
         try {
             Object.values(this.contacts).forEach(c => {
                 if (c && c.marker) {
+                    if (preservedId !== null && c.data?.id === preservedId) return;
                     try { c.marker.closeTooltip(); } catch (_) {}
                 }
             });
@@ -2965,6 +2968,7 @@ class MeshLog {
         // Remove any leftover marker mini-tooltip DOM nodes inside the map container.
         // Do not touch other tooltip types such as route hop distance tooltips.
         try {
+            if (preservedId !== null) return;
             const container = this.map && this.map.getContainer ? this.map.getContainer() : document;
             const tooltips = container.querySelectorAll ? container.querySelectorAll('.leaflet-tooltip.mini-tooltip') : [];
             for (const t of tooltips) {
