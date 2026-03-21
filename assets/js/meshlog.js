@@ -897,7 +897,7 @@ class MeshLogContact extends MeshLogObject {
         // show small transient tooltip on hover unless this marker is the selected one
         try {
             if (this._meshlog.selectedMarkerId === this.data.id) return;
-            const mini = `<div class="tooltip-title">${this.adv?.data?.name ?? this.data.public_key}</div><div class="tooltip-detail">${this.last?.data?.created_at ?? ''}</div>`;
+            const mini = `<span class="mini-tooltip-label">${this.adv?.data?.name ?? this.data.public_key}</span>`;
             this.marker.bindTooltip(mini, { className: 'mini-tooltip', direction: 'auto', offset: [0, -10], sticky: false });
             this.marker.openTooltip();
         } catch (err) {}
@@ -922,6 +922,10 @@ class MeshLogContact extends MeshLogObject {
             // Select this marker: open a persistent popup with full info and fade others
             this._meshlog.clearSelection();
             this._meshlog.selectedMarkerId = this.data.id;
+            try {
+                this.marker.closeTooltip();
+                this.marker.unbindTooltip();
+            } catch (_) {}
             const content = this.getMarkerTooltip();
             const popup = L.popup({ maxWidth: 360, closeOnClick: true, autoClose: false }).setLatLng([this.adv.data.lat, this.adv.data.lon]).setContent(content);
             popup.addTo(this._meshlog.map);
@@ -969,8 +973,7 @@ class MeshLogContact extends MeshLogObject {
         if (show) {
             // show a small compact tooltip next to the marker
             try {
-                const mini = `<div class="tooltip-title">${this.adv?.data?.name ?? this.data.public_key}</div>` +
-                             `<div class="tooltip-detail">${this.last?.data?.created_at ?? ''}</div>`;
+                const mini = `<span class="mini-tooltip-label">${this.adv?.data?.name ?? this.data.public_key}</span>`;
                 this.marker.bindTooltip(mini, { className: 'mini-tooltip', direction: 'auto', offset: [0, -10], sticky: false });
                 this.marker.openTooltip();
             } catch (err) {}
@@ -3734,7 +3737,8 @@ class MeshLog {
                 v.marker.setZIndexOffset(2);
                 v.updateTooltip('');
             }
-            v.showLabel(highlighted);
+            // Selection should not auto-open marker tooltips. Hover handles the compact tooltip.
+            v.showLabel(false);
         });
     }
 

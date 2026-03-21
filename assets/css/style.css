@@ -464,6 +464,42 @@ h2 {
     border-top-color: #444;
 }
 
+.leaflet-tooltip.mini-tooltip {
+    background: rgba(18, 18, 20, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #f4f4f4;
+    font-size: 0.68rem;
+    line-height: 1.05;
+    padding: 2px 5px;
+    border-radius: 3px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.leaflet-tooltip.mini-tooltip::before {
+    border-top-color: rgba(255, 255, 255, 0.18);
+}
+
+.mini-tooltip-label {
+    display: block;
+    font-weight: 600;
+    letter-spacing: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .leaflet-tooltip.mini-tooltip {
+        font-size: 0.62rem;
+        padding: 1px 4px;
+        max-width: 110px;
+    }
+}
+
 #warning {
     background: #262626;
     position: absolute;
