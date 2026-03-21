@@ -880,6 +880,13 @@ class MeshLogContact extends MeshLogObject {
                 pane: this.markerPane ?? this._meshlog.getMarkerPaneName(false)
             }
         ).addTo(map);
+        this.marker.bindTooltip(this.getMiniTooltip(), {
+            className: 'mini-tooltip',
+            direction: 'auto',
+            offset: [0, -10],
+            sticky: false,
+            interactive: false,
+        });
         this.marker.on('click', () => {
             MeshLogContact._onMarkerClick.call(this, { target: this.marker });
         });
@@ -893,12 +900,31 @@ class MeshLogContact extends MeshLogObject {
         this.updateTooltip(this.markerTooltip);
     }
 
+    getMiniTooltip() {
+        return `<span class="mini-tooltip-label">${this.adv?.data?.name ?? this.data.public_key}</span>`;
+    }
+
     static _onMarkerMouseOver(e) {
-        // show small transient tooltip on hover unless this marker is the selected one
+        // Keep the hover tooltip stable by reusing one bound tooltip instance.
         try {
             if (this._meshlog.selectedMarkerId === this.data.id) return;
-            const mini = `<span class="mini-tooltip-label">${this.adv?.data?.name ?? this.data.public_key}</span>`;
-            this.marker.bindTooltip(mini, { className: 'mini-tooltip', direction: 'auto', offset: [0, -10], sticky: false });
+            this._markerHoverActive = true;
+            if (this._markerHoverCloseTimer) {
+                clearTimeout(this._markerHoverCloseTimer);
+                this._markerHoverCloseTimer = null;
+            }
+            const tooltip = this.marker.getTooltip();
+            if (tooltip) {
+                tooltip.setContent(this.getMiniTooltip());
+            } else {
+                this.marker.bindTooltip(this.getMiniTooltip(), {
+                    className: 'mini-tooltip',
+                    direction: 'auto',
+                    offset: [0, -10],
+                    sticky: false,
+                    interactive: false,
+                });
+            }
             this.marker.openTooltip();
         } catch (err) {}
     }
@@ -906,8 +932,15 @@ class MeshLogContact extends MeshLogObject {
     static _onMarkerMouseOut(e) {
         try {
             if (this._meshlog.selectedMarkerId === this.data.id) return;
-            this.marker.closeTooltip();
-            this.marker.unbindTooltip();
+            this._markerHoverActive = false;
+            if (this._markerHoverCloseTimer) {
+                clearTimeout(this._markerHoverCloseTimer);
+            }
+            this._markerHoverCloseTimer = setTimeout(() => {
+                if (this._meshlog.selectedMarkerId === this.data.id) return;
+                if (this._markerHoverActive) return;
+                this.marker.closeTooltip();
+            }, 90);
         } catch (err) {}
     }
 
@@ -924,7 +957,10 @@ class MeshLogContact extends MeshLogObject {
             this._meshlog.selectedMarkerId = this.data.id;
             try {
                 this.marker.closeTooltip();
-                this.marker.unbindTooltip();
+                if (this._markerHoverCloseTimer) {
+                    clearTimeout(this._markerHoverCloseTimer);
+                    this._markerHoverCloseTimer = null;
+                }
             } catch (_) {}
             const content = this.getMarkerTooltip();
             const popup = L.popup({ maxWidth: 360, closeOnClick: true, autoClose: false }).setLatLng([this.adv.data.lat, this.adv.data.lon]).setContent(content);
@@ -971,16 +1007,16 @@ class MeshLogContact extends MeshLogObject {
     showLabel(show) {
         if (!this.marker) return;
         if (show) {
-            // show a small compact tooltip next to the marker
             try {
-                const mini = `<span class="mini-tooltip-label">${this.adv?.data?.name ?? this.data.public_key}</span>`;
-                this.marker.bindTooltip(mini, { className: 'mini-tooltip', direction: 'auto', offset: [0, -10], sticky: false });
+                const tooltip = this.marker.getTooltip();
+                if (tooltip) {
+                    tooltip.setContent(this.getMiniTooltip());
+                }
                 this.marker.openTooltip();
             } catch (err) {}
         } else {
             try {
                 this.marker.closeTooltip();
-                this.marker.unbindTooltip();
             } catch (err) {}
         }
     }
