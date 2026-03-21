@@ -963,7 +963,12 @@ class MeshLogContact extends MeshLogObject {
                 }
             } catch (_) {}
             const content = this.getMarkerTooltip();
-            const popup = L.popup({ maxWidth: 360, closeOnClick: true, autoClose: false }).setLatLng([this.adv.data.lat, this.adv.data.lon]).setContent(content);
+            const popup = L.popup({
+                className: 'compact-marker-popup',
+                maxWidth: 240,
+                closeOnClick: true,
+                autoClose: false,
+            }).setLatLng([this.adv.data.lat, this.adv.data.lon]).setContent(content);
             popup.addTo(this._meshlog.map);
 
             this._meshlog.visible_markers.clear();
