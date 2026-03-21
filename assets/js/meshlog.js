@@ -2837,6 +2837,7 @@ class MeshLog {
         this.visible_markers.clear();
         this.visible_markers.add(contact.data.id);
         this.fadeMarkers();
+        contact.showLabel(true);
 
         if (this._mapSearch?.input) {
             this._mapSearch.input.value = contact.adv?.data?.name ?? '';
