@@ -631,6 +631,41 @@ h2 {
     margin-bottom: 8px;
 }
 
+.device-popup-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.device-popup-tab,
+.device-popup-range {
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.82);
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.device-popup-tab:hover,
+.device-popup-range:hover {
+    background: rgba(255,255,255,0.09);
+    color: #fff;
+}
+
+.device-popup-tab-active,
+.device-popup-range-active {
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    border-color: rgba(255,255,255,0.24);
+}
+
+.device-popup-panel {
+    min-height: 120px;
+}
+
 .device-popup-badge {
     display: inline-flex;
     align-items: center;
@@ -666,6 +701,20 @@ h2 {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-bottom: 5px;
+}
+
+.device-popup-chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.device-popup-range-group {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
 }
 
 .device-popup-row {
@@ -711,6 +760,34 @@ h2 {
     border-top: none;
 }
 
+.device-popup-chart-wrap {
+    margin-top: 8px;
+    padding: 8px 8px 4px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+.device-popup-chart {
+    display: block;
+    width: 100%;
+    height: 112px;
+}
+
+.device-popup-chart-axis {
+    stroke: rgba(255,255,255,0.16);
+    stroke-width: 1;
+}
+
+.device-popup-chart-bars rect {
+    fill: rgba(96, 183, 255, 0.82);
+}
+
+.device-popup-chart-label {
+    fill: rgba(255,255,255,0.58);
+    font-size: 10px;
+}
+
 @media (max-width: 640px) {
     .map-search-control {
         width: min(200px, calc(100vw - 28px));
@@ -740,6 +817,11 @@ h2 {
     .device-popup-row {
         grid-template-columns: 70px minmax(0, 1fr);
         gap: 6px;
+    }
+
+    .device-popup-chart-head {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .device-popup-value,

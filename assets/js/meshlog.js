@@ -841,44 +841,103 @@ class MeshLogContact extends MeshLogObject {
         return lines;
     }
 
-    getMarkerTooltip() {
+    formatPopupTimestamp(value) {
+        if (!value) return '-';
+        const time = parseMeshlogTimestamp(value);
+        if (!Number.isFinite(time)) return String(value);
+        return new Date(time).toLocaleString();
+    }
+
+    getDevicePopupGeneralHtml() {
         const coords = Number.isFinite(Number(this.adv?.data?.lat)) && Number.isFinite(Number(this.adv?.data?.lon))
             ? `${Number(this.adv.data.lat).toFixed(5)}, ${Number(this.adv.data.lon).toFixed(5)}`
             : 'Unknown';
         const telemetryLines = this.getMarkerTelemetryLines();
         const telemetryHtml = telemetryLines.length > 0
-            ? `<div class="device-popup-section"><div class="device-popup-section-title">Telemetry</div>${telemetryLines.map(line => `<div class="device-popup-list-row">${line}</div>`).join('')}</div>`
+            ? `<div class="device-popup-section"><div class="device-popup-section-title">Telemetry</div>${telemetryLines.map(line => `<div class="device-popup-list-row">${escapeXml(line)}</div>`).join('')}</div>`
             : '';
         const timeSyncHtml = this.hasReporterTimeSyncWarning()
-            ? `<div class="device-popup-section device-popup-warning"><div class="device-popup-section-title">Clock Warning</div><div class="device-popup-note">${this.getTimeSyncWarningText()}</div></div>`
+            ? `<div class="device-popup-section device-popup-warning"><div class="device-popup-section-title">Clock Warning</div><div class="device-popup-note">${escapeXml(this.getTimeSyncWarningText())}</div></div>`
             : '';
         const reporterHtml = this.isReporter()
             ? `<div class="device-popup-row"><span class="device-popup-key">Reporter</span><span class="device-popup-value">Yes</span></div>`
             : '';
 
         return `
+            <div class="device-popup-section">
+                <div class="device-popup-row"><span class="device-popup-key">Last heard</span><span class="device-popup-value">${escapeXml(this.last?.data?.created_at ?? '-')}</span></div>
+                <div class="device-popup-row"><span class="device-popup-key">First seen</span><span class="device-popup-value">${escapeXml(this.data?.created_at ?? '-')}</span></div>
+                <div class="device-popup-row"><span class="device-popup-key">Coordinates</span><span class="device-popup-value">${escapeXml(coords)}</span></div>
+                ${reporterHtml}
+            </div>
+            <div class="device-popup-section">
+                <div class="device-popup-section-title">Identity</div>
+                <div class="device-popup-key-block">Public Key</div>
+                <div class="device-popup-mono">${escapeXml(this.data?.public_key ?? '-')}</div>
+            </div>
+            ${telemetryHtml}
+            ${timeSyncHtml}
+        `;
+    }
+
+    getDevicePopupStatsHtml(statsWindowHours = 24) {
+        const stats = this._meshlog.getContactPacketStats(this.data.id, statsWindowHours);
+        const windowButtons = [1, 24, 36].map(hours => {
+            const active = hours === statsWindowHours ? ' device-popup-range-active' : '';
+            return `<button type="button" class="device-popup-range${active}" data-contact-id="${this.data.id}" data-hours="${hours}">${hours}h</button>`;
+        }).join('');
+
+        const longTermLines = [
+            `Loaded packet history span: ${escapeXml(stats.loadedSpanLabel)}`,
+            `Loaded packets total: ${stats.totalLoaded}`,
+            `Last 1h: ${stats.last1h} packets`,
+            `Last 24h: ${stats.last24h} packets`,
+            `Last 36h: ${stats.last36h} packets`,
+            `Newest loaded packet: ${escapeXml(stats.newestLabel)}`,
+            `Oldest loaded packet: ${escapeXml(stats.oldestLabel)}`,
+            `Packet mix: ${escapeXml(stats.packetMixLabel)}`,
+        ];
+
+        return `
+            <div class="device-popup-section device-popup-section-stats-head">
+                <div class="device-popup-section-title">Activity Summary</div>
+                ${longTermLines.map(line => `<div class="device-popup-list-row">${line}</div>`).join('')}
+            </div>
+            <div class="device-popup-section">
+                <div class="device-popup-chart-head">
+                    <div class="device-popup-section-title">Packets in last ${statsWindowHours}h</div>
+                    <div class="device-popup-range-group">${windowButtons}</div>
+                </div>
+                <div class="device-popup-note">Based on currently loaded packets for this device in the live page.</div>
+                ${stats.chartSvg}
+            </div>
+        `;
+    }
+
+    getMarkerTooltip(options = {}) {
+        const activeTab = options.activeTab ?? 'general';
+        const statsWindowHours = Number(options.statsWindowHours ?? 24);
+        const generalActive = activeTab === 'general' ? ' device-popup-tab-active' : '';
+        const statsActive = activeTab === 'stats' ? ' device-popup-tab-active' : '';
+        const bodyHtml = activeTab === 'stats'
+            ? this.getDevicePopupStatsHtml(statsWindowHours)
+            : this.getDevicePopupGeneralHtml();
+
+        return `
             <div class="device-popup-card">
                 <div class="device-popup-header">
-                    <div class="device-popup-title">${this.adv.data.name}</div>
-                    <div class="device-popup-subtitle">[${this.hash}]</div>
+                    <div class="device-popup-title">${escapeXml(this.adv.data.name)}</div>
+                    <div class="device-popup-subtitle">[${escapeXml(this.hash)}]</div>
                 </div>
                 <div class="device-popup-badges">
-                    <span class="device-popup-badge">${this.getContactTypeLabel()}</span>
-                    <span class="device-popup-badge device-popup-badge-status">${this.getMarkerStatusLabel()}</span>
+                    <span class="device-popup-badge">${escapeXml(this.getContactTypeLabel())}</span>
+                    <span class="device-popup-badge device-popup-badge-status">${escapeXml(this.getMarkerStatusLabel())}</span>
                 </div>
-                <div class="device-popup-section">
-                    <div class="device-popup-row"><span class="device-popup-key">Last heard</span><span class="device-popup-value">${this.last?.data?.created_at ?? '-'}</span></div>
-                    <div class="device-popup-row"><span class="device-popup-key">First seen</span><span class="device-popup-value">${this.data?.created_at ?? '-'}</span></div>
-                    <div class="device-popup-row"><span class="device-popup-key">Coordinates</span><span class="device-popup-value">${coords}</span></div>
-                    ${reporterHtml}
+                <div class="device-popup-tabs" data-contact-id="${this.data.id}">
+                    <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-tab="general">General</button>
+                    <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-tab="stats">Stats</button>
                 </div>
-                <div class="device-popup-section">
-                    <div class="device-popup-section-title">Identity</div>
-                    <div class="device-popup-key-block">Public Key</div>
-                    <div class="device-popup-mono">${this.data?.public_key ?? '-'}</div>
-                </div>
-                ${telemetryHtml}
-                ${timeSyncHtml}
+                <div class="device-popup-panel">${bodyHtml}</div>
             </div>
         `;
     }
@@ -2680,6 +2739,13 @@ class MeshLog {
         this._initMapSearchControl();
 
         this.link_layers.addTo(this.map);
+        this.popupUiState = { tab: 'general', statsWindowHours: 24 };
+        this.map.getContainer().addEventListener('click', (event) => this._handleMapPopupUiClick(event));
+        this._popupStatsRefreshTimer = setInterval(() => {
+            if (this.selectedMarkerId && this.popupUiState?.tab === 'stats') {
+                this.updateSelectedContactPopup();
+            }
+        }, 60 * 60 * 1000);
 
         // Close lingering marker tooltips when the map is interactively moved or zoomed.
         // Use a debounced prune to avoid heavy DOM churn during continuous events.
@@ -2786,6 +2852,38 @@ class MeshLog {
         this._mapSearch.results.innerHTML = '';
     }
 
+    _handleMapPopupUiClick(event) {
+        const tabBtn = event.target.closest('.device-popup-tab');
+        if (tabBtn) {
+            event.preventDefault();
+            event.stopPropagation();
+            const contactId = Number(tabBtn.dataset.contactId);
+            if (!Number.isFinite(contactId) || this.selectedMarkerId !== contactId) return;
+            this.popupUiState = {
+                ...this.popupUiState,
+                tab: tabBtn.dataset.tab === 'stats' ? 'stats' : 'general'
+            };
+            this.updateSelectedContactPopup();
+            return;
+        }
+
+        const rangeBtn = event.target.closest('.device-popup-range');
+        if (rangeBtn) {
+            event.preventDefault();
+            event.stopPropagation();
+            const contactId = Number(rangeBtn.dataset.contactId);
+            const hours = Number(rangeBtn.dataset.hours);
+            if (!Number.isFinite(contactId) || this.selectedMarkerId !== contactId) return;
+            if (![1, 24, 36].includes(hours)) return;
+            this.popupUiState = {
+                ...this.popupUiState,
+                tab: 'stats',
+                statsWindowHours: hours,
+            };
+            this.updateSelectedContactPopup();
+        }
+    }
+
     _renderMapSearchResults(query) {
         if (!this._mapSearch?.results) return;
 
@@ -2828,6 +2926,7 @@ class MeshLog {
 
         this.clearSelection();
         this.selectedMarkerId = contact.data.id;
+        this.popupUiState = { tab: 'general', statsWindowHours: 24 };
 
         try {
             contact.marker.closeTooltip();
@@ -2841,13 +2940,7 @@ class MeshLog {
         const targetZoom = Math.max(this.map.getZoom(), 12);
         this.map.flyTo(latLng, targetZoom, { duration: 0.35 });
 
-        const popup = L.popup({
-            className: 'compact-marker-popup',
-            maxWidth: 320,
-            closeOnClick: true,
-            autoClose: false,
-        }).setLatLng(latLng).setContent(contact.getMarkerTooltip());
-        popup.addTo(this.map);
+        this.openContactPopup(contact);
 
         this.visible_markers.clear();
         this.visible_markers.add(contact.data.id);
@@ -2891,6 +2984,107 @@ class MeshLog {
         if (this._mapSearch?.input) {
             this._mapSearch.input.value = contact.adv?.data?.name ?? '';
         }
+    }
+
+    openContactPopup(contact) {
+        if (!contact?.adv) return;
+        const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
+        const popup = L.popup({
+            className: 'compact-marker-popup',
+            maxWidth: 360,
+            closeOnClick: true,
+            autoClose: false,
+        }).setLatLng(latLng).setContent(contact.getMarkerTooltip(this.popupUiState));
+        popup.addTo(this.map);
+    }
+
+    updateSelectedContactPopup() {
+        if (!this.selectedMarkerId) return;
+        const contact = this.contacts[this.selectedMarkerId] ?? null;
+        if (!contact?.adv) return;
+        try { this.map.closePopup(); } catch (_) {}
+        this.openContactPopup(contact);
+    }
+
+    getPacketTypeLabelForStats(msg) {
+        if (msg instanceof MeshLogAdvertisement) return 'ADV';
+        if (msg instanceof MeshLogChannelMessage) return 'PUB';
+        if (msg instanceof MeshLogDirectMessage) return 'DIR';
+        if (msg instanceof MeshLogTelemetryMessage) return 'TEL';
+        if (msg instanceof MeshLogSystemReportMessage) return 'SYS';
+        if (msg instanceof MeshLogRawPacket) return 'RAW';
+        return 'OTHER';
+    }
+
+    getContactPacketStats(contactId, windowHours = 24) {
+        const allMessages = Object.values(this.messages).filter(msg => Number(msg?.data?.contact_id) === Number(contactId) && Number.isFinite(msg?.time));
+        const now = Date.now();
+        const last1hMs = 1 * 60 * 60 * 1000;
+        const last24hMs = 24 * 60 * 60 * 1000;
+        const last36hMs = 36 * 60 * 60 * 1000;
+        const oldestTime = allMessages.length > 0 ? Math.min(...allMessages.map(msg => msg.time)) : NaN;
+        const newestTime = allMessages.length > 0 ? Math.max(...allMessages.map(msg => msg.time)) : NaN;
+        const loadedSpanHours = Number.isFinite(oldestTime) && Number.isFinite(newestTime)
+            ? Math.max(0, (newestTime - oldestTime) / (60 * 60 * 1000))
+            : 0;
+
+        const byType = {};
+        allMessages.forEach(msg => {
+            const key = this.getPacketTypeLabelForStats(msg);
+            byType[key] = (byType[key] ?? 0) + 1;
+        });
+
+        const countSince = (ms) => allMessages.filter(msg => (now - msg.time) <= ms).length;
+
+        let bucketCount = 12;
+        if (windowHours === 24) bucketCount = 24;
+        if (windowHours === 36) bucketCount = 18;
+        const windowMs = windowHours * 60 * 60 * 1000;
+        const bucketMs = windowMs / bucketCount;
+        const buckets = new Array(bucketCount).fill(0);
+
+        allMessages.forEach(msg => {
+            const age = now - msg.time;
+            if (age < 0 || age > windowMs) return;
+            const idx = Math.min(bucketCount - 1, Math.floor((windowMs - age) / bucketMs));
+            buckets[idx] += 1;
+        });
+
+        const maxBucket = Math.max(1, ...buckets);
+        const chartWidth = 284;
+        const chartHeight = 110;
+        const barGap = 3;
+        const barWidth = Math.max(4, Math.floor((chartWidth - ((bucketCount - 1) * barGap)) / bucketCount));
+        const barsSvg = buckets.map((count, index) => {
+            const height = Math.max(count > 0 ? 4 : 0, Math.round((count / maxBucket) * 72));
+            const x = index * (barWidth + barGap);
+            const y = 82 - height;
+            return `<rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="2" ry="2"></rect>`;
+        }).join('');
+        const chartSvg = `
+            <div class="device-popup-chart-wrap">
+                <svg class="device-popup-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" aria-label="Packet activity chart">
+                    <line x1="0" y1="82.5" x2="${chartWidth}" y2="82.5" class="device-popup-chart-axis"></line>
+                    <g class="device-popup-chart-bars">${barsSvg}</g>
+                    <text x="0" y="102" class="device-popup-chart-label">-${windowHours}h</text>
+                    <text x="${chartWidth}" y="102" text-anchor="end" class="device-popup-chart-label">now</text>
+                </svg>
+            </div>
+        `;
+
+        const packetMixLabel = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([key, count]) => `${key} ${count}`).join(', ') || 'No packets loaded';
+
+        return {
+            totalLoaded: allMessages.length,
+            last1h: countSince(last1hMs),
+            last24h: countSince(last24hMs),
+            last36h: countSince(last36hMs),
+            loadedSpanLabel: allMessages.length > 0 ? `${loadedSpanHours.toFixed(1)} h` : 'No loaded history',
+            newestLabel: Number.isFinite(newestTime) ? new Date(newestTime).toLocaleString() : '-',
+            oldestLabel: Number.isFinite(oldestTime) ? new Date(oldestTime).toLocaleString() : '-',
+            packetMixLabel,
+            chartSvg,
+        };
     }
 
     _initMapPanes() {
