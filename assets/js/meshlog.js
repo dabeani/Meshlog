@@ -2754,6 +2754,7 @@ class MeshLog {
         this.link_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
         this.contactPacketStatsCache = new Map();
+        this.activePopupContactId = null;
         this._boundPopupControlPointerHandler = (event) => this._handlePopupControlPointer(event);
         document.addEventListener('pointerdown', this._boundPopupControlPointerHandler, true);
         document.addEventListener('click', this._boundPopupControlPointerHandler, true);
@@ -2889,14 +2890,17 @@ class MeshLog {
     }
 
     handlePopupAction(contactId, action, value) {
-        if (!Number.isFinite(contactId) || this.selectedMarkerId !== contactId) return;
+        const targetContactId = Number.isFinite(contactId) ? contactId : Number(this.activePopupContactId);
+        if (!Number.isFinite(targetContactId)) return;
+        const contact = this.contacts[targetContactId] ?? null;
+        if (!contact?.adv) return;
 
         if (action === 'tab') {
             this.popupUiState = {
                 ...this.popupUiState,
                 tab: value === 'stats' ? 'stats' : 'general'
             };
-            this.updateSelectedContactPopup();
+            this.openContactPopup(contact);
             return;
         }
 
@@ -2908,7 +2912,7 @@ class MeshLog {
                 tab: 'stats',
                 statsWindowHours: hours,
             };
-            this.updateSelectedContactPopup();
+            this.openContactPopup(contact);
         }
     }
 
@@ -3016,6 +3020,7 @@ class MeshLog {
 
     openContactPopup(contact) {
         if (!contact?.adv) return;
+        this.activePopupContactId = Number(contact.data.id);
         const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
         if (!this.activeContactPopup) {
             this.activeContactPopup = L.popup({
@@ -3070,8 +3075,9 @@ class MeshLog {
     }
 
     updateSelectedContactPopup() {
-        if (!this.selectedMarkerId) return;
-        const contact = this.contacts[this.selectedMarkerId] ?? null;
+        const contactId = this.selectedMarkerId ?? this.activePopupContactId;
+        if (!contactId) return;
+        const contact = this.contacts[contactId] ?? null;
         if (!contact?.adv) return;
         this.openContactPopup(contact);
     }
@@ -3379,6 +3385,7 @@ class MeshLog {
             }
             this.previewFocusedContactId = null;
             this.selectedMarkerId = null;
+            this.activePopupContactId = null;
             this._hideMapSearchResults?.();
             // close any open popups
             try { this.map.closePopup(); } catch (_) {}
