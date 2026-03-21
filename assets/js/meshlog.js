@@ -2740,7 +2740,6 @@ class MeshLog {
 
         this.link_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
-        this.map.getContainer().addEventListener('click', (event) => this._handleMapPopupUiClick(event));
         this._popupStatsRefreshTimer = setInterval(() => {
             if (this.selectedMarkerId && this.popupUiState?.tab === 'stats') {
                 this.updateSelectedContactPopup();
@@ -3015,6 +3014,11 @@ class MeshLog {
         if (popupElement) {
             L.DomEvent.disableClickPropagation(popupElement);
             L.DomEvent.disableScrollPropagation(popupElement);
+            if (this._boundPopupUiHandler) {
+                popupElement.removeEventListener('click', this._boundPopupUiHandler);
+            }
+            this._boundPopupUiHandler = (event) => this._handleMapPopupUiClick(event);
+            popupElement.addEventListener('click', this._boundPopupUiHandler);
         }
     }
 
