@@ -881,18 +881,55 @@ class MeshLogContact extends MeshLogObject {
             }
         ).addTo(map);
         this.marker.on('click', () => {
-            this.expanded = !this.expanded;
-            this.updateDom();
-            this.dom?.container?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            MeshLogContact._onMarkerClick.call(this, { target: this.marker });
         });
         this.marker.on('mouseover', () => {
-            MeshLogContact.onmouseover.call(this, { target: this.marker });
+            MeshLogContact._onMarkerMouseOver.call(this, { target: this.marker });
         });
         this.marker.on('mouseout', () => {
-            MeshLogContact.onmouseout.call(this, { target: this.marker });
+            MeshLogContact._onMarkerMouseOut.call(this, { target: this.marker });
         });
         this.markerPane = this.marker.options.pane;
         this.updateTooltip(this.markerTooltip);
+    }
+
+    static _onMarkerMouseOver(e) {
+        // show small transient tooltip on hover unless this marker is the selected one
+        try {
+            if (this._meshlog.selectedMarkerId === this.data.id) return;
+            const mini = `<div class="tooltip-title">${this.adv?.data?.name ?? this.data.public_key}</div><div class="tooltip-detail">${this.last?.data?.created_at ?? ''}</div>`;
+            this.marker.bindTooltip(mini, { className: 'mini-tooltip', direction: 'auto', offset: [0, -10], sticky: false });
+            this.marker.openTooltip();
+        } catch (err) {}
+    }
+
+    static _onMarkerMouseOut(e) {
+        try {
+            if (this._meshlog.selectedMarkerId === this.data.id) return;
+            this.marker.closeTooltip();
+            this.marker.unbindTooltip();
+        } catch (err) {}
+    }
+
+    static _onMarkerClick(e) {
+        try {
+            const wasSelected = (this._meshlog.selectedMarkerId === this.data.id);
+            if (wasSelected) {
+                this._meshlog.clearSelection();
+                return;
+            }
+
+            // Select this marker: open a persistent popup with full info and fade others
+            this._meshlog.clearSelection();
+            this._meshlog.selectedMarkerId = this.data.id;
+            const content = this.getMarkerTooltip();
+            const popup = L.popup({ maxWidth: 360, closeOnClick: true, autoClose: false }).setLatLng([this.adv.data.lat, this.adv.data.lon]).setContent(content);
+            popup.addTo(this._meshlog.map);
+
+            this._meshlog.visible_markers.clear();
+            this._meshlog.visible_markers.add(this.data.id);
+            this._meshlog.fadeMarkers();
+        } catch (err) {}
     }
 
     setMarkerPane(active) {
@@ -2528,6 +2565,9 @@ class MeshLog {
             this.map.on(ev, prune);
         });
 
+        // Clear selection when clicking on the map background
+        this.map.on('click', () => { this.clearSelection(); this.closeAllMarkerTooltips(true); });
+
         this.last = '2025-01-01 00:00:00';
     }
 
@@ -2625,6 +2665,24 @@ class MeshLog {
                     t.parentNode.removeChild(t);
                 }
             }
+        } catch (_) {}
+    }
+
+    clearSelection() {
+        try {
+            this.selectedMarkerId = null;
+            // close any open popups
+            try { this.map.closePopup(); } catch (_) {}
+            // remove leftover popup DOM nodes
+            try {
+                const container = this.map && this.map.getContainer ? this.map.getContainer() : document;
+                const popups = container.querySelectorAll ? container.querySelectorAll('.leaflet-popup') : [];
+                for (const p of popups) {
+                    if (p && p.parentNode) p.parentNode.removeChild(p);
+                }
+            } catch (_) {}
+            this.visible_markers.clear();
+            this.fadeMarkers(1);
         } catch (_) {}
     }
 
