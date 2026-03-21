@@ -1038,29 +1038,7 @@ class MeshLogContact extends MeshLogObject {
                 this._meshlog.clearSelection();
                 return;
             }
-
-            // Select this marker: open a persistent popup with full info and fade others
-            this._meshlog.clearSelection();
-            this._meshlog.selectedMarkerId = this.data.id;
-            try {
-                this.marker.closeTooltip();
-                if (this._markerHoverCloseTimer) {
-                    clearTimeout(this._markerHoverCloseTimer);
-                    this._markerHoverCloseTimer = null;
-                }
-            } catch (_) {}
-            const content = this.getMarkerTooltip();
-            const popup = L.popup({
-                className: 'compact-marker-popup',
-                maxWidth: 240,
-                closeOnClick: true,
-                autoClose: false,
-            }).setLatLng([this.adv.data.lat, this.adv.data.lon]).setContent(content);
-            popup.addTo(this._meshlog.map);
-
-            this._meshlog.visible_markers.clear();
-            this._meshlog.visible_markers.add(this.data.id);
-            this._meshlog.fadeMarkers();
+            this._meshlog.focusContact(this);
         } catch (err) {}
     }
 
@@ -2691,6 +2669,7 @@ class MeshLog {
         this.__init_contact_order();
         this.__init_contact_types();
         this.__init_warnings();
+        this._initMapSearchControl();
 
         this.link_layers.addTo(this.map);
 
@@ -2705,6 +2684,163 @@ class MeshLog {
         this.map.on('click', () => { this.clearSelection(); this.closeAllMarkerTooltips(true); });
 
         this.last = '2025-01-01 00:00:00';
+    }
+
+    _initMapSearchControl() {
+        const control = L.control({ position: 'topright' });
+
+        control.onAdd = () => {
+            const root = document.createElement('div');
+            root.className = 'map-search-control leaflet-bar';
+
+            const input = document.createElement('input');
+            input.type = 'search';
+            input.className = 'map-search-input';
+            input.placeholder = 'Search node';
+            input.autocomplete = 'off';
+            input.spellcheck = false;
+
+            const results = document.createElement('div');
+            results.className = 'map-search-results';
+            results.hidden = true;
+
+            root.append(input);
+            root.append(results);
+
+            L.DomEvent.disableClickPropagation(root);
+            L.DomEvent.disableScrollPropagation(root);
+
+            input.addEventListener('input', () => {
+                this._renderMapSearchResults(input.value);
+            });
+
+            input.addEventListener('focus', () => {
+                if (input.value.trim()) {
+                    this._renderMapSearchResults(input.value);
+                }
+            });
+
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    this._hideMapSearchResults();
+                    input.blur();
+                    return;
+                }
+
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+
+                const items = this._getSearchableContacts(input.value);
+                if (items.length < 1) return;
+                this.focusContact(items[0]);
+                this._hideMapSearchResults();
+            });
+
+            this._mapSearch = {
+                control,
+                root,
+                input,
+                results,
+            };
+
+            return root;
+        };
+
+        control.addTo(this.map);
+    }
+
+    _normalizeSearchText(value) {
+        return String(value ?? '').trim().toLowerCase();
+    }
+
+    _getSearchableContacts(query) {
+        const needle = this._normalizeSearchText(query);
+        if (!needle) return [];
+
+        return Object.values(this.contacts)
+            .filter(contact => contact?.adv && contact?.marker)
+            .filter(contact => {
+                const name = this._normalizeSearchText(contact.adv?.data?.name);
+                const key = this._normalizeSearchText(contact.data?.public_key);
+                const hash = this._normalizeSearchText(contact.hash);
+                return name.includes(needle) || key.includes(needle) || hash.includes(needle);
+            })
+            .sort((a, b) => {
+                const aName = this._normalizeSearchText(a.adv?.data?.name);
+                const bName = this._normalizeSearchText(b.adv?.data?.name);
+                return aName.localeCompare(bName);
+            });
+    }
+
+    _hideMapSearchResults() {
+        if (!this._mapSearch?.results) return;
+        this._mapSearch.results.hidden = true;
+        this._mapSearch.results.innerHTML = '';
+    }
+
+    _renderMapSearchResults(query) {
+        if (!this._mapSearch?.results) return;
+
+        const results = this._mapSearch.results;
+        const items = this._getSearchableContacts(query);
+        results.innerHTML = '';
+
+        if (!query.trim() || items.length < 1) {
+            results.hidden = true;
+            return;
+        }
+
+        items.forEach(contact => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'map-search-result';
+            item.innerHTML = `
+                <span class="map-search-result-name">${contact.adv?.data?.name ?? contact.data?.public_key ?? 'Unknown'}</span>
+                <span class="map-search-result-meta">[${contact.hash}] ${contact.getContactTypeLabel()}</span>
+            `;
+            item.addEventListener('click', () => {
+                this.focusContact(contact);
+                this._hideMapSearchResults();
+            });
+            results.append(item);
+        });
+
+        results.hidden = false;
+    }
+
+    focusContact(contact) {
+        if (!contact?.marker || !contact?.adv) return;
+
+        this.clearSelection();
+        this.selectedMarkerId = contact.data.id;
+
+        try {
+            contact.marker.closeTooltip();
+            if (contact._markerHoverCloseTimer) {
+                clearTimeout(contact._markerHoverCloseTimer);
+                contact._markerHoverCloseTimer = null;
+            }
+        } catch (_) {}
+
+        const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
+        const targetZoom = Math.max(this.map.getZoom(), 12);
+        this.map.flyTo(latLng, targetZoom, { duration: 0.35 });
+
+        const popup = L.popup({
+            className: 'compact-marker-popup',
+            maxWidth: 320,
+            closeOnClick: true,
+            autoClose: false,
+        }).setLatLng(latLng).setContent(contact.getMarkerTooltip());
+        popup.addTo(this.map);
+
+        this.visible_markers.clear();
+        this.visible_markers.add(contact.data.id);
+        this.fadeMarkers();
+
+        if (this._mapSearch?.input) {
+            this._mapSearch.input.value = contact.adv?.data?.name ?? '';
+        }
     }
 
     _initMapPanes() {
@@ -2807,6 +2943,7 @@ class MeshLog {
     clearSelection() {
         try {
             this.selectedMarkerId = null;
+            this._hideMapSearchResults?.();
             // close any open popups
             try { this.map.closePopup(); } catch (_) {}
             // remove leftover popup DOM nodes
