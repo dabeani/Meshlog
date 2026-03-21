@@ -353,7 +353,7 @@ class MeshLog {
                     $rep = $this->insertRawPacket($data, $reporter);
                     break;
                 default:
-                    $rep = $this->repError("Unknowwn type: $type");
+                    $rep = $this->repError("Unknown type: $type");
                     break;
             }
 
@@ -641,7 +641,6 @@ class MeshLog {
         return $pkt->save($this);
     }
 
-    // TODO
     private function insertSelfReport($data, $reporter) {
         if (!$reporter) return $this->repError('no reporter');
         if (empty($data['contact']) || empty($data['sys'])) return $this->repError('missing sys payload');
