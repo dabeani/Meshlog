@@ -1081,6 +1081,14 @@ class MeshLogContact extends MeshLogObject {
                 const tooltip = this.marker.getTooltip();
                 if (tooltip) {
                     tooltip.setContent(this.getMiniTooltip());
+                } else {
+                    this.marker.bindTooltip(this.getMiniTooltip(), {
+                        className: 'mini-tooltip',
+                        direction: 'auto',
+                        offset: [0, -10],
+                        sticky: false,
+                        interactive: false,
+                    });
                 }
                 this.marker.openTooltip();
             } catch (err) {}
