@@ -3178,7 +3178,7 @@ class MeshLog {
             packetMixLabel: overrides.packetMixLabel ?? 'No packets recorded',
             chartSvg: this._buildStatsChartSvg(buckets, windowHours),
             sourceLabel: overrides.sourceLabel ?? 'Database',
-            note: overrides.note ?? 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, CTRL, RAW).',,
+            note: overrides.note ?? 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, CTRL, RAW).',
             isLoading: overrides.isLoading ?? false,
             hasError: overrides.hasError ?? false,
             hasData: overrides.hasData ?? false,
