@@ -3086,17 +3086,22 @@ class MeshLog {
             };
         });
 
-        popupElement.querySelectorAll('.device-popup-neighbors-btn').forEach((button) => {
-            button.onclick = (event) => {
+        // Delegate neighbors-button clicks to the popup root.  This is robust
+        // against dynamic content updates (recreates of the popup DOM).
+        if (!popupElement.__meshlogNeighborsHandlerAttached) {
+            popupElement.addEventListener('click', (event) => {
+                const btn = event.target instanceof Element ? event.target.closest('.device-popup-neighbors-btn') : null;
+                if (!btn) return;
                 event.preventDefault();
                 event.stopPropagation();
-                const contact = this.contacts[Number(button.dataset.contactId)];
+                const contact = this.contacts[Number(btn.dataset.contactId)];
                 if (!contact) return;
                 contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
-                button.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
-                button.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
-            };
-        });
+                btn.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
+                btn.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
+            }, true);
+            popupElement.__meshlogNeighborsHandlerAttached = true;
+        }
     }
 
     updateSelectedContactPopup() {
