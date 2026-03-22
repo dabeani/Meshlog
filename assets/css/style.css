@@ -909,6 +909,27 @@ h2 {
     border-bottom: solid 1px #888;
 }
 
+.settings-panel {
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+    padding-bottom: 2px;
+}
+
+.settings-panel-title {
+    color: #f6f9fc;
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 8px 10px 2px;
+    font-weight: 700;
+}
+
+.settings-panel-subtitle {
+    color: rgba(205,220,238,0.6);
+    font-size: 0.74rem;
+    padding: 0 10px 6px;
+    line-height: 1.35;
+}
+
 .settings-card {
     display: grid;
     gap: 3px;
@@ -1093,7 +1114,7 @@ h2 {
     display: grid;
     place-items: center;
     background: rgba(0, 0, 0, 0.62);
-    z-index: 300;
+    z-index: 20000;
     padding: 20px;
 }
 

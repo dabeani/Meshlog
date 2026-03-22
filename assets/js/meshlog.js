@@ -1018,7 +1018,9 @@ class MeshLogContact extends MeshLogObject {
         let kl = 'marker-pin';
         const timeSyncWarning = this.hasReporterTimeSyncWarning();
 
-        if (this.isClient()) {
+        if (this.isReporter()) {
+            iconUrl = 'assets/img/receipt.svg';
+        } else if (this.isClient()) {
             iconUrl = 'assets/img/person.svg';
         } else if (this.isRepeater()) {
             iconUrl = 'assets/img/tower.svg';
@@ -1262,7 +1264,10 @@ class MeshLogContact extends MeshLogObject {
 
 
         let type = '';
-        if (this.isClient()) {
+        if (this.isReporter()) {
+            this.dom.contactIcon.src = "assets/img/receipt.svg";
+            type = 'Collector';
+        } else if (this.isClient()) {
             this.dom.contactIcon.src = "assets/img/person.svg";
             type = 'Chat';
         } else if (this.isRepeater()) {

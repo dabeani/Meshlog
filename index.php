@@ -52,12 +52,24 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
         <div id="logs"></div>
     </div>
     <div id="tab-devices" class="sidebar-tab-panel" hidden>
-        <div class="settings" id="settings-contacts"></div>
         <div id="contacts"></div>
     </div>
     <div id="tab-settings" class="sidebar-tab-panel" hidden>
-        <div id="settings-types"></div>
-        <div id="settings-reporters"></div>
+        <section class="settings-panel">
+            <div class="settings-panel-title">Live Feed</div>
+            <div class="settings-panel-subtitle">Control what appears in the live packet stream.</div>
+            <div id="settings-types"></div>
+        </section>
+        <section class="settings-panel" id="settings-reporters-panel" hidden>
+            <div class="settings-panel-title">Collectors</div>
+            <div class="settings-panel-subtitle">Collector filter controls are integrated in Live Feed.</div>
+            <div id="settings-reporters"></div>
+        </section>
+        <section class="settings-panel">
+            <div class="settings-panel-title">Device List</div>
+            <div class="settings-panel-subtitle">Configure sorting and visibility in the Devices tab list.</div>
+            <div class="settings" id="settings-contacts"></div>
+        </section>
         <section class="settings-card settings-about-card">
             <div class="settings-card-heading">
                 <div class="settings-card-title">About &amp; Admin</div>
