@@ -4,6 +4,7 @@ class MeshLogRawPacket extends MeshLogEntity {
     protected static $table = "raw_packets";
 
     public $reporter_id = null;
+    public $contact_id   = null;
 
     public $header = null;
     public $path = null;
@@ -61,6 +62,7 @@ class MeshLogRawPacket extends MeshLogEntity {
         $m->created_at = $data['created_at'];
 
         $m->reporter_id = $data['reporter_id'];
+        $m->contact_id  = isset($data['contact_id']) ? intval($data['contact_id']) : null;
 
         return $m;
     }
@@ -77,6 +79,7 @@ class MeshLogRawPacket extends MeshLogEntity {
         return array(
             'id' => $this->getId(),
             'reporter_id' => $this->reporter_id,
+            'contact_id' => $this->contact_id,
             'header' => $this->header,
             'path' => $this->path,
             'payload' => bin2hex($this->payload),
@@ -92,6 +95,7 @@ class MeshLogRawPacket extends MeshLogEntity {
     protected function getParams() {
         return array(
             "reporter_id" => array($this->reporter_id, PDO::PARAM_INT),
+            "contact_id"  => array($this->contact_id, PDO::PARAM_INT),
             "header" => array($this->header, PDO::PARAM_INT),
             "path" => array($this->path, PDO::PARAM_STR),
             "payload" => array($this->payload, PDO::PARAM_STR),

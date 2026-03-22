@@ -638,6 +638,33 @@ class MeshLog {
 
         $pkt = MeshLogRawPacket::fromJson($data, $this);
         $pkt->reporter_id = $reporter->getId();
+
+        // Try to link a contact when the decoded payload contains sender info.
+        // ANON_REQ packets carry the full 32-byte sender pubkey (64 hex chars).
+        // REQ/RESPONSE packets carry a single-byte src_hash derived from the
+        // sender's public_key — usable as a short-key lookup against contacts.
+        $payloadHex = $data['packet']['payload'] ?? '';
+        if ($pkt->decoded && $payloadHex) {
+            $meta = @json_decode(hex2bin($payloadHex), true);
+            if (is_array($meta)) {
+                $senderPubkey = $meta['sender_pubkey'] ?? null; // ANON_REQ: full 64-char hex key
+                $srcHash      = $meta['src_hash']      ?? null; // REQ/RESP: 1-byte hash
+
+                if ($senderPubkey && strlen($senderPubkey) === 64) {
+                    $contact = MeshLogContact::findBy('public_key', strtoupper($senderPubkey), $this);
+                    if ($contact) {
+                        $pkt->contact_id = $contact->getId();
+                    }
+                } elseif ($srcHash && strlen($srcHash) === 2) {
+                    // src_hash is only 1 byte — match against the first byte of each contact key
+                    $contact = MeshLogContact::findByHashPrefix(strtoupper($srcHash), $this);
+                    if ($contact) {
+                        $pkt->contact_id = $contact->getId();
+                    }
+                }
+            }
+        }
+
         return $pkt->save($this);
     }
 
@@ -1411,6 +1438,12 @@ class MeshLog {
             SELECT 'SYS' AS packet_type, created_at
             FROM system_reports
             WHERE contact_id = :contact_id_sys
+
+            UNION ALL
+
+            SELECT 'RAW' AS packet_type, created_at
+            FROM raw_packets
+            WHERE contact_id = :contact_id_raw
         ";
 
         $bindContact = function($stmt) use ($contactId) {
@@ -1419,6 +1452,7 @@ class MeshLog {
             $stmt->bindValue(':contact_id_pub', $contactId, PDO::PARAM_INT);
             $stmt->bindValue(':contact_id_tel', $contactId, PDO::PARAM_INT);
             $stmt->bindValue(':contact_id_sys', $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_raw', $contactId, PDO::PARAM_INT);
         };
 
         $summarySql = "
@@ -1506,9 +1540,7 @@ class MeshLog {
             'newest_created_at' => $summary['newest_created_at'] ?? null,
             'packet_mix' => $packetMix,
             'chart_buckets' => $buckets,
-            'note' => 'Includes contact-linked packets stored in the database.',
-            'raw_supported' => false,
-            'raw_note' => 'RAW packets are excluded because they are stored per reporter, not per contact.',
+            'note' => 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, RAW).',
         );
     }
 

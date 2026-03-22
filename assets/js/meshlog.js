@@ -933,7 +933,6 @@ class MeshLogContact extends MeshLogObject {
                     <div class="device-popup-range-group">${windowButtons}</div>
                 </div>
                 <div class="device-popup-note">${escapeXml(noteLine)}</div>
-                <div class="device-popup-note">${escapeXml(stats.rawSupportNote)}</div>
                 ${stats.chartSvg}
             </div>
         `;
@@ -3179,8 +3178,7 @@ class MeshLog {
             packetMixLabel: overrides.packetMixLabel ?? 'No packets recorded',
             chartSvg: this._buildStatsChartSvg(buckets, windowHours),
             sourceLabel: overrides.sourceLabel ?? 'Database',
-            note: overrides.note ?? 'Includes contact-linked packets stored in the database.',
-            rawSupportNote: overrides.rawSupportNote ?? 'RAW packets are excluded because they are stored per reporter, not per contact.',
+            note: overrides.note ?? 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, RAW).',
             isLoading: overrides.isLoading ?? false,
             hasError: overrides.hasError ?? false,
             hasData: overrides.hasData ?? false,
@@ -3213,8 +3211,7 @@ class MeshLog {
             packetMixLabel,
             buckets,
             sourceLabel: 'Database',
-            note: response?.note ?? 'Includes contact-linked packets stored in the database.',
-            rawSupportNote: response?.raw_note ?? 'RAW packets are excluded because they are stored per reporter, not per contact.',
+            note: response?.note ?? 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, RAW).',
             hasData: totalLoaded > 0,
         });
     }
