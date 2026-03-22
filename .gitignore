@@ -1,3 +1,4 @@
 config.php
 docker/.env
 node_modules/
+.github/
