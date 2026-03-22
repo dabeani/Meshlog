@@ -572,7 +572,7 @@ class MeshLogContact extends MeshLogObject {
                     // Link contains contact hash
                     // Simulate link up to contact and check if might be possible
 
-                    const prev = getReporterAnchor(reporter);
+                    let prev = getReporterAnchor(reporter);
                     if (!prev) return;
 
                     let end = hashes.length + 1;
@@ -3127,14 +3127,17 @@ class MeshLog {
         });
 
         popupElement.querySelectorAll('.device-popup-neighbors-btn').forEach((button) => {
-            L.DomEvent.on(button, 'click', (event) => {
-                L.DomEvent.stopPropagation(event);
+            // Use property assignment (not additive listeners) because popup content
+            // is refreshed frequently and this method runs multiple times.
+            button.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
                 const contact = this.contacts[Number(button.dataset.contactId)];
                 if (!contact) return;
                 contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
                 button.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
                 button.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
-            });
+            };
         });
     }
 
