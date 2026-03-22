@@ -228,12 +228,147 @@ All entity classes extend `MeshLogEntity` and follow the same pattern:
 
 ---
 
-## 6. MQTT Decoder — Key Rules
+## 6. MQTT Topics — Structure & Conventions
+
+### 6a. Topic Naming Convention
+
+All MQTT topics follow a hierarchical structure with a configurable prefix:
+
+```
+<MQTT_PREFIX>/<IATA>/<PUBLIC_KEY>/<SUBTOPIC>
+```
+
+**Components:**
+
+| Component | Description | Example | Constraints |
+|-----------|-------------|---------|------------|
+| `MQTT_PREFIX` | Broker root prefix (from `config.php`) | `meshcore` or `mesh` | Configurable, typically 1 segment |
+| `IATA` | Airport/region code (mesh network identifier) | `ZZZ`, `VEX`, `NYC` | 3-4 alphanumeric chars; case-insensitive |
+| `PUBLIC_KEY` | Reporter's Ed25519 public key | `a1b2c3d4...` (64 hex chars) | Uppercase hex, 64 chars (32-byte key); resolved to `reporters.public_key` |
+| `SUBTOPIC` | Message category | `packets`, `status`, `debug` | Determines payload format and handling |
+
+### 6b. Topic Subtypes & Payload Formats
+
+#### `<prefix>/<iata>/<pubkey>/packets` — Binary & Structured Packets
+
+The primary ingest topic for all MeshCore packet types. Supports two payload formats:
+
+**Format 1: Binary MeshCore Packets (`type: "PACKET"`)**
+
+```json
+{
+  "type": "PACKET",
+  "packet_type": 4,
+  "raw": "a1b2c3d4e5f6...",
+  "path": "AB->CD->EF",
+  "SNR": "10.5",
+  "hash": "abcdef01",
+  "hash_size": 1,
+  "timestamp": "2025-03-16T00:07:11",
+  "origin_id": "a1b2c3d4..."
+}
+```
+
+| Field | Type | Meaning | Handling |
+|-------|------|---------|----------|
+| `type` | string | Packet envelope type | Must be `"PACKET"` for binary decoding |
+| `packet_type` | int | MeshCore payload type (see §4a) | 2=TXT_MSG, 4=ADVERT, 5=GRP_TXT, etc. |
+| `raw` | string | Hex-encoded binary packet | Passed to `decodeAdvertPacket()`, etc. |
+| `path` | string | Relay path (hops) | Format: `HOP1->HOP2->...`, stored as-is |
+| `SNR` | string/float | Signal-to-noise ratio | Optional; numeric string or float |
+| `hash` | string | 8-byte hex packet hash | Used for deduplication |
+| `hash_size` | int | Hash implementation size (1, 2, 3 bytes) | Stored in DB; default 1 |
+| `timestamp` | string | ISO 8601 or Unix seconds | Normalized to milliseconds (Unix ms) |
+| `origin_id` | string | Sender public key (optional fallback) | Uppercase hex; used if reporter key not in topic |
+
+**Format 2: Pre-Decoded Structured Packets (`type: "ADV"`, `"MSG"`, `"PUB"`, etc.)**
+
+Firmware or custom bridges may send pre-decoded JSON matching the HTTP `log.php` schema:
+
+```json
+{
+  "type": "ADV",
+  "contact": "a1b2c3d4...",
+  "name": "Node-42",
+  "lat": 40.7128,
+  "lon": -74.0060,
+  "message_hash": "abcdef01",
+  "hash_size": 1,
+  "time": {
+    "sender": 1710599231000,
+    "local": 1710599231500,
+    "server": 1710599232000
+  }
+}
+```
+
+These bypass binary decoding and flow directly to `insertForReporter()` via the `STRUCTURED_TYPES` branch.
+
+#### `<prefix>/<iata>/<pubkey>/status` — Reporter Status & Heartbeat
+
+Status and health information from the reporter:
+
+```json
+{
+  "type": "STATUS",
+  "uptime_seconds": 86400,
+  "version": "1.2.3",
+  "signal_strength": -85,
+  "connected_peers": 5,
+  "timestamp": "2025-03-16T00:07:11"
+}
+```
+
+**Handling:** Currently not ingested; reserved for future telemetry aggregation.
+
+#### `<prefix>/<iata>/<pubkey>/debug` — Debug/Diagnostic Messages
+
+Diagnostic and logging output from the reporter:
+
+```json
+{
+  "type": "DEBUG",
+  "level": "INFO",
+  "message": "Packet forwarded successfully",
+  "timestamp": "2025-03-16T00:07:11"
+}
+```
+
+**Handling:** Currently not ingested; reserved for debugging bridge issues.
+
+### 6c. Reporter Key Resolution from Topic
+
+The MQTT decoder extracts the reporter's public key from the topic path in priority order:
+
+1. **Direct topic path**: Extract `<PUBLIC_KEY>` from `<prefix>/<iata>/<pubkey>/` — primary source
+2. **JSON payload fallback** (in order of precedence):
+   - `origin_id` field
+   - `public_key` field
+   - `pubkey` field
+   - `reporter` field
+
+The extracted key is:
+- **Normalized to uppercase hex** (case-insensitive input)
+- **Validated**: must be hex-only, even length, ≥ 4 chars (`MIN_REPORTER_KEY_LENGTH`)
+- **Stored as `attempted_reporter`** in `_mqtt` metadata for debugging
+- **Looked up in `reporters` table** to find `id` and `authorized` status
+
+#### Example Topic Parsing:
+
+```
+Input:  meshcore/ZZZ/a1B2c3d4e5f6...def0/packets
+Topic:  meshcore / ZZZ / a1B2c3d4e5f6...def0 / packets
+         [prefix] [iata] [PUBLIC_KEY]           [subtopic]
+Output: public_key = "A1B2C3D4E5F6...DEF0" (uppercase)
+```
+
+---
+
+## 7. MQTT Decoder — Key Rules
 
 File: `lib/meshlog.mqtt_decoder.class.php`
 
-- Reporter key is resolved from the MQTT **topic** first
-  (`<prefix>/<iata>/<pubkey>/(status|packets|debug)`), then from the JSON
+- Reporter key is resolved from the MQTT **topic** first (see §6c), then from the JSON
   payload (`origin_id`, `public_key`, `pubkey`, `reporter`).
 - The `attempted_reporter` in the returned `_mqtt` metadata is always the
   uppercase hex key used for DB lookup.
@@ -244,10 +379,13 @@ File: `lib/meshlog.mqtt_decoder.class.php`
   `decodeAdvertPacket()` before falling back to RAW storage.
 - `normalizeTimestampMs()` accepts Unix seconds, milliseconds, or ISO 8601
   strings; returns an `int` in **milliseconds**, or `$fallback` on failure.
+- **Structured type detection** (`STRUCTURED_TYPES` constant) recognizes
+  pre-decoded payloads by `type` field value (`ADV`, `MSG`, `PUB`, `SYS`, `TEL`, `RAW`).
+  These bypass binary packet decoding and flow directly to `insertForReporter()`.
 
 ---
 
-## 7. Ingest Routing — `insertForReporter()` Switch
+## 8. Ingest Routing — `insertForReporter()` Switch
 
 ```php
 switch ($data['type']) {
@@ -266,7 +404,7 @@ schema for its type.
 
 ---
 
-## 8. Database Schema (current, post-migration-008)
+## 9. Database Schema (current, post-migration-008)
 
 | Table | Key Columns |
 |-------|-------------|
@@ -292,7 +430,7 @@ Deduplication of ADV/MSG/PUB is done in code via
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 The repository has **no PHPUnit or dedicated test suite**.  The only automated
 check is PHP syntax linting:
@@ -305,7 +443,7 @@ Run this after every change.  All files must report "No syntax errors detected".
 
 ---
 
-## 10. Adding a New Packet Type (guide for agents)
+## 11. Adding a New Packet Type (guide for agents)
 
 1. Add a `PAYLOAD_TYPE_*` constant to `MeshLogMqttDecoder`.
 2. Add a `decode*Packet()` private static method in the same class.
@@ -319,7 +457,7 @@ Run this after every change.  All files must report "No syntax errors detected".
 
 ---
 
-## 11. Reporter Authorization
+## 12. Reporter Authorization
 
 - **HTTP path**: requires matching `public_key` + `Authorization: Bearer <auth>` header + `authorized=1`.
 - **MQTT path**: requires only matching `public_key` + `authorized=1` (no auth token check).
@@ -327,7 +465,7 @@ Run this after every change.  All files must report "No syntax errors detected".
 
 ---
 
-## 12. Docker / Deployment Notes
+## 13. Docker / Deployment Notes
 
 - `docker/docker-compose.yaml` version `"3.8"`.
 - Web port is configurable via `WEB_PORT` in `docker/.env` (default 80).
