@@ -1441,18 +1441,27 @@ class MeshLog {
 
             UNION ALL
 
+            -- CONTROL packets (payload_type = 11, derived from header byte)
+            SELECT 'CTRL' AS packet_type, created_at
+            FROM raw_packets
+            WHERE contact_id = :contact_id_ctrl AND (header >> 2) & 15 = 11
+
+            UNION ALL
+
+            -- All other raw packets (ACK, PATH, ANON_REQ, undecoded, etc.)
             SELECT 'RAW' AS packet_type, created_at
             FROM raw_packets
-            WHERE contact_id = :contact_id_raw
+            WHERE contact_id = :contact_id_raw AND (header >> 2) & 15 != 11
         ";
 
         $bindContact = function($stmt) use ($contactId) {
-            $stmt->bindValue(':contact_id_adv', $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_dir', $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_pub', $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_tel', $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_sys', $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_raw', $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_adv',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_dir',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_pub',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_tel',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_sys',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_ctrl', $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':contact_id_raw',  $contactId, PDO::PARAM_INT);
         };
 
         $summarySql = "
@@ -1540,7 +1549,7 @@ class MeshLog {
             'newest_created_at' => $summary['newest_created_at'] ?? null,
             'packet_mix' => $packetMix,
             'chart_buckets' => $buckets,
-            'note' => 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, RAW).',
+            'note' => 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, CTRL, RAW).',
         );
     }
 
