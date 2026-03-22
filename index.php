@@ -43,23 +43,36 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
 <div id="error"></div>
 <div id="container">
 <div id="leftbar">
-    <div class="settings" id="settings-types">
+    <div id="sidebar-tabs">
+        <button class="sidebar-tab active" data-tab="live">Live</button>
+        <button class="sidebar-tab" data-tab="devices">Devices</button>
+        <button class="sidebar-tab" data-tab="settings">Settings</button>
     </div>
-    <div class="settings" id="settings-reporters">
+    <div id="tab-live" class="sidebar-tab-panel">
+        <div class="settings" id="settings-types"></div>
+        <div class="settings" id="settings-reporters"></div>
+        <div id="logs"></div>
     </div>
-    <div id="logs"></div>
+    <div id="tab-devices" class="sidebar-tab-panel" hidden>
+        <div class="settings" id="settings-contacts"></div>
+        <div id="contacts"></div>
+    </div>
+    <div id="tab-settings" class="sidebar-tab-panel" hidden>
+        <div class="settings" id="about">MeshLog Web v1.99 (forked)</div>
+        <div class="settings-card" style="margin:8px">
+            <div class="settings-card-heading">
+                <div class="settings-card-title">Administration</div>
+            </div>
+            <div style="padding:8px;display:flex;flex-direction:column;gap:6px">
+                <a href="admin/" class="btn" style="text-align:center;text-decoration:none">Open Admin Panel</a>
+            </div>
+        </div>
+    </div>
 </div>
 <div id="midbar">
-    <div class="resize-bar" id="leftdrag"><button type="button" class="collapse-toggle" id="toggle-leftbar" title="Hide live feed sidebar" aria-label="Hide live feed sidebar">◀</button></div>
+    <div class="resize-bar" id="leftdrag"><button type="button" class="collapse-toggle" id="toggle-leftbar" title="Hide sidebar" aria-label="Hide sidebar">◀</button></div>
     <div id="map"></div>
     <div id="warning" hidden></div>
-    <div class="resize-bar" id="rightdrag"><button type="button" class="collapse-toggle" id="toggle-rightbar" title="Hide contacts sidebar" aria-label="Hide contacts sidebar">▶</button></div>
-</div>
-<div id="rightbar">
-    <div class="settings" id="settings-contacts">
-    </div>
-    <div class="settings" id="about">MeshLog Web v1.99 (forked)</div>
-    <div id="contacts"></div>
 </div>
 
 <div id="context-menu" class="menu">
@@ -208,13 +221,10 @@ class DragPair {
 }
 
 const leftBar = new Bar("leftbar", 33);
-const middleBar = new Bar("midbar", 47);
-const rightBar = new Bar("rightbar", 20);
+const middleBar = new Bar("midbar", 67);
 
 const dragLeft = new DragPair("leftdrag", leftBar, middleBar);
-const dragRight = new DragPair("rightdrag", middleBar, rightBar);
 const toggleLeftBar = document.getElementById('toggle-leftbar');
-const toggleRightBar = document.getElementById('toggle-rightbar');
 
 function syncCollapseButton(button, collapsed, direction, title) {
     button.innerText = collapsed ? (direction === '◀' ? '▶' : '◀') : direction;
@@ -241,41 +251,17 @@ function setLeftCollapsed(collapsed) {
     if (typeof map !== 'undefined' && map) map.invalidateSize();
 }
 
-function setRightCollapsed(collapsed) {
-    const total = middleBar.width + rightBar.width;
-    if (collapsed) {
-        if (rightBar.width > 0.5) {
-            rightBar.savedWidth = rightBar.width;
-        }
-        rightBar.setWidth(0, false);
-        middleBar.setWidth(total, false);
-    } else {
-        const restored = Math.min(Math.max(rightBar.savedWidth ?? 20, 18), Math.max(total - 18, 18));
-        rightBar.setWidth(restored, false);
-        middleBar.setWidth(total - restored, false);
-    }
-    Settings.set('layout.rightbar.collapsed', collapsed);
-    syncCollapseButton(toggleRightBar, collapsed, '▶', collapsed ? 'Show contacts sidebar' : 'Hide contacts sidebar');
-    if (typeof map !== 'undefined' && map) map.invalidateSize();
-}
-
 toggleLeftBar.addEventListener('click', () => {
     setLeftCollapsed(!Settings.getBool('layout.leftbar.collapsed', false));
-});
-
-toggleRightBar.addEventListener('click', () => {
-    setRightCollapsed(!Settings.getBool('layout.rightbar.collapsed', false));
 });
 
 function resize() {
     if (window.innerWidth <= 900) {
         leftBar.setTmpWidth(100);
         middleBar.setTmpWidth(100);
-        rightBar.setTmpWidth(100);
     } else {
         leftBar.resetWidth();
         middleBar.resetWidth();
-        rightBar.resetWidth();
     }
 }
 
@@ -285,10 +271,21 @@ window.addEventListener("resize", function() {
 
 const drags = new Drags("container");
 drags.add(dragLeft);
-drags.add(dragRight);
 
 setLeftCollapsed(Settings.getBool('layout.leftbar.collapsed', false));
-setRightCollapsed(Settings.getBool('layout.rightbar.collapsed', false));
+
+// Sidebar tab switching
+(function() {
+    const tabs   = document.querySelectorAll('.sidebar-tab');
+    const panels = document.querySelectorAll('.sidebar-tab-panel');
+    function activateTab(name) {
+        tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+        panels.forEach(p => { p.hidden = p.id !== 'tab-' + name; });
+        Settings.set('layout.sidebar.tab', name);
+    }
+    tabs.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+    activateTab(Settings.get('layout.sidebar.tab', 'live'));
+})();
 
 resize();
 

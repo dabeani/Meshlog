@@ -316,15 +316,58 @@ h2 {
     padding: 8px;
 }
 
-#leftbar, #rightbar {
+#leftbar {
     background: #262626;
     height: 100vh;
-    overflow-y: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
-#leftbar.bar-collapsed,
-#rightbar.bar-collapsed {
+#leftbar.bar-collapsed {
     overflow: hidden;
+}
+
+/* Sidebar tab bar */
+#sidebar-tabs {
+    display: flex;
+    flex-shrink: 0;
+    background: #1e1e1e;
+    border-bottom: 1px solid #444;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.sidebar-tab {
+    flex: 1;
+    padding: 9px 4px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.sidebar-tab:hover {
+    color: #ddd;
+    background: rgba(255,255,255,0.04);
+}
+
+.sidebar-tab.active {
+    color: #fff;
+    border-bottom-color: #4a9eff;
+}
+
+.sidebar-tab-panel {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 #midbar {
@@ -1171,12 +1214,8 @@ h2 {
         flex: auto;
         background: #262626;
         height: 50vh;
-        overflow-y: auto;
+        overflow: hidden;
         -webkit-overflow-scrolling: touch;
-    }
-
-    #rightbar {
-        display: none;
     }
 
     #midbar {
