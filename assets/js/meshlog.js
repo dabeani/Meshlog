@@ -3572,28 +3572,9 @@ class MeshLog {
             const badgeRow = document.createElement('div');
             badgeRow.className = 'settings-badge-row';
 
-            // Collapse button — state persisted in cookie
-            const collapseKey = 'group_collapsed.' + title.replace(/\W+/g, '_');
-            const collapseBtn = document.createElement('button');
-            collapseBtn.type = 'button';
-            collapseBtn.className = 'settings-collapse-btn';
-            const initCollapsed = Settings.getBool(collapseKey, false);
-            badgeRow.hidden = initCollapsed;
-            collapseBtn.innerText = initCollapsed ? '\u25B6' : '\u25BC';
-            collapseBtn.title = initCollapsed ? 'Expand' : 'Collapse';
-            const doToggle = () => {
-                const nowCollapsed = !badgeRow.hidden;
-                badgeRow.hidden = nowCollapsed;
-                collapseBtn.innerText = nowCollapsed ? '\u25B6' : '\u25BC';
-                collapseBtn.title = nowCollapsed ? 'Expand' : 'Collapse';
-                Settings.set(collapseKey, nowCollapsed);
-            };
-            collapseBtn.addEventListener('click', doToggle);
-            headingTitle.addEventListener('click', doToggle);
-
             const rightBtns = document.createElement('span');
             rightBtns.style.cssText = 'display:flex;gap:4px;align-items:center;flex-shrink:0';
-            rightBtns.append(collapseBtn, helpBtn);
+            rightBtns.append(helpBtn);
 
             heading.append(headingTitle, rightBtns);
             section.append(heading, badgeRow);

@@ -49,8 +49,6 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
         <button class="sidebar-tab" data-tab="settings">Settings</button>
     </div>
     <div id="tab-live" class="sidebar-tab-panel">
-        <div class="settings" id="settings-types"></div>
-        <div class="settings" id="settings-reporters"></div>
         <div id="logs"></div>
     </div>
     <div id="tab-devices" class="sidebar-tab-panel" hidden>
@@ -58,6 +56,8 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
         <div id="contacts"></div>
     </div>
     <div id="tab-settings" class="sidebar-tab-panel" hidden>
+        <div class="settings" id="settings-types"></div>
+        <div class="settings" id="settings-reporters"></div>
         <div class="settings" id="about">MeshLog Web v1.99 (forked)</div>
         <div class="settings-card" style="margin:8px">
             <div class="settings-card-heading">
