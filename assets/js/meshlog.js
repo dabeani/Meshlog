@@ -474,12 +474,50 @@ class MeshLogContact extends MeshLogObject {
     showNeighbors(rx=true, tx=true, markers=false) {
         if (this.isClient()) return; // not supported
 
+        const getReporterAnchor = (reporter) => {
+            if (!reporter) return null;
+
+            const reporterLat = Number(reporter?.data?.lat);
+            const reporterLon = Number(reporter?.data?.lon);
+            if (Number.isFinite(reporterLat) && Number.isFinite(reporterLon) && (reporterLat !== 0 || reporterLon !== 0)) {
+                return {
+                    lat: reporterLat,
+                    lon: reporterLon,
+                    contact_id: reporter.getContactId()
+                };
+            }
+
+            const reporterContactId = reporter.getContactId();
+            const reporterContact = this._meshlog.contacts[reporterContactId] ?? null;
+            if (reporterContact?.adv) {
+                const contactLat = Number(reporterContact.adv.data.lat);
+                const contactLon = Number(reporterContact.adv.data.lon);
+                if (Number.isFinite(contactLat) && Number.isFinite(contactLon) && (contactLat !== 0 || contactLon !== 0)) {
+                    return {
+                        lat: contactLat,
+                        lon: contactLon,
+                        contact_id: reporterContactId
+                    };
+                }
+            }
+
+            return null;
+        };
+
         let contactPairs = {
             pairs: {},
             addPair: (src, dst) => {
                 if (!src || !dst) return;
                 if (!src.adv || !dst.adv) return;
-                if (src.adv.data.lat == 0 && src.adv.data.lon == 0) return;
+
+                const srcLat = Number(src.adv.data.lat);
+                const srcLon = Number(src.adv.data.lon);
+                const dstLat = Number(dst.adv.data.lat);
+                const dstLon = Number(dst.adv.data.lon);
+                if (!Number.isFinite(srcLat) || !Number.isFinite(srcLon)) return;
+                if (!Number.isFinite(dstLat) || !Number.isFinite(dstLon)) return;
+                if (srcLat === 0 && srcLon === 0) return;
+                if (dstLat === 0 && dstLon === 0) return;
 
                 const key = `${src.data.id}_${dst.data.id}`;
 
@@ -518,9 +556,9 @@ class MeshLogContact extends MeshLogObject {
 
                         contactPairs.addPair(src, this._meshlog.contacts[reporter.getContactId()]);
                     } else {
-                        // to neareset contact
-                        let nearest = this._meshlog.findNearestContact(this.data.lat, this.data.lon, hashes[0], true);
-                        if (nearest.result) {
+                        // Use the selected contact's advertisement coordinates.
+                        let nearest = this._meshlog.findNearestContact(this.adv.data.lat, this.adv.data.lon, hashes[0], true);
+                        if (nearest?.result) {
                             contactPairs.addPair(src, nearest.result);
                         }
                     }
@@ -534,11 +572,8 @@ class MeshLogContact extends MeshLogObject {
                     // Link contains contact hash
                     // Simulate link up to contact and check if might be possible
 
-                    let prev = {
-                        lat: reporter.data.lat,
-                        lon: reporter.data.lon,
-                        contact_id: reporter.getContactId()
-                    };
+                    const prev = getReporterAnchor(reporter);
+                    if (!prev) return;
 
                     let end = hashes.length + 1;
                     let contacts = {0: src, [end]: this._meshlog.contacts[reporter.getContactId()] ?? null}
@@ -575,6 +610,11 @@ class MeshLogContact extends MeshLogObject {
                 }
             });
         });
+
+        if (Object.keys(contactPairs.pairs).length < 1) {
+            this.hideNeighbors();
+            return;
+        }
 
         Object.entries(contactPairs.pairs).forEach(([k,p]) => {
             let isTx = p.src == this;
