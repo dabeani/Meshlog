@@ -3087,7 +3087,7 @@ class MeshLog {
         });
 
         popupElement.querySelectorAll('.device-popup-neighbors-btn').forEach((button) => {
-            button.onclick = (event) => {
+            button.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 const contact = this.contacts[Number(button.dataset.contactId)];
@@ -3095,7 +3095,7 @@ class MeshLog {
                 contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
                 button.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
                 button.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
-            };
+            });
         });
     }
 
