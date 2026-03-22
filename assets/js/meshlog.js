@@ -3087,9 +3087,8 @@ class MeshLog {
         });
 
         popupElement.querySelectorAll('.device-popup-neighbors-btn').forEach((button) => {
-            button.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
+            L.DomEvent.on(button, 'click', (event) => {
+                L.DomEvent.stopPropagation(event);
                 const contact = this.contacts[Number(button.dataset.contactId)];
                 if (!contact) return;
                 contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
