@@ -921,6 +921,24 @@ h2 {
     border-bottom: none;
 }
 
+/* About & Admin card at the bottom of the Settings tab */
+.settings-about-card {
+    margin-top: auto;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.settings-about-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 0 4px;
+}
+
+.settings-about-version {
+    font-size: 0.78rem;
+    color: rgba(200,220,240,0.45);
+}
+
 .settings-card-heading {
     display: flex;
     align-items: center;

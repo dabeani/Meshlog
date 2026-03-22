@@ -370,6 +370,14 @@ class MeshLogContact extends MeshLogObject {
     static onclick(e) {
         this.expanded = !this.expanded;
         this.updateDom();
+        // Pan map to device when expanding, if it has valid coordinates
+        if (this.expanded && this._meshlog?.map && this.adv?.data) {
+            const lat = Number(this.adv.data.lat);
+            const lon = Number(this.adv.data.lon);
+            if (Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0)) {
+                this._meshlog.map.panTo([lat, lon]);
+            }
+        }
     }
 
     static onmouseover(e) {
@@ -3589,6 +3597,11 @@ class MeshLog {
         );
         this.dom_type_badges = liveFeedGroup.badgeRow;
         this.dom_type_badges_section = liveFeedGroup.section;
+        const collectorsGroup = createGroup(
+            'Collectors',
+            'Filter the live feed to only show packets received by the selected collector nodes. All collectors are active by default when no preference has been saved.'
+        );
+        this.dom_collectors_section = collectorsGroup.section;
         const channelGroup = createGroup(
             'Channel Filters',
             'Show or hide individual channels in the live feed. Each channel has a unique color that matches its badge in the feed entries.\n\nChannels shown as grey/dim have been disabled in the Admin panel and cannot be toggled here.'
@@ -3954,20 +3967,13 @@ class MeshLog {
             this._collectorFilterRow = null;
         }
         const reporters = Object.values(this.reporters);
-        // Append directly to the section (not inside the collapsible badgeRow)
-        // so the collector filter is always visible regardless of collapse state.
-        const container = this.dom_type_badges_section ?? this.dom_type_badges;
+        const container = this.dom_collectors_section ?? this.dom_type_badges_section ?? this.dom_type_badges;
         if (!container) return;
         if (reporters.length === 0) return;
 
         const row = document.createElement('div');
         row.className = 'collector-filter-row';
         this._collectorFilterRow = row;
-
-        const rowLabel = document.createElement('span');
-        rowLabel.className = 'collector-filter-label';
-        rowLabel.textContent = 'Collectors:';
-        row.append(rowLabel);
 
         // Read without writing a default — undefined means "all selected" (no preference stored).
         const isAllDefault = () => Settings.readCookie('reporterFilter.selected') === undefined;

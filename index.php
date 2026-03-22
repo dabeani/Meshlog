@@ -56,17 +56,17 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
         <div id="contacts"></div>
     </div>
     <div id="tab-settings" class="sidebar-tab-panel" hidden>
-        <div class="settings" id="settings-types"></div>
-        <div class="settings" id="settings-reporters"></div>
-        <div class="settings" id="about">MeshLog Web v1.99 (forked)</div>
-        <div class="settings-card" style="margin:8px">
+        <div id="settings-types"></div>
+        <div id="settings-reporters"></div>
+        <section class="settings-card settings-about-card">
             <div class="settings-card-heading">
-                <div class="settings-card-title">Administration</div>
+                <div class="settings-card-title">About &amp; Admin</div>
             </div>
-            <div style="padding:8px;display:flex;flex-direction:column;gap:6px">
+            <div class="settings-about-body">
+                <span class="settings-about-version">MeshLog Web v1.99 (forked)</span>
                 <a href="admin/" class="btn" style="text-align:center;text-decoration:none">Open Admin Panel</a>
             </div>
-        </div>
+        </section>
     </div>
 </div>
 <div id="midbar">
