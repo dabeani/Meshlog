@@ -2756,6 +2756,24 @@ class MeshLog {
             menu.style.display = 'none'; // Hide when clicking anywhere
         });
 
+        // Ensure neighbor-toggle buttons inside popups always work by
+        // using a single delegated document handler. This avoids fragility
+        // with popup DOM recreation and ensures clicks are handled early.
+        if (!this.__meshlogNeighborsDocumentHandlerAttached) {
+            document.addEventListener('click', (event) => {
+                const btn = event.target instanceof Element ? event.target.closest('.device-popup-neighbors-btn') : null;
+                if (!btn) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const contact = this.contacts[Number(btn.dataset.contactId)] ?? null;
+                if (!contact) return;
+                contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
+                btn.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
+                btn.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
+            }, true);
+            this.__meshlogNeighborsDocumentHandlerAttached = true;
+        }
+
         this.__init_message_types();
         this.__init_contact_order();
         this.__init_contact_types();
