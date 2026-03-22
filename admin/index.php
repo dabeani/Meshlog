@@ -42,6 +42,12 @@ if (!$user && isset($_POST['login'])) {
         $meshlog->auditLog(\MeshLogAuditLog::EVENT_LOGIN_FAIL, htmlspecialchars($username, ENT_QUOTES, 'UTF-8'), 'invalid password');
     }
 }
+
+// If logged in but DB upgrade is pending, redirect to setup.php to run migrations.
+if ($user && $meshlog->updateAvailable()) {
+    header('Location: ../setup.php');
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
