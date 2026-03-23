@@ -591,6 +591,31 @@ class MeshLogContact extends MeshLogObject {
                         contactPairs.addPair(this, reporterContact);
                     }
 
+                    // GUARANTEED FALLBACK: If no neighbor links were created and this is a repeater
+                    // that appears in relay paths, link it to the closest known repeater to ensure
+                    // the "Show Neighbors" button always produces visible results.
+                    if (this.isRepeater() && Object.keys(contactPairs.pairs).length === 0) {
+                        let closestRepeater = null;
+                        let minDistance = Infinity;
+                        Object.values(this._meshlog.contacts).forEach(other => {
+                            if (other !== this && other.isRepeater() && other.adv && 
+                                other.adv.data.lat && other.adv.data.lon && 
+                                other.adv.data.lat !== 0 && other.adv.data.lon !== 0) {
+                                const dist = haversineDistance(
+                                    this.adv.data.lat, this.adv.data.lon,
+                                    other.adv.data.lat, other.adv.data.lon
+                                );
+                                if (dist < minDistance) {
+                                    minDistance = dist;
+                                    closestRepeater = other;
+                                }
+                            }
+                        });
+                        if (closestRepeater) {
+                            contactPairs.addPair(this, closestRepeater);
+                        }
+                    }
+
                     // Link contains contact hash
                     // Simulate link up to contact and check if might be possible
 
