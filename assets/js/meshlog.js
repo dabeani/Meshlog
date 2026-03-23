@@ -670,6 +670,18 @@ class MeshLogContact extends MeshLogObject {
         this.neighbors_visible = false;
     }
 
+    toggleNeighbors() {
+        if (this.isClient()) return false;
+
+        if (this.neighbors_visible) {
+            this.hideNeighbors();
+        } else {
+            this.showNeighbors();
+        }
+
+        return this.neighbors_visible;
+    }
+
     createDom(recreate = false) {
         if (this.dom && !recreate) return this.dom;
 
@@ -726,24 +738,17 @@ class MeshLogContact extends MeshLogObject {
         divContainer.append(divContact);
         divContainer.append(divDetails);
 
-        const self = this;
         btnShowNeighbors.classList.add('btn');
         btnShowNeighbors.innerText = "Show Neighbors";
-        btnShowNeighbors.onclick = (e) => {
-            if (self.neighbors_visible) {
-                self.hideNeighbors();
+        btnShowNeighbors.onclick = (event) => {
+            if (this.toggleNeighbors()) {
+                event.target.innerText = "Hide Neighbors";
+                event.target.classList.add("active");
             } else {
-                self.showNeighbors();
+                event.target.innerText = "Show Neighbors";
+                event.target.classList.remove("active");
             }
-
-            if (self.neighbors_visible) {
-                e.target.innerText = "Hide Neighbors";
-                e.target.classList.add("active");
-            } else {
-                e.target.innerText = "Show Neighbors";
-                e.target.classList.remove("active");
-            }
-        }
+        };
 
         this.dom = {
             container: divContainer,
@@ -911,7 +916,7 @@ class MeshLogContact extends MeshLogObject {
             ? `<div class="device-popup-row"><span class="device-popup-key">Reporter</span><span class="device-popup-value">Yes</span></div>`
             : '';
         const neighborsHtml = !this.isClient()
-            ? `<div class="device-popup-section"><button type="button" class="device-popup-neighbors-btn${this.neighbors_visible ? ' device-popup-tab-active' : ''}" data-contact-id="${this.data.id}">${this.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors'}</button></div>`
+            ? `<div class="device-popup-section"><button type="button" class="device-popup-neighbors-btn${this.neighbors_visible ? ' device-popup-tab-active' : ''}" data-contact-id="${this.data.id}" data-popup-action="neighbors">${this.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors'}</button></div>`
             : '';
 
         return `
@@ -936,7 +941,7 @@ class MeshLogContact extends MeshLogObject {
         const stats = this._meshlog.getContactPacketStats(this.data.id, statsWindowHours);
         const windowButtons = [1, 24, 36].map(hours => {
             const active = hours === statsWindowHours ? ' device-popup-range-active' : '';
-            return `<button type="button" class="device-popup-range${active}" data-contact-id="${this.data.id}" data-hours="${hours}">${hours}h</button>`;
+            return `<button type="button" class="device-popup-range${active}" data-contact-id="${this.data.id}" data-popup-action="range" data-popup-value="${hours}">${hours}h</button>`;
         }).join('');
 
         const renderValue = (value) => {
@@ -998,8 +1003,8 @@ class MeshLogContact extends MeshLogObject {
                     <span class="device-popup-badge device-popup-badge-status">${escapeXml(this.getMarkerStatusLabel())}</span>
                 </div>
                 <div class="device-popup-tabs" data-contact-id="${this.data.id}">
-                    <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-tab="general">General</button>
-                    <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-tab="stats">Stats</button>
+                    <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="general">General</button>
+                    <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="stats">Stats</button>
                 </div>
                 <div class="device-popup-panel">${bodyHtml}</div>
             </div>
@@ -2980,6 +2985,16 @@ class MeshLog {
                 statsWindowHours: hours,
             };
             this.openContactPopup(contact);
+            return;
+        }
+
+        if (action === 'neighbors') {
+            contact.toggleNeighbors();
+            this.popupUiState = {
+                ...this.popupUiState,
+                tab: 'general',
+            };
+            this.openContactPopup(contact);
         }
     }
 
@@ -3126,35 +3141,19 @@ class MeshLog {
     }
 
     _wirePopupControls(popupElement) {
-        popupElement.querySelectorAll('.device-popup-tab').forEach((button) => {
-            button.onclick = (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.handlePopupAction(Number(button.dataset.contactId), 'tab', button.dataset.tab);
-            };
-        });
+        popupElement.onclick = (event) => {
+            const button = event.target.closest('[data-popup-action]');
+            if (!button || !popupElement.contains(button)) return;
 
-        popupElement.querySelectorAll('.device-popup-range').forEach((button) => {
-            button.onclick = (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.handlePopupAction(Number(button.dataset.contactId), 'range', Number(button.dataset.hours));
-            };
-        });
+            event.preventDefault();
+            event.stopPropagation();
 
-        popupElement.querySelectorAll('.device-popup-neighbors-btn').forEach((button) => {
-            // Use property assignment (not additive listeners) because popup content
-            // is refreshed frequently and this method runs multiple times.
-            button.onclick = (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const contact = this.contacts[Number(button.dataset.contactId)];
-                if (!contact) return;
-                contact.neighbors_visible ? contact.hideNeighbors() : contact.showNeighbors();
-                button.textContent = contact.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors';
-                button.classList.toggle('device-popup-tab-active', contact.neighbors_visible);
-            };
-        });
+            this.handlePopupAction(
+                Number(button.dataset.contactId),
+                button.dataset.popupAction,
+                button.dataset.popupValue
+            );
+        };
     }
 
     updateSelectedContactPopup() {
