@@ -1138,7 +1138,7 @@ class MeshLogContact extends MeshLogObject {
                 });
             }
             this.marker.openTooltip();
-        } catch (err) {}
+        } catch (err) { void err; }
     }
 
     static _onMarkerMouseOut(e) {
@@ -1153,7 +1153,7 @@ class MeshLogContact extends MeshLogObject {
                 if (this._markerHoverActive) return;
                 this.marker.closeTooltip();
             }, 90);
-        } catch (err) {}
+        } catch (err) { void err; }
     }
 
     static _onMarkerClick(e) {
@@ -1164,7 +1164,7 @@ class MeshLogContact extends MeshLogObject {
                 return;
             }
             this._meshlog.focusContact(this);
-        } catch (err) {}
+        } catch (err) { void err; }
     }
 
     setMarkerPane(active) {
@@ -1216,11 +1216,11 @@ class MeshLogContact extends MeshLogObject {
                     });
                 }
                 this.marker.openTooltip();
-            } catch (err) {}
+            } catch (err) { void err; }
         } else {
             try {
                 this.marker.closeTooltip();
-            } catch (err) {}
+            } catch (err) { void err; }
         }
     }
 
@@ -3022,7 +3022,7 @@ class MeshLog {
                 clearTimeout(contact._markerHoverCloseTimer);
                 contact._markerHoverCloseTimer = null;
             }
-        } catch (_) {}
+        } catch (_) { void _; }
 
         const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
         const targetZoom = Math.max(this.map.getZoom(), 12);
@@ -3052,7 +3052,7 @@ class MeshLog {
                 clearTimeout(contact._markerHoverCloseTimer);
                 contact._markerHoverCloseTimer = null;
             }
-        } catch (_) {}
+        } catch (_) { void _; }
 
         const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
         const targetZoom = Math.max(this.map.getZoom(), 12);
@@ -3430,17 +3430,17 @@ class MeshLog {
             Object.values(this.contacts).forEach(c => {
                 if (c && c.marker) {
                     if (preservedId !== null && c.data?.id === preservedId) return;
-                    try { c.marker.closeTooltip(); } catch (_) {}
+                    try { c.marker.closeTooltip(); } catch (_) { void _; }
                 }
             });
-        } catch (_) {}
+        } catch (_) { void _; }
         try {
             Object.values(this.reporters).forEach(r => {
                 if (r && r.marker) {
-                    try { r.marker.closeTooltip(); } catch (_) {}
+                    try { r.marker.closeTooltip(); } catch (_) { void _; }
                 }
             });
-        } catch (_) {}
+        } catch (_) { void _; }
 
         // Remove any leftover marker mini-tooltip DOM nodes inside the map container.
         // Do not touch other tooltip types such as route hop distance tooltips.
@@ -3453,21 +3453,21 @@ class MeshLog {
                     t.parentNode.removeChild(t);
                 }
             }
-        } catch (_) {}
+        } catch (_) { void _; }
     }
 
     clearSelection() {
         try {
             if (this.previewFocusedContactId) {
                 const previewContact = this.contacts[this.previewFocusedContactId] ?? null;
-                try { previewContact?.showLabel(false); } catch (_) {}
+                try { previewContact?.showLabel(false); } catch (_) { void _; }
             }
             this.previewFocusedContactId = null;
             this.selectedMarkerId = null;
             this.activePopupContactId = null;
             this._hideMapSearchResults?.();
             // close any open popups
-            try { this.map.closePopup(); } catch (_) {}
+            try { this.map.closePopup(); } catch (_) { void _; }
             this.activeContactPopup = null;
             // remove leftover popup DOM nodes
             try {
@@ -3476,10 +3476,10 @@ class MeshLog {
                 for (const p of popups) {
                     if (p && p.parentNode) p.parentNode.removeChild(p);
                 }
-            } catch (_) {}
+            } catch (_) { void _; }
             this.visible_markers.clear();
             this.fadeMarkers(1);
-        } catch (_) {}
+        } catch (_) { void _; }
     }
 
     _startRouteLineAnimation(lineGlow, line2, baseWeight) {
