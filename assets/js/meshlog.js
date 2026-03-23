@@ -739,8 +739,12 @@ class MeshLogContact extends MeshLogObject {
         divContainer.append(divDetails);
 
         btnShowNeighbors.classList.add('btn');
+        btnShowNeighbors.classList.add('contact-neighbors-btn');
+        btnShowNeighbors.dataset.contactId = `${this.data.id}`;
         btnShowNeighbors.innerText = "Show Neighbors";
         btnShowNeighbors.onclick = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
             if (this.toggleNeighbors()) {
                 event.target.innerText = "Hide Neighbors";
                 event.target.classList.add("active");
@@ -1248,6 +1252,10 @@ class MeshLogContact extends MeshLogObject {
         this.dom.container.dataset.hash = hashstr;
         this.dom.container.dataset.first_seen = parseMeshlogTimestamp(this.data.created_at);
         this.dom.details.hidden = !this.expanded;
+        if (this.dom.btnShowNeighbors) {
+            this.dom.btnShowNeighbors.innerText = this.neighbors_visible ? "Hide Neighbors" : "Show Neighbors";
+            this.dom.btnShowNeighbors.classList.toggle("active", this.neighbors_visible);
+        }
 
         if (this.isVeryExpired()) { // 3 days
             this.dom.contactDate.classList.add("prio-6");
@@ -3814,6 +3822,21 @@ class MeshLog {
     }
 
     handleMouseEvent(e) {
+        const neighborButton = e.target.closest('.contact-neighbors-btn');
+        if (neighborButton) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const contactId = Number(neighborButton.dataset.contactId);
+            if (!Number.isFinite(contactId)) return;
+            const contact = this.contacts[contactId] ?? null;
+            if (!contact) return;
+
+            contact.toggleNeighbors();
+            contact.updateDom();
+            return;
+        }
+
         const el = e.target.closest('.log-entry');
         if (!el) return;
 
