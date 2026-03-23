@@ -474,6 +474,13 @@ class MeshLogContact extends MeshLogObject {
     showNeighbors(rx=true, tx=true, markers=false) {
         if (this.isClient()) return; // not supported
 
+        const getReporterContact = (reporter) => {
+            if (!reporter) return null;
+            const reporterContactId = reporter.getContactId();
+            if (!Number.isFinite(reporterContactId) || reporterContactId < 0) return null;
+            return this._meshlog.contacts[reporterContactId] ?? null;
+        };
+
         const getReporterAnchor = (reporter) => {
             if (!reporter) return null;
 
@@ -560,6 +567,13 @@ class MeshLogContact extends MeshLogObject {
                         let nearest = this._meshlog.findNearestContact(this.adv.data.lat, this.adv.data.lon, hashes[0], true);
                         if (nearest?.result) {
                             contactPairs.addPair(src, nearest.result);
+                        } else {
+                            // Fallback: if the next hop cannot be resolved, still show
+                            // the selected node's relation to the receiving reporter.
+                            const reporterContact = getReporterContact(reporter);
+                            if (reporterContact) {
+                                contactPairs.addPair(src, reporterContact);
+                            }
                         }
                     }
                 } else {
@@ -569,6 +583,14 @@ class MeshLogContact extends MeshLogObject {
                     if (idx < 0) return;
                     idx += 1;
 
+                    const reporterContact = getReporterContact(reporter);
+                    if (reporterContact) {
+                        // Always keep a direct fallback edge to the reporter when
+                        // this node appears in the relay path but hop reconstruction
+                        // is ambiguous or missing telemetry.
+                        contactPairs.addPair(this, reporterContact);
+                    }
+
                     // Link contains contact hash
                     // Simulate link up to contact and check if might be possible
 
@@ -576,7 +598,7 @@ class MeshLogContact extends MeshLogObject {
                     if (!prev) return;
 
                     let end = hashes.length + 1;
-                    let contacts = {0: src, [end]: this._meshlog.contacts[reporter.getContactId()] ?? null}
+                    let contacts = {0: src, [end]: reporterContact}
 
                     for (let i=hashes.length-1;i>=0;i--) {
                         let hash = hashes[i];
