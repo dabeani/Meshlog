@@ -18,6 +18,7 @@
     include 'migrations/013_add_system_reports.php';
     include 'migrations/014_add_report_sender_at.php';
     include 'migrations/015_add_raw_packet_contact.php';
+    include 'migrations/016_add_route_type.php';
 
     // Must be in order!
     $migrationClasses = array(
@@ -37,6 +38,7 @@
         'Migration_013',
         'Migration_014',
         'Migration_015',
+        'Migration_016',
     );
 
     session_start();
