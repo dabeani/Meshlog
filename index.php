@@ -46,6 +46,7 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
     <div id="sidebar-tabs">
         <button class="sidebar-tab active" data-tab="live">Live</button>
         <button class="sidebar-tab" data-tab="devices">Devices</button>
+        <button class="sidebar-tab" data-tab="stats">Stats</button>
         <button class="sidebar-tab" data-tab="settings">Settings</button>
     </div>
     <div id="tab-live" class="sidebar-tab-panel">
@@ -58,6 +59,13 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
             <div class="settings" id="settings-contacts"></div>
         </section>
         <div id="contacts"></div>
+    </div>
+    <div id="tab-stats" class="sidebar-tab-panel" hidden>
+        <section class="settings-panel">
+            <div class="settings-panel-title">General Statistics</div>
+            <div class="settings-panel-subtitle">Advertisement activity across the whole mesh for the last 1, 24, or 36 hours.</div>
+        </section>
+        <div id="general-stats"></div>
     </div>
     <div id="tab-settings" class="sidebar-tab-panel" hidden>
         <section class="settings-panel">
@@ -294,6 +302,9 @@ setLeftCollapsed(Settings.getBool('layout.leftbar.collapsed', false));
         tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
         panels.forEach(p => { p.hidden = p.id !== 'tab-' + name; });
         Settings.set('layout.sidebar.tab', name);
+        if (name === 'stats' && window.meshlog && typeof window.meshlog.refreshGeneralStatsPanel === 'function') {
+            window.meshlog.refreshGeneralStatsPanel();
+        }
     }
     tabs.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
     activateTab(Settings.get('layout.sidebar.tab', 'live'));
@@ -356,6 +367,9 @@ var meshlog = new MeshLog(
 );
 meshlog.loadAll();
 meshlog.setAutorefresh(10000);
+if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
+    meshlog.refreshGeneralStatsPanel();
+}
 
 // App help dialog
 (function() {

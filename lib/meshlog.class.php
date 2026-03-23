@@ -22,7 +22,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 15;
+    private $version = 16;
     private $ntpConfig = array(
         'enabled' => true,
         'host' => 'pool.ntp.org',
@@ -1162,6 +1162,7 @@ class MeshLog {
                             'reporter_id', r.reporter_id,
                             'snr', r.snr,
                             'scope', r.scope,
+                            'route_type', r.route_type,
                             'path', r.path,
                             'sender_at', r.sender_at,
                             'received_at', r.received_at,
@@ -1550,6 +1551,222 @@ class MeshLog {
             'packet_mix' => $packetMix,
             'chart_buckets' => $buckets,
             'note' => 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, CTRL, RAW).',
+        );
+    }
+
+    public function getGeneralAdvertisementStats($windowHours = 24) {
+        $windowHours = intval($windowHours);
+        if (!in_array($windowHours, array(1, 24, 36), true)) {
+            $windowHours = 24;
+        }
+
+        $bucketCount = 12;
+        if ($windowHours === 24) $bucketCount = 24;
+        if ($windowHours === 36) $bucketCount = 18;
+
+        $bucketSeconds = max(1, intval(($windowHours * 3600) / $bucketCount));
+        $bucketMaxIndex = $bucketCount - 1;
+
+        $summarySql = "
+            SELECT
+                COUNT(*) AS total_reports,
+                COUNT(DISTINCT ar.advertisement_id) AS total_advertisements,
+                COUNT(DISTINCT a.contact_id) AS unique_devices,
+                COUNT(DISTINCT ar.reporter_id) AS unique_collectors,
+                MIN(ar.created_at) AS oldest_created_at,
+                MAX(ar.created_at) AS newest_created_at,
+                SUM(CASE WHEN ar.route_type IN (2, 3) THEN 1 ELSE 0 END) AS direct_reports,
+                SUM(CASE WHEN ar.route_type IN (0, 1) THEN 1 ELSE 0 END) AS flood_reports,
+                SUM(CASE WHEN ar.route_type IS NULL THEN 1 ELSE 0 END) AS unknown_route_reports,
+                SUM(CASE WHEN ar.path IS NULL OR ar.path = '' THEN 1 ELSE 0 END) AS no_hop_reports,
+                SUM(CASE WHEN ar.path IS NOT NULL AND ar.path != '' THEN 1 ELSE 0 END) AS relayed_reports
+            FROM advertisement_reports ar
+            INNER JOIN advertisements a ON a.id = ar.advertisement_id
+            WHERE ar.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+              AND ar.created_at <= NOW()
+        ";
+
+        $summaryStmt = $this->pdo->prepare($summarySql);
+        $summaryStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $summaryStmt->execute();
+        $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: array();
+
+        $bucketSql = "
+            SELECT bucket_index, COUNT(*) AS report_count
+            FROM (
+                SELECT
+                    GREATEST(
+                        0,
+                        LEAST(
+                            :bucket_max_index,
+                            :bucket_max_index - FLOOR(TIMESTAMPDIFF(SECOND, ar.created_at, NOW()) / :bucket_seconds)
+                        )
+                    ) AS bucket_index
+                FROM advertisement_reports ar
+                WHERE ar.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+                  AND ar.created_at <= NOW()
+            ) bucketed
+            GROUP BY bucket_index
+            ORDER BY bucket_index ASC
+        ";
+
+        $bucketStmt = $this->pdo->prepare($bucketSql);
+        $bucketStmt->bindValue(':bucket_max_index', $bucketMaxIndex, PDO::PARAM_INT);
+        $bucketStmt->bindValue(':bucket_seconds', $bucketSeconds, PDO::PARAM_INT);
+        $bucketStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $bucketStmt->execute();
+
+        $chartBuckets = array_fill(0, $bucketCount, 0);
+        while ($row = $bucketStmt->fetch(PDO::FETCH_ASSOC)) {
+            $bucketIndex = intval($row['bucket_index'] ?? -1);
+            if ($bucketIndex < 0 || $bucketIndex >= $bucketCount) continue;
+            $chartBuckets[$bucketIndex] = intval($row['report_count'] ?? 0);
+        }
+
+                $deviceBucketSql = "
+                        SELECT bucket_index, COUNT(DISTINCT contact_id) AS device_count
+                        FROM (
+                                SELECT
+                                        a.contact_id,
+                                        GREATEST(
+                                                0,
+                                                LEAST(
+                                                        :bucket_max_index,
+                                                        :bucket_max_index - FLOOR(TIMESTAMPDIFF(SECOND, ar.created_at, NOW()) / :bucket_seconds)
+                                                )
+                                        ) AS bucket_index
+                                FROM advertisement_reports ar
+                                INNER JOIN advertisements a ON a.id = ar.advertisement_id
+                                WHERE ar.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+                                    AND ar.created_at <= NOW()
+                        ) bucketed
+                        GROUP BY bucket_index
+                        ORDER BY bucket_index ASC
+                ";
+
+                $deviceBucketStmt = $this->pdo->prepare($deviceBucketSql);
+                $deviceBucketStmt->bindValue(':bucket_max_index', $bucketMaxIndex, PDO::PARAM_INT);
+                $deviceBucketStmt->bindValue(':bucket_seconds', $bucketSeconds, PDO::PARAM_INT);
+                $deviceBucketStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+                $deviceBucketStmt->execute();
+
+                $deviceChartBuckets = array_fill(0, $bucketCount, 0);
+                while ($row = $deviceBucketStmt->fetch(PDO::FETCH_ASSOC)) {
+                        $bucketIndex = intval($row['bucket_index'] ?? -1);
+                        if ($bucketIndex < 0 || $bucketIndex >= $bucketCount) continue;
+                        $deviceChartBuckets[$bucketIndex] = intval($row['device_count'] ?? 0);
+                }
+
+                $collectorSql = "
+                        SELECT
+                                totals.reporter_id,
+                                COALESCE(r.name, CONCAT('Collector ', totals.reporter_id)) AS reporter_name,
+                                COALESCE(r.public_key, '') AS public_key,
+                                COALESCE(r.style, '{}') AS style,
+                                SUM(totals.packet_count) AS total_packets,
+                                SUM(CASE WHEN totals.packet_type = 'ADV' THEN totals.packet_count ELSE 0 END) AS adv_packets,
+                                SUM(CASE WHEN totals.packet_type = 'DIR' THEN totals.packet_count ELSE 0 END) AS dir_packets,
+                                SUM(CASE WHEN totals.packet_type = 'PUB' THEN totals.packet_count ELSE 0 END) AS pub_packets,
+                                SUM(CASE WHEN totals.packet_type = 'TEL' THEN totals.packet_count ELSE 0 END) AS tel_packets,
+                                SUM(CASE WHEN totals.packet_type = 'SYS' THEN totals.packet_count ELSE 0 END) AS sys_packets,
+                                SUM(CASE WHEN totals.packet_type = 'RAW' THEN totals.packet_count ELSE 0 END) AS raw_packets
+                        FROM (
+                                SELECT ar.reporter_id, 'ADV' AS packet_type, COUNT(*) AS packet_count
+                                FROM advertisement_reports ar
+                                WHERE ar.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_adv HOUR)
+                                    AND ar.created_at <= NOW()
+                                GROUP BY ar.reporter_id
+
+                                UNION ALL
+
+                                SELECT dr.reporter_id, 'DIR' AS packet_type, COUNT(*) AS packet_count
+                                FROM direct_message_reports dr
+                                WHERE dr.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_dir HOUR)
+                                    AND dr.created_at <= NOW()
+                                GROUP BY dr.reporter_id
+
+                                UNION ALL
+
+                                SELECT cr.reporter_id, 'PUB' AS packet_type, COUNT(*) AS packet_count
+                                FROM channel_message_reports cr
+                                WHERE cr.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_pub HOUR)
+                                    AND cr.created_at <= NOW()
+                                GROUP BY cr.reporter_id
+
+                                UNION ALL
+
+                                SELECT t.reporter_id, 'TEL' AS packet_type, COUNT(*) AS packet_count
+                                FROM telemetry t
+                                WHERE t.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_tel HOUR)
+                                    AND t.created_at <= NOW()
+                                GROUP BY t.reporter_id
+
+                                UNION ALL
+
+                                SELECT s.reporter_id, 'SYS' AS packet_type, COUNT(*) AS packet_count
+                                FROM system_reports s
+                                WHERE s.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_sys HOUR)
+                                    AND s.created_at <= NOW()
+                                GROUP BY s.reporter_id
+
+                                UNION ALL
+
+                                SELECT rp.reporter_id, 'RAW' AS packet_type, COUNT(*) AS packet_count
+                                FROM raw_packets rp
+                                WHERE rp.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_raw HOUR)
+                                    AND rp.created_at <= NOW()
+                                GROUP BY rp.reporter_id
+                        ) totals
+                        LEFT JOIN reporters r ON r.id = totals.reporter_id
+                        GROUP BY totals.reporter_id, reporter_name, public_key, style
+                        ORDER BY total_packets DESC, reporter_name ASC, totals.reporter_id ASC
+                ";
+
+                $collectorStmt = $this->pdo->prepare($collectorSql);
+                $collectorStmt->bindValue(':window_hours_adv', $windowHours, PDO::PARAM_INT);
+                $collectorStmt->bindValue(':window_hours_dir', $windowHours, PDO::PARAM_INT);
+                $collectorStmt->bindValue(':window_hours_pub', $windowHours, PDO::PARAM_INT);
+                $collectorStmt->bindValue(':window_hours_tel', $windowHours, PDO::PARAM_INT);
+                $collectorStmt->bindValue(':window_hours_sys', $windowHours, PDO::PARAM_INT);
+                $collectorStmt->bindValue(':window_hours_raw', $windowHours, PDO::PARAM_INT);
+                $collectorStmt->execute();
+
+                $collectorTotals = array();
+                while ($row = $collectorStmt->fetch(PDO::FETCH_ASSOC)) {
+                        $collectorTotals[] = array(
+                                'reporter_id' => intval($row['reporter_id'] ?? 0),
+                                'reporter_name' => $row['reporter_name'] ?? '',
+                                'public_key' => $row['public_key'] ?? '',
+                                'style' => $row['style'] ?? '{}',
+                                'total_packets' => intval($row['total_packets'] ?? 0),
+                                'adv_packets' => intval($row['adv_packets'] ?? 0),
+                                'dir_packets' => intval($row['dir_packets'] ?? 0),
+                                'pub_packets' => intval($row['pub_packets'] ?? 0),
+                                'tel_packets' => intval($row['tel_packets'] ?? 0),
+                                'sys_packets' => intval($row['sys_packets'] ?? 0),
+                                'raw_packets' => intval($row['raw_packets'] ?? 0),
+                        );
+                }
+
+        return array(
+            'window_hours' => $windowHours,
+            'bucket_count' => $bucketCount,
+            'bucket_seconds' => $bucketSeconds,
+            'total_reports' => intval($summary['total_reports'] ?? 0),
+            'total_advertisements' => intval($summary['total_advertisements'] ?? 0),
+            'unique_devices' => intval($summary['unique_devices'] ?? 0),
+            'unique_collectors' => intval($summary['unique_collectors'] ?? 0),
+            'direct_reports' => intval($summary['direct_reports'] ?? 0),
+            'flood_reports' => intval($summary['flood_reports'] ?? 0),
+            'unknown_route_reports' => intval($summary['unknown_route_reports'] ?? 0),
+            'no_hop_reports' => intval($summary['no_hop_reports'] ?? 0),
+            'relayed_reports' => intval($summary['relayed_reports'] ?? 0),
+            'oldest_created_at' => $summary['oldest_created_at'] ?? null,
+            'newest_created_at' => $summary['newest_created_at'] ?? null,
+            'chart_buckets' => $chartBuckets,
+            'unique_device_buckets' => $deviceChartBuckets,
+            'collector_totals' => $collectorTotals,
+            'note' => 'Counts advertisement report receptions in the selected time window. Direct and flood values require route metadata; older rows may remain unclassified. Collector totals aggregate all stored packets by collector for the same window.',
         );
     }
 

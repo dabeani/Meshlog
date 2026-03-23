@@ -942,6 +942,182 @@ h2 {
     border-bottom: none;
 }
 
+.general-stats-shell {
+    gap: 10px;
+    padding: 10px;
+}
+
+.general-stats-toolbar,
+.general-stats-chart-head,
+.general-stats-footnotes {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.general-stats-range-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.general-stats-range {
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.04);
+    color: rgba(220,235,248,0.72);
+    cursor: pointer;
+    font-size: 0.74rem;
+    font-weight: 600;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.general-stats-range:hover {
+    background: rgba(255,255,255,0.14);
+    color: #fff;
+}
+
+.general-stats-range-active {
+    background: rgba(82,130,200,0.34);
+    border-color: rgba(100,160,230,0.5);
+    color: #d8ebff;
+}
+
+.general-stats-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.general-stats-card {
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, rgba(72,96,128,0.18), rgba(18,24,32,0.52));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.general-stats-card-label,
+.general-stats-meta,
+.general-stats-note {
+    font-size: 0.74rem;
+    line-height: 1.4;
+}
+
+.general-stats-card-label,
+.general-stats-meta {
+    color: rgba(205,220,238,0.66);
+}
+
+.general-stats-card-value {
+    margin-top: 4px;
+    color: #f6fbff;
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.general-stats-note {
+    color: rgba(220,235,248,0.76);
+}
+
+.general-stats-note-error {
+    color: #ffb5b5;
+}
+
+.collector-stats-list {
+    display: grid;
+    gap: 10px;
+}
+
+.collector-stats-row {
+    display: grid;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(7, 11, 16, 0.34);
+}
+
+.collector-stats-head,
+.collector-stats-name-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.collector-stats-head {
+    justify-content: space-between;
+}
+
+.collector-stats-name-wrap {
+    min-width: 0;
+}
+
+.collector-stats-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.06);
+    flex-shrink: 0;
+}
+
+.collector-stats-name,
+.collector-stats-total {
+    color: #f6fbff;
+    font-weight: 700;
+}
+
+.collector-stats-name {
+    font-size: 0.82rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.collector-stats-total {
+    font-size: 0.92rem;
+    flex-shrink: 0;
+}
+
+.collector-stats-key,
+.collector-stats-breakdown {
+    color: rgba(205,220,238,0.62);
+    font-size: 0.72rem;
+}
+
+.collector-stats-key {
+    letter-spacing: 0.04em;
+}
+
+.collector-stats-bar {
+    width: 100%;
+    height: 7px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+}
+
+.collector-stats-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    min-width: 4px;
+}
+
+.general-stats-shell .device-popup-chart-wrap {
+    margin-top: 2px;
+}
+
+@media (max-width: 900px) {
+    .general-stats-card-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* About & Admin card at the bottom of the Settings tab */
 .settings-about-card {
     margin-top: auto;

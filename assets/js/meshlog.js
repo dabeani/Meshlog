@@ -2783,6 +2783,7 @@ class MeshLog {
         this.dom_settings_types = document.getElementById(stypesid);
         this.dom_settings_reporters = document.getElementById(sreportersid);
         this.dom_settings_contacts = document.getElementById(scontactsid);
+        this.dom_general_stats = document.getElementById('general-stats');
 
         this.__init_filter_layout();
 
@@ -2810,6 +2811,8 @@ class MeshLog {
         this.link_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
         this.contactPacketStatsCache = new Map();
+        this.generalStatsCache = new Map();
+        this.generalStatsWindowHours = this._normalizeStatsWindowHours(Number(Settings.get('stats.window.hours', 24)));
         this.activePopupContactId = null;
         this._boundPopupControlPointerHandler = (event) => this._handlePopupControlPointer(event);
         document.addEventListener('pointerdown', this._boundPopupControlPointerHandler, true);
@@ -2942,6 +2945,14 @@ class MeshLog {
             event.preventDefault();
             event.stopPropagation();
             this.handlePopupAction(Number(rangeButton.dataset.contactId), 'range', Number(rangeButton.dataset.hours));
+            return;
+        }
+
+        const generalStatsRangeButton = target.closest('.general-stats-range');
+        if (generalStatsRangeButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.setGeneralStatsWindowHours(Number(generalStatsRangeButton.dataset.hours));
         }
     }
 
@@ -3170,7 +3181,11 @@ class MeshLog {
         return 12;
     }
 
-    _buildStatsChartSvg(buckets, windowHours = 24) {
+    _normalizeStatsWindowHours(windowHours = 24) {
+        return [1, 24, 36].includes(Number(windowHours)) ? Number(windowHours) : 24;
+    }
+
+    _buildStatsChartSvg(buckets, windowHours = 24, unitLabel = 'pkts') {
         const safeBuckets = Array.isArray(buckets) && buckets.length > 0
             ? buckets
             : new Array(this._getStatsBucketCount(windowHours)).fill(0);
@@ -3200,7 +3215,7 @@ class MeshLog {
                     <g class="device-popup-chart-bars">${barsSvg}</g>
                     <text x="${yAxisWidth - 4}" y="${barsTop + 5}" text-anchor="end" class="device-popup-chart-label">${maxBucket}</text>
                     <text x="${yAxisWidth - 4}" y="${barsBottom}" text-anchor="end" class="device-popup-chart-label">0</text>
-                    <text x="${yAxisWidth - 4}" y="102" text-anchor="end" class="device-popup-chart-label">pkts</text>
+                    <text x="${yAxisWidth - 4}" y="102" text-anchor="end" class="device-popup-chart-label">${unitLabel}</text>
                     <text x="${yAxisWidth}" y="102" class="device-popup-chart-label">-${windowHours}h</text>
                     <text x="${chartWidth}" y="102" text-anchor="end" class="device-popup-chart-label">now</text>
                 </svg>
@@ -3353,6 +3368,312 @@ class MeshLog {
         }
 
         return cached.data;
+    }
+
+    _getEmptyGeneralStats(windowHours = 24, overrides = {}) {
+        const normalizedWindowHours = this._normalizeStatsWindowHours(windowHours);
+        const bucketCount = this._getStatsBucketCount(normalizedWindowHours);
+        const buckets = Array.isArray(overrides.buckets) && overrides.buckets.length === bucketCount
+            ? overrides.buckets
+            : new Array(bucketCount).fill(0);
+        const uniqueDeviceBuckets = Array.isArray(overrides.uniqueDeviceBuckets) && overrides.uniqueDeviceBuckets.length === bucketCount
+            ? overrides.uniqueDeviceBuckets
+            : new Array(bucketCount).fill(0);
+
+        return {
+            totalReports: overrides.totalReports ?? 0,
+            totalAdvertisements: overrides.totalAdvertisements ?? 0,
+            uniqueDevices: overrides.uniqueDevices ?? 0,
+            uniqueCollectors: overrides.uniqueCollectors ?? 0,
+            directReports: overrides.directReports ?? 0,
+            floodReports: overrides.floodReports ?? 0,
+            unknownRouteReports: overrides.unknownRouteReports ?? 0,
+            relayedReports: overrides.relayedReports ?? 0,
+            noHopReports: overrides.noHopReports ?? 0,
+            loadedSpanLabel: overrides.loadedSpanLabel ?? 'No advertisement reports recorded',
+            newestLabel: overrides.newestLabel ?? '-',
+            oldestLabel: overrides.oldestLabel ?? '-',
+            chartSvg: this._buildStatsChartSvg(buckets, normalizedWindowHours, 'adv'),
+            uniqueDeviceChartSvg: this._buildStatsChartSvg(uniqueDeviceBuckets, normalizedWindowHours, 'dev'),
+            collectorTotals: Array.isArray(overrides.collectorTotals) ? overrides.collectorTotals : [],
+            note: overrides.note ?? 'Counts advertisement report receptions in the selected time window.',
+            hasData: overrides.hasData ?? false,
+            isLoading: overrides.isLoading ?? false,
+            hasError: overrides.hasError ?? false,
+        };
+    }
+
+    _normalizeGeneralStatsResponse(response, windowHours = 24) {
+        const normalizedWindowHours = this._normalizeStatsWindowHours(windowHours);
+        const oldestTime = parseMeshlogTimestamp(response?.oldest_created_at);
+        const newestTime = parseMeshlogTimestamp(response?.newest_created_at);
+        const loadedSpanHours = Number.isFinite(oldestTime) && Number.isFinite(newestTime)
+            ? Math.max(0, (newestTime - oldestTime) / (60 * 60 * 1000))
+            : 0;
+        const totalReports = Number(response?.total_reports) || 0;
+        const buckets = Array.isArray(response?.chart_buckets)
+            ? response.chart_buckets.map(value => Number(value) || 0)
+            : [];
+        const uniqueDeviceBuckets = Array.isArray(response?.unique_device_buckets)
+            ? response.unique_device_buckets.map(value => Number(value) || 0)
+            : [];
+        const collectorTotals = Array.isArray(response?.collector_totals)
+            ? response.collector_totals.map((row) => ({
+                reporterId: Number(row?.reporter_id) || 0,
+                reporterName: row?.reporter_name || `Collector ${row?.reporter_id ?? ''}`,
+                publicKey: row?.public_key || '',
+                style: row?.style || '{}',
+                totalPackets: Number(row?.total_packets) || 0,
+                advPackets: Number(row?.adv_packets) || 0,
+                dirPackets: Number(row?.dir_packets) || 0,
+                pubPackets: Number(row?.pub_packets) || 0,
+                telPackets: Number(row?.tel_packets) || 0,
+                sysPackets: Number(row?.sys_packets) || 0,
+                rawPackets: Number(row?.raw_packets) || 0,
+            }))
+            : [];
+
+        return this._getEmptyGeneralStats(normalizedWindowHours, {
+            totalReports,
+            totalAdvertisements: Number(response?.total_advertisements) || 0,
+            uniqueDevices: Number(response?.unique_devices) || 0,
+            uniqueCollectors: Number(response?.unique_collectors) || 0,
+            directReports: Number(response?.direct_reports) || 0,
+            floodReports: Number(response?.flood_reports) || 0,
+            unknownRouteReports: Number(response?.unknown_route_reports) || 0,
+            relayedReports: Number(response?.relayed_reports) || 0,
+            noHopReports: Number(response?.no_hop_reports) || 0,
+            loadedSpanLabel: totalReports > 0 ? `${loadedSpanHours.toFixed(1)} h` : 'No advertisement reports recorded',
+            newestLabel: Number.isFinite(newestTime) ? new Date(newestTime).toLocaleString() : '-',
+            oldestLabel: Number.isFinite(oldestTime) ? new Date(oldestTime).toLocaleString() : '-',
+            buckets,
+            uniqueDeviceBuckets,
+            collectorTotals,
+            note: response?.note ?? 'Counts advertisement report receptions in the selected time window.',
+            hasData: totalReports > 0,
+        });
+    }
+
+    _loadGeneralStats(windowHours = 24, forceRefresh = false) {
+        const normalizedWindowHours = this._normalizeStatsWindowHours(windowHours);
+        const key = `${normalizedWindowHours}`;
+        const now = Date.now();
+        const cacheTtlMs = 60 * 60 * 1000;
+        const cached = this.generalStatsCache.get(key) ?? null;
+
+        if (!forceRefresh && cached?.status === 'ready' && (now - cached.fetchedAt) < cacheTtlMs) {
+            return;
+        }
+
+        if (cached?.status === 'loading') {
+            return;
+        }
+
+        const loadingData = cached?.data
+            ? { ...cached.data, isLoading: true, hasError: false }
+            : this._getEmptyGeneralStats(normalizedWindowHours, { isLoading: true });
+
+        this.generalStatsCache.set(key, {
+            status: 'loading',
+            fetchedAt: cached?.fetchedAt ?? 0,
+            data: loadingData,
+        });
+
+        this.__fetchJson(
+            'api/v1/stats',
+            { window_hours: normalizedWindowHours },
+            (data) => {
+                const normalized = data?.error
+                    ? this._getEmptyGeneralStats(normalizedWindowHours, {
+                        hasError: true,
+                        note: data.error,
+                    })
+                    : this._normalizeGeneralStatsResponse(data, normalizedWindowHours);
+
+                this.generalStatsCache.set(key, {
+                    status: data?.error ? 'error' : 'ready',
+                    fetchedAt: Date.now(),
+                    data: {
+                        ...normalized,
+                        isLoading: false,
+                        hasError: Boolean(data?.error),
+                    },
+                });
+
+                if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
+                    this.refreshGeneralStatsPanel();
+                }
+            },
+            () => {
+                this.generalStatsCache.set(key, {
+                    status: 'error',
+                    fetchedAt: Date.now(),
+                    data: this._getEmptyGeneralStats(normalizedWindowHours, {
+                        hasError: true,
+                        note: 'Failed to fetch database-backed advertisement stats.',
+                    }),
+                });
+
+                if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
+                    this.refreshGeneralStatsPanel();
+                }
+            }
+        );
+    }
+
+    getGeneralStats(windowHours = 24) {
+        const normalizedWindowHours = this._normalizeStatsWindowHours(windowHours);
+        const key = `${normalizedWindowHours}`;
+        const cached = this.generalStatsCache.get(key) ?? null;
+        const cacheTtlMs = 60 * 60 * 1000;
+
+        if (!cached) {
+            this._loadGeneralStats(normalizedWindowHours);
+            return this._getEmptyGeneralStats(normalizedWindowHours, { isLoading: true });
+        }
+
+        if (cached.status === 'ready' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
+            this._loadGeneralStats(normalizedWindowHours, true);
+            return { ...cached.data, isLoading: true };
+        }
+
+        if (cached.status === 'error' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
+            this._loadGeneralStats(normalizedWindowHours, true);
+        }
+
+        return cached.data;
+    }
+
+    setGeneralStatsWindowHours(windowHours = 24) {
+        this.generalStatsWindowHours = this._normalizeStatsWindowHours(windowHours);
+        Settings.set('stats.window.hours', this.generalStatsWindowHours);
+        this.refreshGeneralStatsPanel(true);
+    }
+
+    _renderGeneralStatsHtml(stats, windowHours = 24) {
+        const normalizedWindowHours = this._normalizeStatsWindowHours(windowHours);
+        const renderValue = (value) => (value === null || value === undefined || value === '') ? '-' : value;
+        const windowButtons = [1, 24, 36].map((hours) => {
+            const active = hours === normalizedWindowHours ? ' general-stats-range-active' : '';
+            return `<button type="button" class="general-stats-range${active}" data-hours="${hours}">${hours}h</button>`;
+        }).join('');
+        const collectorMax = Math.max(1, ...stats.collectorTotals.map((row) => Number(row.totalPackets) || 0));
+        const collectorRows = stats.collectorTotals.length > 0
+            ? stats.collectorTotals.map((row) => {
+                const width = Math.max(4, Math.round(((Number(row.totalPackets) || 0) / collectorMax) * 100));
+                const reporter = this.reporters[row.reporterId] ?? null;
+                const style = reporter ? reporter.getStyle() : (() => {
+                    try {
+                        return JSON.parse(row.style || '{}');
+                    } catch {
+                        return {};
+                    }
+                })();
+                const color = style?.color ?? '#4ea4c4';
+                const shortKey = row.publicKey ? row.publicKey.slice(0, 10) : '';
+                return `
+                    <div class="collector-stats-row">
+                        <div class="collector-stats-head">
+                            <div class="collector-stats-name-wrap">
+                                <span class="collector-stats-swatch" style="background:${escapeXml(color)}"></span>
+                                <span class="collector-stats-name">${escapeXml(row.reporterName)}</span>
+                                <span class="collector-stats-key">${escapeXml(shortKey)}</span>
+                            </div>
+                            <span class="collector-stats-total">${renderValue(row.totalPackets)}</span>
+                        </div>
+                        <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
+                        <div class="collector-stats-breakdown">ADV ${row.advPackets} · DIR ${row.dirPackets} · PUB ${row.pubPackets} · TEL ${row.telPackets} · SYS ${row.sysPackets} · RAW ${row.rawPackets}</div>
+                    </div>
+                `;
+            }).join('')
+            : '<div class="general-stats-note">No collector packet activity recorded in this window.</div>';
+
+        const noteClassName = stats.hasError ? 'general-stats-note general-stats-note-error' : 'general-stats-note';
+
+        return `
+            <section class="settings-card general-stats-shell">
+                <div class="settings-card-heading">
+                    <div class="settings-card-title">Advertisement Overview</div>
+                </div>
+                <div class="general-stats-toolbar">
+                    <div class="general-stats-range-group">${windowButtons}</div>
+                    <div class="general-stats-meta">History span: ${renderValue(stats.loadedSpanLabel)}</div>
+                </div>
+                <div class="general-stats-card-grid">
+                    <div class="general-stats-card">
+                        <div class="general-stats-card-label">All advertisement reports</div>
+                        <div class="general-stats-card-value">${renderValue(stats.totalReports)}</div>
+                    </div>
+                    <div class="general-stats-card">
+                        <div class="general-stats-card-label">Direct advertisements</div>
+                        <div class="general-stats-card-value">${renderValue(stats.directReports)}</div>
+                    </div>
+                    <div class="general-stats-card">
+                        <div class="general-stats-card-label">Flood advertisements</div>
+                        <div class="general-stats-card-value">${renderValue(stats.floodReports)}</div>
+                    </div>
+                    <div class="general-stats-card">
+                        <div class="general-stats-card-label">Unique devices heard</div>
+                        <div class="general-stats-card-value">${renderValue(stats.uniqueDevices)}</div>
+                    </div>
+                    <div class="general-stats-card">
+                        <div class="general-stats-card-label">Unique advertisement payloads</div>
+                        <div class="general-stats-card-value">${renderValue(stats.totalAdvertisements)}</div>
+                    </div>
+                    <div class="general-stats-card">
+                        <div class="general-stats-card-label">Collectors receiving ads</div>
+                        <div class="general-stats-card-value">${renderValue(stats.uniqueCollectors)}</div>
+                    </div>
+                    <div class="general-stats-card">
+                        <div class="general-stats-card-label">Relay-assisted receptions</div>
+                        <div class="general-stats-card-value">${renderValue(stats.relayedReports)}</div>
+                    </div>
+                    <div class="general-stats-card">
+                        <div class="general-stats-card-label">Unclassified route type</div>
+                        <div class="general-stats-card-value">${renderValue(stats.unknownRouteReports)}</div>
+                    </div>
+                </div>
+            </section>
+            <section class="settings-card general-stats-shell">
+                <div class="general-stats-chart-head">
+                    <div class="settings-card-title">Advertisement Reports in Last ${normalizedWindowHours}h</div>
+                    <div class="general-stats-meta">Newest: ${renderValue(stats.newestLabel)}</div>
+                </div>
+                ${stats.chartSvg}
+                <div class="general-stats-footnotes">
+                    <div class="general-stats-meta">Oldest: ${renderValue(stats.oldestLabel)}</div>
+                    <div class="general-stats-meta">Direct with no relays: ${renderValue(stats.noHopReports)}</div>
+                </div>
+                <div class="${noteClassName}">${stats.isLoading && !stats.hasData ? 'Loading statistics...' : renderValue(stats.note)}</div>
+            </section>
+            <section class="settings-card general-stats-shell">
+                <div class="general-stats-chart-head">
+                    <div class="settings-card-title">Unique Devices Heard per Time Bucket</div>
+                    <div class="general-stats-meta">Peak active devices: ${renderValue(stats.uniqueDevices)}</div>
+                </div>
+                ${stats.uniqueDeviceChartSvg}
+                <div class="general-stats-meta">Distinct devices are deduplicated per bucket and counted from advertisement receptions.</div>
+            </section>
+            <section class="settings-card general-stats-shell">
+                <div class="general-stats-chart-head">
+                    <div class="settings-card-title">Collector Packet Totals</div>
+                    <div class="general-stats-meta">All stored packets in last ${normalizedWindowHours}h</div>
+                </div>
+                <div class="collector-stats-list">${collectorRows}</div>
+            </section>
+        `;
+    }
+
+    refreshGeneralStatsPanel(forceRefresh = false) {
+        if (!this.dom_general_stats) return;
+
+        const normalizedWindowHours = this._normalizeStatsWindowHours(this.generalStatsWindowHours);
+        if (forceRefresh) {
+            this._loadGeneralStats(normalizedWindowHours, true);
+        }
+
+        const stats = this.getGeneralStats(normalizedWindowHours);
+        this.dom_general_stats.innerHTML = this._renderGeneralStatsHtml(stats, normalizedWindowHours);
     }
 
     _initMapPanes() {

@@ -13,6 +13,7 @@ class MeshLogRawPacket extends MeshLogEntity {
     public $decded = null;
     public $hash_size = null;
     public $scope = null;
+    public $route_type = null;
 
     public $received_at = null;
     public $created_at = null;
@@ -24,7 +25,8 @@ class MeshLogRawPacket extends MeshLogEntity {
         if (!isset($data['packet'])) return $m;
 
         $m->hash_size = $data['packet']['hash_size'] ?? 1;
-    $m->scope = static::normalizeScope($data['packet']['scope'] ?? null);
+        $m->scope = static::normalizeScope($data['packet']['scope'] ?? null);
+        $m->route_type = static::normalizeRouteType($data['packet']['route_type'] ?? ($data['route_type'] ?? null));
         $m->header = $data['packet']['header'] ?? 0;
         $m->path = $data['packet']['path'] ?? '';
         $m->payload = hex2bin($data['packet']['payload'] ?? '');
@@ -44,6 +46,15 @@ class MeshLogRawPacket extends MeshLogEntity {
         return $value;
     }
 
+    private static function normalizeRouteType($routeType) {
+        if ($routeType === null || $routeType === '') return null;
+
+        $value = intval($routeType);
+        if ($value < 0 || $value > 3) return null;
+
+        return $value;
+    }
+
     public static function fromDb($data, $meshlog) {
         if (!$data) return null;
 
@@ -57,6 +68,7 @@ class MeshLogRawPacket extends MeshLogEntity {
         $m->decoded = $data['decoded'];
         $m->hash_size = $data['hash_size'];
         $m->scope = static::normalizeScope($data['scope'] ?? null);
+        $m->route_type = static::normalizeRouteType($data['route_type'] ?? null);
 
         $m->received_at = $data['received_at'];
         $m->created_at = $data['created_at'];
@@ -87,6 +99,7 @@ class MeshLogRawPacket extends MeshLogEntity {
             'decoded' => $this->decoded,
             "hash_size" => $this->hash_size,
             "scope" => $this->scope,
+            "route_type" => $this->route_type,
             'received_at' => $this->received_at,
             'created_at' => $this->created_at
         );
@@ -104,6 +117,7 @@ class MeshLogRawPacket extends MeshLogEntity {
             "decoded" => array($this->decoded, PDO::PARAM_INT),
             "hash_size" => array($this->hash_size, PDO::PARAM_INT),
             "scope" => array($this->scope, PDO::PARAM_INT),
+            "route_type" => array($this->route_type, PDO::PARAM_INT),
             "received_at" => array($this->received_at, PDO::PARAM_STR),
             "created_at" => array($this->created_at, PDO::PARAM_STR)
         );

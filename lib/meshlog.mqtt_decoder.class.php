@@ -59,6 +59,7 @@ class MeshLogMqttDecoder {
             $path = $packet['path'] ?? static::decodePath($data['path'] ?? '');
             $hashSize = $packet['hash_size'] ?? static::decodeHashSize($path);
             $scope = static::normalizeScope($packet['scope'] ?? null);
+            $routeType = static::normalizeRouteType($packet['route_type'] ?? null);
             $packetType = intval($data['packet_type'] ?? 0);
             $snr = intval($data['SNR'] ?? 0);
 
@@ -71,7 +72,7 @@ class MeshLogMqttDecoder {
             // into the ADV structured format that insertForReporter() already handles.
             if ($packetType === static::PAYLOAD_TYPE_ADVERT) {
                 $decoded = static::decodeAdvertPacket(
-                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -81,7 +82,7 @@ class MeshLogMqttDecoder {
             // Falls through to RAW if no channel matches or decryption fails.
             if ($packetType === static::PAYLOAD_TYPE_GRP_TXT && !empty($channels)) {
                 $decoded = static::decodeGroupPacket(
-                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -90,7 +91,7 @@ class MeshLogMqttDecoder {
             // Attempt decryption; fall through to RAW if no channel matches.
             if ($packetType === static::PAYLOAD_TYPE_GRP_DATA && !empty($channels)) {
                 $decoded = static::decodeGroupPacket(
-                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -98,7 +99,7 @@ class MeshLogMqttDecoder {
             // ACK (packet_type=3): unencrypted 4-byte CRC — decode the checksum.
             if ($packetType === static::PAYLOAD_TYPE_ACK) {
                 $decoded = static::decodeAckPacket(
-                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -106,7 +107,7 @@ class MeshLogMqttDecoder {
             // PATH (packet_type=8): returned path — decode path hashes + extra payload type.
             if ($packetType === static::PAYLOAD_TYPE_PATH) {
                 $decoded = static::decodeReturnedPathPacket(
-                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -115,7 +116,7 @@ class MeshLogMqttDecoder {
             // Decodes sub_type from the flags byte; handles DISCOVER_REQ (8) and DISCOVER_RESP (9).
             if ($packetType === static::PAYLOAD_TYPE_CONTROL) {
                 $decoded = static::decodeControlPacket(
-                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -124,7 +125,7 @@ class MeshLogMqttDecoder {
             // Extracts the unencrypted routing fields and stores as a decoded RAW entry.
             if ($packetType === static::PAYLOAD_TYPE_ANON_REQ) {
                 $decoded = static::decodeAnonReqPacket(
-                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -133,7 +134,7 @@ class MeshLogMqttDecoder {
             // The destination and source node hashes are visible in the unencrypted header.
             if ($packetType === static::PAYLOAD_TYPE_REQ || $packetType === static::PAYLOAD_TYPE_RESPONSE) {
                 $decoded = static::decodeDirectFramePacket(
-                    $raw, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $packetType
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $packetType
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -160,6 +161,7 @@ class MeshLogMqttDecoder {
                     "decoded" => false,
                     "hash_size" => $hashSize,
                     "scope" => $scope,
+                    "route_type" => $routeType,
                 ),
                 "_mqtt" => $mqttMeta,
             );
@@ -197,6 +199,10 @@ class MeshLogMqttDecoder {
             $data['time']['server'] = $serverTime;
             $data['time']['sender'] = $senderTime;
             $data['time']['local'] = $localTime;
+            $data['route_type'] = static::normalizeRouteType($data['route_type'] ?? null);
+            if ($type === 'RAW' && isset($data['packet']) && is_array($data['packet'])) {
+                $data['packet']['route_type'] = static::normalizeRouteType($data['packet']['route_type'] ?? $data['route_type']);
+            }
             $data['_mqtt'] = $mqttMeta;
             return $data;
         }
@@ -318,6 +324,7 @@ class MeshLogMqttDecoder {
 
         return array(
             'header' => $layout['header'],
+            'route_type' => $layout['route_type'],
             'path' => static::decodePathBytes(substr($bytes, $layout['path_offset'], $layout['path_byte_len']), $layout['hash_size']),
             'payload' => strtoupper(bin2hex(substr($bytes, $layout['payload_offset']))),
             'hash_size' => $layout['hash_size'],
@@ -349,6 +356,7 @@ class MeshLogMqttDecoder {
 
         return array(
             'header' => $headerByte,
+            'route_type' => $routeType,
             'hash_size' => $hashSize,
             'path_offset' => $pathOffset,
             'path_byte_len' => $pathByteLen,
@@ -373,6 +381,15 @@ class MeshLogMqttDecoder {
 
         $value = intval($scope);
         if ($value < 0 || $value > 255) return null;
+
+        return $value;
+    }
+
+    private static function normalizeRouteType($routeType) {
+        if ($routeType === null || $routeType === '') return null;
+
+        $value = intval($routeType);
+        if ($value < 0 || $value > 3) return null;
 
         return $value;
     }
@@ -464,7 +481,7 @@ class MeshLogMqttDecoder {
      * @param  array  $mqttMeta   MQTT metadata array from extractMetadata().
      * @return array|null         ADV data array for insertForReporter(), or null on failure.
      */
-    private static function decodeAdvertPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+    private static function decodeAdvertPacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta) {
         $bytes = hex2bin($rawHex);
 
         $binaryHashSize = 1;
@@ -543,6 +560,7 @@ class MeshLogMqttDecoder {
             "hash"      => $packetHash,
             "hash_size" => $hashSize,
             "scope"     => $scope,
+            "route_type" => $routeType,
             "contact"   => array(
                 "pubkey" => $pubkey,
                 "name"   => $name,
@@ -588,7 +606,7 @@ class MeshLogMqttDecoder {
      * @param  array  $channels  Array of MeshLogChannel objects with PSK set.
      * @return array|null        PUB data array for insertForReporter(), or null on failure.
      */
-    private static function decodeGroupPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels) {
+    private static function decodeGroupPacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels) {
         $bytes = hex2bin($rawHex);
         $payload = static::extractPayloadBytes($bytes);
         if ($payload === null) return null;
@@ -708,6 +726,7 @@ class MeshLogMqttDecoder {
                 'hash'     => $packetHash,
                 'hash_size' => $hashSize,
                 'scope'    => $scope,
+                'route_type' => $routeType,
                 'channel'  => array(
                     'hash' => $channel->hash,
                     'name' => $channel->name,
@@ -746,7 +765,7 @@ class MeshLogMqttDecoder {
      * @param  string $payloadJson JSON-encoded decoded metadata to store as payload bytes.
      * @return array             RAW data array for insertForReporter().
      */
-    private static function buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta, $payloadJson) {
+    private static function buildRawReturn($layout, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $mqttMeta, $payloadJson) {
         $serverTimestampMs = intval(floor(microtime(true) * 1000));
         return array(
             "type" => "RAW",
@@ -764,6 +783,7 @@ class MeshLogMqttDecoder {
                 "decoded" => true,
                 "hash_size" => $hashSize,
                 "scope" => $scope,
+                "route_type" => $routeType,
             ),
             "_mqtt" => $mqttMeta,
         );
@@ -773,7 +793,7 @@ class MeshLogMqttDecoder {
      * Decode an ACK packet (payload_type = 0x03).
      * Payload: 4-byte CRC checksum (LE uint32) of the acknowledged message.
      */
-    private static function decodeAckPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+    private static function decodeAckPacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta) {
         $bytes = hex2bin($rawHex);
         $layout = static::extractPacketLayout($bytes);
         if ($layout === null) return null;
@@ -783,7 +803,7 @@ class MeshLogMqttDecoder {
 
         $crc = unpack('V', substr($payloadBytes, 0, 4))[1];
 
-        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $mqttMeta,
             json_encode(array('crc' => sprintf('%08X', $crc)))
         );
     }
@@ -792,7 +812,7 @@ class MeshLogMqttDecoder {
      * Decode a RETURNED_PATH packet (payload_type = 0x08).
      * Payload: path_length(1) + path_hashes(path_length bytes, 1 byte each) + extra_type(1) + extra(variable)
      */
-    private static function decodeReturnedPathPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+    private static function decodeReturnedPathPacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta) {
         $bytes = hex2bin($rawHex);
         $layout = static::extractPacketLayout($bytes);
         if ($layout === null) return null;
@@ -815,7 +835,7 @@ class MeshLogMqttDecoder {
 
         $extraType = ord($payloadBytes[$pos]);
 
-        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $mqttMeta,
             json_encode(array(
                 'returned_path' => $returnedPathHashes,
                 'extra_type' => $extraType,
@@ -828,7 +848,7 @@ class MeshLogMqttDecoder {
      * Payload: flags(1, upper 4 bits = sub_type) + data(variable, unencrypted)
      * Known sub_types: 8 = DISCOVER_REQ, 9 = DISCOVER_RESP
      */
-    private static function decodeControlPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+    private static function decodeControlPacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta) {
         $bytes = hex2bin($rawHex);
         $layout = static::extractPacketLayout($bytes);
         if ($layout === null) return null;
@@ -861,7 +881,7 @@ class MeshLogMqttDecoder {
             }
         }
 
-        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $mqttMeta,
             json_encode($meta)
         );
     }
@@ -871,7 +891,7 @@ class MeshLogMqttDecoder {
      * Payload: dest_hash(1) + sender_pubkey(32) + mac(2) + ciphertext(variable, encrypted)
      * The destination hash and sender public key are in plaintext and can be extracted.
      */
-    private static function decodeAnonReqPacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta) {
+    private static function decodeAnonReqPacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta) {
         $bytes = hex2bin($rawHex);
         $layout = static::extractPacketLayout($bytes);
         if ($layout === null) return null;
@@ -883,7 +903,7 @@ class MeshLogMqttDecoder {
         $destHash     = strtolower(bin2hex($payloadBytes[0]));
         $senderPubkey = strtoupper(bin2hex(substr($payloadBytes, 1, 32)));
 
-        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $mqttMeta,
             json_encode(array(
                 'dest_hash'     => $destHash,
                 'sender_pubkey' => $senderPubkey,
@@ -898,7 +918,7 @@ class MeshLogMqttDecoder {
      *
      * @param int $packetType  PAYLOAD_TYPE_REQ (0) or PAYLOAD_TYPE_RESPONSE (1).
      */
-    private static function decodeDirectFramePacket($rawHex, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $data, $mqttMeta, $packetType) {
+    private static function decodeDirectFramePacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $packetType) {
         $bytes = hex2bin($rawHex);
         $layout = static::extractPacketLayout($bytes);
         if ($layout === null) return null;
@@ -910,7 +930,7 @@ class MeshLogMqttDecoder {
         $destHash = strtolower(bin2hex($payloadBytes[0]));
         $srcHash  = strtolower(bin2hex($payloadBytes[1]));
 
-        return static::buildRawReturn($layout, $path, $hashSize, $scope, $snr, $timestamp, $reporter, $mqttMeta,
+        return static::buildRawReturn($layout, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $mqttMeta,
             json_encode(array(
                 'dest_hash' => $destHash,
                 'src_hash'  => $srcHash,
