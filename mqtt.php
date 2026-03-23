@@ -88,6 +88,7 @@ while (true) {
             }
 
             $result = $meshlog->insertMqtt($topic, $payload);
+            $meshlog->maybeAutoPurge();
             $mqttMeta = is_array($result) ? ($result['_mqtt'] ?? array()) : array();
 
             if ($debug && is_array($mqttMeta)) {

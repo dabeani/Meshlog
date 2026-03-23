@@ -22,7 +22,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 16;
+    private $version = 17;
     private $ntpConfig = array(
         'enabled' => true,
         'host' => 'pool.ntp.org',
@@ -32,6 +32,7 @@ class MeshLog {
         'warning_threshold_seconds' => 300,
     );
     const PURGE_INTERVAL_SECONDS = 3600;
+    const STATS_ROLLUP_BUCKET_SECONDS = 300;
     private $settings = array(
         MeshlogSetting::KEY_DB_VERSION => 0,
         MeshlogSetting::KEY_MAX_CONTACT_AGE => 1814400,
@@ -422,7 +423,12 @@ class MeshLog {
             $rep = MeshLogAdvertisementReport::fromJson($data, $this);
             $rep->object_id = $adv->getId();
             $rep->reporter_id = $reporter->getId();
-            return $rep->save($this);
+            $repSaved = $rep->save($this);
+            if ($repSaved) {
+                $this->rollupAdvertisementStats($adv->getId(), $contact->getId(), $reporter->getId(), $rep->route_type, $rep->path);
+                $this->rollupCollectorPacketStats($reporter->getId(), 'ADV');
+            }
+            return $repSaved;
         }
         return $saved;
     }
@@ -471,7 +477,11 @@ class MeshLog {
             $rep = MeshLogDirectMessageReport::fromJson($data, $this);
             $rep->object_id = $dm->getId();
             $rep->reporter_id = $reporter->getId();
-            return $rep->save($this);
+            $repSaved = $rep->save($this);
+            if ($repSaved) {
+                $this->rollupCollectorPacketStats($reporter->getId(), 'DIR');
+            }
+            return $repSaved;
         }
         return $saved;
     }
@@ -548,6 +558,8 @@ class MeshLog {
             if (!$repSaved) {
                 error_log('[PUB insert] report save failed: ' . $rep->getError() .
                     ' msg_id=' . $grpmsg->getId() . ' reporter_id=' . $reporter->getId());
+            } else {
+                $this->rollupCollectorPacketStats($reporter->getId(), 'PUB');
             }
             return $repSaved;
         }
@@ -630,6 +642,10 @@ class MeshLog {
             return $this->repError('failed to write db');
         }
 
+        if ($res) {
+            $this->rollupCollectorPacketStats($reporter->getId(), 'TEL');
+        }
+
         return $res;
     }
 
@@ -665,7 +681,12 @@ class MeshLog {
             }
         }
 
-        return $pkt->save($this);
+        $saved = $pkt->save($this);
+        if ($saved) {
+            $this->rollupCollectorPacketStats($reporter->getId(), 'RAW');
+        }
+
+        return $saved;
     }
 
     private function insertSelfReport($data, $reporter) {
@@ -721,6 +742,8 @@ class MeshLog {
             return $this->repError($error);
         }
 
+        $this->rollupCollectorPacketStats($reporter->getId(), 'SYS');
+
         return true;
     }
 
@@ -735,6 +758,106 @@ class MeshLog {
         if (!in_array($hashSize, array(1, 2, 3), true)) return;
 
         $contact->hash_size = $hashSize;
+    }
+
+    private function getStatsRollupBucketExpression($columnName) {
+        return "FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP($columnName) / " . static::STATS_ROLLUP_BUCKET_SECONDS . ") * " . static::STATS_ROLLUP_BUCKET_SECONDS . ")";
+    }
+
+    private function rollupAdvertisementStats($advertisementId, $contactId, $reporterId, $routeType, $path) {
+        $advertisementId = intval($advertisementId);
+        $contactId = intval($contactId);
+        $reporterId = intval($reporterId);
+        if ($advertisementId <= 0 || $contactId <= 0 || $reporterId <= 0) {
+            return;
+        }
+
+        $routeType = is_null($routeType) ? null : intval($routeType);
+        $hasRelay = !empty($path) ? 1 : 0;
+        $isDirect = in_array($routeType, array(2, 3), true) ? 1 : 0;
+        $isFlood = in_array($routeType, array(0, 1), true) ? 1 : 0;
+        $isUnknown = is_null($routeType) ? 1 : 0;
+
+        $summarySql = "
+            INSERT INTO stats_adv_reports_rollup (
+                bucket_start,
+                report_count,
+                direct_count,
+                flood_count,
+                unknown_route_count,
+                relayed_count,
+                no_hop_count
+            ) VALUES (
+                " . $this->getStatsRollupBucketExpression('NOW()') . ",
+                1,
+                :direct_count,
+                :flood_count,
+                :unknown_route_count,
+                :relayed_count,
+                :no_hop_count
+            )
+            ON DUPLICATE KEY UPDATE
+                report_count = report_count + 1,
+                direct_count = direct_count + VALUES(direct_count),
+                flood_count = flood_count + VALUES(flood_count),
+                unknown_route_count = unknown_route_count + VALUES(unknown_route_count),
+                relayed_count = relayed_count + VALUES(relayed_count),
+                no_hop_count = no_hop_count + VALUES(no_hop_count)
+        ";
+
+        $summaryStmt = $this->pdo->prepare($summarySql);
+        $summaryStmt->bindValue(':direct_count', $isDirect, PDO::PARAM_INT);
+        $summaryStmt->bindValue(':flood_count', $isFlood, PDO::PARAM_INT);
+        $summaryStmt->bindValue(':unknown_route_count', $isUnknown, PDO::PARAM_INT);
+        $summaryStmt->bindValue(':relayed_count', $hasRelay, PDO::PARAM_INT);
+        $summaryStmt->bindValue(':no_hop_count', $hasRelay ? 0 : 1, PDO::PARAM_INT);
+        $summaryStmt->execute();
+
+        $entitySql = "
+            INSERT IGNORE INTO stats_adv_entities_rollup (
+                bucket_start,
+                advertisement_id,
+                contact_id
+            ) VALUES (
+                " . $this->getStatsRollupBucketExpression('NOW()') . ",
+                :advertisement_id,
+                :contact_id
+            )
+        ";
+
+        $entityStmt = $this->pdo->prepare($entitySql);
+        $entityStmt->bindValue(':advertisement_id', $advertisementId, PDO::PARAM_INT);
+        $entityStmt->bindValue(':contact_id', $contactId, PDO::PARAM_INT);
+        $entityStmt->execute();
+    }
+
+    private function rollupCollectorPacketStats($reporterId, $packetType) {
+        $reporterId = intval($reporterId);
+        $packetType = strtoupper(trim(strval($packetType)));
+        if ($reporterId <= 0 || $packetType === '') {
+            return;
+        }
+
+        $sql = "
+            INSERT INTO stats_collector_packets_rollup (
+                bucket_start,
+                reporter_id,
+                packet_type,
+                packet_count
+            ) VALUES (
+                " . $this->getStatsRollupBucketExpression('NOW()') . ",
+                :reporter_id,
+                :packet_type,
+                1
+            )
+            ON DUPLICATE KEY UPDATE
+                packet_count = packet_count + 1
+        ";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':reporter_id', $reporterId, PDO::PARAM_INT);
+        $stmt->bindValue(':packet_type', $packetType, PDO::PARAM_STR);
+        $stmt->execute();
     }
 
     private function getNtpCacheFile() {
@@ -1566,24 +1689,21 @@ class MeshLog {
 
         $bucketSeconds = max(1, intval(($windowHours * 3600) / $bucketCount));
         $bucketMaxIndex = $bucketCount - 1;
+        $rollupBucketSeconds = static::STATS_ROLLUP_BUCKET_SECONDS;
 
         $summarySql = "
             SELECT
-                COUNT(*) AS total_reports,
-                COUNT(DISTINCT ar.advertisement_id) AS total_advertisements,
-                COUNT(DISTINCT a.contact_id) AS unique_devices,
-                COUNT(DISTINCT ar.reporter_id) AS unique_collectors,
-                MIN(ar.created_at) AS oldest_created_at,
-                MAX(ar.created_at) AS newest_created_at,
-                SUM(CASE WHEN ar.route_type IN (2, 3) THEN 1 ELSE 0 END) AS direct_reports,
-                SUM(CASE WHEN ar.route_type IN (0, 1) THEN 1 ELSE 0 END) AS flood_reports,
-                SUM(CASE WHEN ar.route_type IS NULL THEN 1 ELSE 0 END) AS unknown_route_reports,
-                SUM(CASE WHEN ar.path IS NULL OR ar.path = '' THEN 1 ELSE 0 END) AS no_hop_reports,
-                SUM(CASE WHEN ar.path IS NOT NULL AND ar.path != '' THEN 1 ELSE 0 END) AS relayed_reports
-            FROM advertisement_reports ar
-            INNER JOIN advertisements a ON a.id = ar.advertisement_id
-            WHERE ar.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
-              AND ar.created_at <= NOW()
+                COALESCE(SUM(report_count), 0) AS total_reports,
+                COALESCE(SUM(direct_count), 0) AS direct_reports,
+                COALESCE(SUM(flood_count), 0) AS flood_reports,
+                COALESCE(SUM(unknown_route_count), 0) AS unknown_route_reports,
+                COALESCE(SUM(no_hop_count), 0) AS no_hop_reports,
+                COALESCE(SUM(relayed_count), 0) AS relayed_reports,
+                MIN(bucket_start) AS oldest_created_at,
+                MAX(bucket_start) AS newest_created_at
+            FROM stats_adv_reports_rollup
+            WHERE bucket_start >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+              AND bucket_start <= NOW()
         ";
 
         $summaryStmt = $this->pdo->prepare($summarySql);
@@ -1591,20 +1711,47 @@ class MeshLog {
         $summaryStmt->execute();
         $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: array();
 
+        $entitySummarySql = "
+            SELECT
+                COUNT(DISTINCT advertisement_id) AS total_advertisements,
+                COUNT(DISTINCT contact_id) AS unique_devices
+            FROM stats_adv_entities_rollup
+            WHERE bucket_start >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+              AND bucket_start <= NOW()
+        ";
+
+        $entitySummaryStmt = $this->pdo->prepare($entitySummarySql);
+        $entitySummaryStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $entitySummaryStmt->execute();
+        $entitySummary = $entitySummaryStmt->fetch(PDO::FETCH_ASSOC) ?: array();
+
+        $collectorSummarySql = "
+            SELECT COUNT(DISTINCT reporter_id) AS unique_collectors
+            FROM stats_collector_packets_rollup
+            WHERE bucket_start >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+              AND bucket_start <= NOW()
+        ";
+
+        $collectorSummaryStmt = $this->pdo->prepare($collectorSummarySql);
+        $collectorSummaryStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $collectorSummaryStmt->execute();
+        $collectorSummary = $collectorSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: array();
+
         $bucketSql = "
-            SELECT bucket_index, COUNT(*) AS report_count
+            SELECT bucket_index, SUM(report_count) AS report_count
             FROM (
                 SELECT
                     GREATEST(
                         0,
                         LEAST(
                             :bucket_max_index,
-                            :bucket_max_index - FLOOR(TIMESTAMPDIFF(SECOND, ar.created_at, NOW()) / :bucket_seconds)
+                            :bucket_max_index - FLOOR(TIMESTAMPDIFF(SECOND, bucket_start, NOW()) / :bucket_seconds)
                         )
-                    ) AS bucket_index
-                FROM advertisement_reports ar
-                WHERE ar.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
-                  AND ar.created_at <= NOW()
+                    ) AS bucket_index,
+                    report_count
+                FROM stats_adv_reports_rollup
+                WHERE bucket_start >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+                  AND bucket_start <= NOW()
             ) bucketed
             GROUP BY bucket_index
             ORDER BY bucket_index ASC
@@ -1623,139 +1770,94 @@ class MeshLog {
             $chartBuckets[$bucketIndex] = intval($row['report_count'] ?? 0);
         }
 
-                $deviceBucketSql = "
-                        SELECT bucket_index, COUNT(DISTINCT contact_id) AS device_count
-                        FROM (
-                                SELECT
-                                        a.contact_id,
-                                        GREATEST(
-                                                0,
-                                                LEAST(
-                                                        :bucket_max_index,
-                                                        :bucket_max_index - FLOOR(TIMESTAMPDIFF(SECOND, ar.created_at, NOW()) / :bucket_seconds)
-                                                )
-                                        ) AS bucket_index
-                                FROM advertisement_reports ar
-                                INNER JOIN advertisements a ON a.id = ar.advertisement_id
-                                WHERE ar.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
-                                    AND ar.created_at <= NOW()
-                        ) bucketed
-                        GROUP BY bucket_index
-                        ORDER BY bucket_index ASC
-                ";
+        $deviceBucketSql = "
+            SELECT bucket_index, COUNT(DISTINCT contact_id) AS device_count
+            FROM (
+                SELECT
+                    contact_id,
+                    GREATEST(
+                        0,
+                        LEAST(
+                            :bucket_max_index,
+                            :bucket_max_index - FLOOR(TIMESTAMPDIFF(SECOND, bucket_start, NOW()) / :bucket_seconds)
+                        )
+                    ) AS bucket_index
+                FROM stats_adv_entities_rollup
+                WHERE bucket_start >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+                  AND bucket_start <= NOW()
+            ) bucketed
+            GROUP BY bucket_index
+            ORDER BY bucket_index ASC
+        ";
 
-                $deviceBucketStmt = $this->pdo->prepare($deviceBucketSql);
-                $deviceBucketStmt->bindValue(':bucket_max_index', $bucketMaxIndex, PDO::PARAM_INT);
-                $deviceBucketStmt->bindValue(':bucket_seconds', $bucketSeconds, PDO::PARAM_INT);
-                $deviceBucketStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
-                $deviceBucketStmt->execute();
+        $deviceBucketStmt = $this->pdo->prepare($deviceBucketSql);
+        $deviceBucketStmt->bindValue(':bucket_max_index', $bucketMaxIndex, PDO::PARAM_INT);
+        $deviceBucketStmt->bindValue(':bucket_seconds', $bucketSeconds, PDO::PARAM_INT);
+        $deviceBucketStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $deviceBucketStmt->execute();
 
-                $deviceChartBuckets = array_fill(0, $bucketCount, 0);
-                while ($row = $deviceBucketStmt->fetch(PDO::FETCH_ASSOC)) {
-                        $bucketIndex = intval($row['bucket_index'] ?? -1);
-                        if ($bucketIndex < 0 || $bucketIndex >= $bucketCount) continue;
-                        $deviceChartBuckets[$bucketIndex] = intval($row['device_count'] ?? 0);
-                }
+        $deviceChartBuckets = array_fill(0, $bucketCount, 0);
+        while ($row = $deviceBucketStmt->fetch(PDO::FETCH_ASSOC)) {
+            $bucketIndex = intval($row['bucket_index'] ?? -1);
+            if ($bucketIndex < 0 || $bucketIndex >= $bucketCount) continue;
+            $deviceChartBuckets[$bucketIndex] = intval($row['device_count'] ?? 0);
+        }
 
-                $collectorSql = "
-                        SELECT
-                                totals.reporter_id,
-                                COALESCE(r.name, CONCAT('Collector ', totals.reporter_id)) AS reporter_name,
-                                COALESCE(r.public_key, '') AS public_key,
-                                COALESCE(r.style, '{}') AS style,
-                                SUM(totals.packet_count) AS total_packets,
-                                SUM(CASE WHEN totals.packet_type = 'ADV' THEN totals.packet_count ELSE 0 END) AS adv_packets,
-                                SUM(CASE WHEN totals.packet_type = 'DIR' THEN totals.packet_count ELSE 0 END) AS dir_packets,
-                                SUM(CASE WHEN totals.packet_type = 'PUB' THEN totals.packet_count ELSE 0 END) AS pub_packets,
-                                SUM(CASE WHEN totals.packet_type = 'TEL' THEN totals.packet_count ELSE 0 END) AS tel_packets,
-                                SUM(CASE WHEN totals.packet_type = 'SYS' THEN totals.packet_count ELSE 0 END) AS sys_packets,
-                                SUM(CASE WHEN totals.packet_type = 'RAW' THEN totals.packet_count ELSE 0 END) AS raw_packets
-                        FROM (
-                                SELECT ar.reporter_id, 'ADV' AS packet_type, COUNT(*) AS packet_count
-                                FROM advertisement_reports ar
-                                WHERE ar.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_adv HOUR)
-                                    AND ar.created_at <= NOW()
-                                GROUP BY ar.reporter_id
+        $collectorSql = "
+            SELECT
+                totals.reporter_id,
+                COALESCE(r.name, CONCAT('Collector ', totals.reporter_id)) AS reporter_name,
+                COALESCE(r.public_key, '') AS public_key,
+                COALESCE(r.style, '{}') AS style,
+                SUM(totals.packet_count) AS total_packets,
+                SUM(CASE WHEN totals.packet_type = 'ADV' THEN totals.packet_count ELSE 0 END) AS adv_packets,
+                SUM(CASE WHEN totals.packet_type = 'DIR' THEN totals.packet_count ELSE 0 END) AS dir_packets,
+                SUM(CASE WHEN totals.packet_type = 'PUB' THEN totals.packet_count ELSE 0 END) AS pub_packets,
+                SUM(CASE WHEN totals.packet_type = 'TEL' THEN totals.packet_count ELSE 0 END) AS tel_packets,
+                SUM(CASE WHEN totals.packet_type = 'SYS' THEN totals.packet_count ELSE 0 END) AS sys_packets,
+                SUM(CASE WHEN totals.packet_type = 'RAW' THEN totals.packet_count ELSE 0 END) AS raw_packets
+            FROM (
+                SELECT reporter_id, packet_type, SUM(packet_count) AS packet_count
+                FROM stats_collector_packets_rollup
+                WHERE bucket_start >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+                  AND bucket_start <= NOW()
+                GROUP BY reporter_id, packet_type
+            ) totals
+            LEFT JOIN reporters r ON r.id = totals.reporter_id
+            GROUP BY totals.reporter_id, reporter_name, public_key, style
+            ORDER BY total_packets DESC, reporter_name ASC, totals.reporter_id ASC
+        ";
 
-                                UNION ALL
+        $collectorStmt = $this->pdo->prepare($collectorSql);
+        $collectorStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $collectorStmt->execute();
 
-                                SELECT dr.reporter_id, 'DIR' AS packet_type, COUNT(*) AS packet_count
-                                FROM direct_message_reports dr
-                                WHERE dr.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_dir HOUR)
-                                    AND dr.created_at <= NOW()
-                                GROUP BY dr.reporter_id
-
-                                UNION ALL
-
-                                SELECT cr.reporter_id, 'PUB' AS packet_type, COUNT(*) AS packet_count
-                                FROM channel_message_reports cr
-                                WHERE cr.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_pub HOUR)
-                                    AND cr.created_at <= NOW()
-                                GROUP BY cr.reporter_id
-
-                                UNION ALL
-
-                                SELECT t.reporter_id, 'TEL' AS packet_type, COUNT(*) AS packet_count
-                                FROM telemetry t
-                                WHERE t.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_tel HOUR)
-                                    AND t.created_at <= NOW()
-                                GROUP BY t.reporter_id
-
-                                UNION ALL
-
-                                SELECT s.reporter_id, 'SYS' AS packet_type, COUNT(*) AS packet_count
-                                FROM system_reports s
-                                WHERE s.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_sys HOUR)
-                                    AND s.created_at <= NOW()
-                                GROUP BY s.reporter_id
-
-                                UNION ALL
-
-                                SELECT rp.reporter_id, 'RAW' AS packet_type, COUNT(*) AS packet_count
-                                FROM raw_packets rp
-                                WHERE rp.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours_raw HOUR)
-                                    AND rp.created_at <= NOW()
-                                GROUP BY rp.reporter_id
-                        ) totals
-                        LEFT JOIN reporters r ON r.id = totals.reporter_id
-                        GROUP BY totals.reporter_id, reporter_name, public_key, style
-                        ORDER BY total_packets DESC, reporter_name ASC, totals.reporter_id ASC
-                ";
-
-                $collectorStmt = $this->pdo->prepare($collectorSql);
-                $collectorStmt->bindValue(':window_hours_adv', $windowHours, PDO::PARAM_INT);
-                $collectorStmt->bindValue(':window_hours_dir', $windowHours, PDO::PARAM_INT);
-                $collectorStmt->bindValue(':window_hours_pub', $windowHours, PDO::PARAM_INT);
-                $collectorStmt->bindValue(':window_hours_tel', $windowHours, PDO::PARAM_INT);
-                $collectorStmt->bindValue(':window_hours_sys', $windowHours, PDO::PARAM_INT);
-                $collectorStmt->bindValue(':window_hours_raw', $windowHours, PDO::PARAM_INT);
-                $collectorStmt->execute();
-
-                $collectorTotals = array();
-                while ($row = $collectorStmt->fetch(PDO::FETCH_ASSOC)) {
-                        $collectorTotals[] = array(
-                                'reporter_id' => intval($row['reporter_id'] ?? 0),
-                                'reporter_name' => $row['reporter_name'] ?? '',
-                                'public_key' => $row['public_key'] ?? '',
-                                'style' => $row['style'] ?? '{}',
-                                'total_packets' => intval($row['total_packets'] ?? 0),
-                                'adv_packets' => intval($row['adv_packets'] ?? 0),
-                                'dir_packets' => intval($row['dir_packets'] ?? 0),
-                                'pub_packets' => intval($row['pub_packets'] ?? 0),
-                                'tel_packets' => intval($row['tel_packets'] ?? 0),
-                                'sys_packets' => intval($row['sys_packets'] ?? 0),
-                                'raw_packets' => intval($row['raw_packets'] ?? 0),
-                        );
-                }
+        $collectorTotals = array();
+        while ($row = $collectorStmt->fetch(PDO::FETCH_ASSOC)) {
+            $collectorTotals[] = array(
+                'reporter_id' => intval($row['reporter_id'] ?? 0),
+                'reporter_name' => $row['reporter_name'] ?? '',
+                'public_key' => $row['public_key'] ?? '',
+                'style' => $row['style'] ?? '{}',
+                'total_packets' => intval($row['total_packets'] ?? 0),
+                'adv_packets' => intval($row['adv_packets'] ?? 0),
+                'dir_packets' => intval($row['dir_packets'] ?? 0),
+                'pub_packets' => intval($row['pub_packets'] ?? 0),
+                'tel_packets' => intval($row['tel_packets'] ?? 0),
+                'sys_packets' => intval($row['sys_packets'] ?? 0),
+                'raw_packets' => intval($row['raw_packets'] ?? 0),
+            );
+        }
 
         return array(
             'window_hours' => $windowHours,
             'bucket_count' => $bucketCount,
             'bucket_seconds' => $bucketSeconds,
+            'rollup_bucket_seconds' => $rollupBucketSeconds,
             'total_reports' => intval($summary['total_reports'] ?? 0),
-            'total_advertisements' => intval($summary['total_advertisements'] ?? 0),
-            'unique_devices' => intval($summary['unique_devices'] ?? 0),
-            'unique_collectors' => intval($summary['unique_collectors'] ?? 0),
+            'total_advertisements' => intval($entitySummary['total_advertisements'] ?? 0),
+            'unique_devices' => intval($entitySummary['unique_devices'] ?? 0),
+            'unique_collectors' => intval($collectorSummary['unique_collectors'] ?? 0),
             'direct_reports' => intval($summary['direct_reports'] ?? 0),
             'flood_reports' => intval($summary['flood_reports'] ?? 0),
             'unknown_route_reports' => intval($summary['unknown_route_reports'] ?? 0),
@@ -1766,7 +1868,7 @@ class MeshLog {
             'chart_buckets' => $chartBuckets,
             'unique_device_buckets' => $deviceChartBuckets,
             'collector_totals' => $collectorTotals,
-            'note' => 'Counts advertisement report receptions in the selected time window. Direct and flood values require route metadata; older rows may remain unclassified. Collector totals aggregate all stored packets by collector for the same window.',
+            'note' => 'Counts are served from persistent 5-minute rollups, so historical stats remain available after old packet rows are auto-purged. Direct and flood values still depend on stored route metadata; legacy rows may remain unclassified.',
         );
     }
 

@@ -3209,7 +3209,7 @@ class MeshLog {
 
         return `
             <div class="device-popup-chart-wrap">
-                <svg class="device-popup-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" aria-label="Packet activity chart">
+                <svg class="device-popup-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="xMidYMid meet" aria-label="Packet activity chart">
                     <line x1="${yAxisWidth}" y1="${barsTop}" x2="${yAxisWidth}" y2="${barsBottom + 0.5}" class="device-popup-chart-axis"></line>
                     <line x1="${yAxisWidth}" y1="${barsBottom + 0.5}" x2="${chartWidth}" y2="${barsBottom + 0.5}" class="device-popup-chart-axis"></line>
                     <g class="device-popup-chart-bars">${barsSvg}</g>
@@ -3388,6 +3388,7 @@ class MeshLog {
             directReports: overrides.directReports ?? 0,
             floodReports: overrides.floodReports ?? 0,
             unknownRouteReports: overrides.unknownRouteReports ?? 0,
+            classifiedReports: overrides.classifiedReports ?? ((overrides.directReports ?? 0) + (overrides.floodReports ?? 0)),
             relayedReports: overrides.relayedReports ?? 0,
             noHopReports: overrides.noHopReports ?? 0,
             loadedSpanLabel: overrides.loadedSpanLabel ?? 'No advertisement reports recorded',
@@ -3441,6 +3442,7 @@ class MeshLog {
             directReports: Number(response?.direct_reports) || 0,
             floodReports: Number(response?.flood_reports) || 0,
             unknownRouteReports: Number(response?.unknown_route_reports) || 0,
+            classifiedReports: (Number(response?.direct_reports) || 0) + (Number(response?.flood_reports) || 0),
             relayedReports: Number(response?.relayed_reports) || 0,
             noHopReports: Number(response?.no_hop_reports) || 0,
             loadedSpanLabel: totalReports > 0 ? `${loadedSpanHours.toFixed(1)} h` : 'No advertisement reports recorded',
@@ -3553,10 +3555,14 @@ class MeshLog {
     _renderGeneralStatsHtml(stats, windowHours = 24) {
         const normalizedWindowHours = this._normalizeStatsWindowHours(windowHours);
         const renderValue = (value) => (value === null || value === undefined || value === '') ? '-' : value;
+        const renderCount = (value) => Number.isFinite(Number(value)) ? `${Number(value)}` : '-';
         const windowButtons = [1, 24, 36].map((hours) => {
             const active = hours === normalizedWindowHours ? ' general-stats-range-active' : '';
             return `<button type="button" class="general-stats-range${active}" data-hours="${hours}">${hours}h</button>`;
         }).join('');
+        const legacyRouteNote = stats.unknownRouteReports > 0
+            ? `Legacy route split unavailable for ${renderCount(stats.unknownRouteReports)} older advertisement report${Number(stats.unknownRouteReports) === 1 ? '' : 's'} collected before route tracking was stored.`
+            : 'Direct and flood counts are available for all advertisement reports in this window.';
         const collectorMax = Math.max(1, ...stats.collectorTotals.map((row) => Number(row.totalPackets) || 0));
         const collectorRows = stats.collectorTotals.length > 0
             ? stats.collectorTotals.map((row) => {
@@ -3629,10 +3635,11 @@ class MeshLog {
                         <div class="general-stats-card-value">${renderValue(stats.relayedReports)}</div>
                     </div>
                     <div class="general-stats-card">
-                        <div class="general-stats-card-label">Unclassified route type</div>
+                        <div class="general-stats-card-label">Legacy / unknown route</div>
                         <div class="general-stats-card-value">${renderValue(stats.unknownRouteReports)}</div>
                     </div>
                 </div>
+                <div class="general-stats-note">${legacyRouteNote}</div>
             </section>
             <section class="settings-card general-stats-shell">
                 <div class="general-stats-chart-head">
