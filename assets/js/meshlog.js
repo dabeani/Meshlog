@@ -2937,19 +2937,15 @@ class MeshLog {
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
 
-        const tabButton = target.closest('.device-popup-tab');
-        if (tabButton) {
+        const popupActionButton = target.closest('[data-popup-action]');
+        if (popupActionButton) {
             event.preventDefault();
             event.stopPropagation();
-            this.handlePopupAction(Number(tabButton.dataset.contactId), 'tab', tabButton.dataset.tab);
-            return;
-        }
-
-        const rangeButton = target.closest('.device-popup-range');
-        if (rangeButton) {
-            event.preventDefault();
-            event.stopPropagation();
-            this.handlePopupAction(Number(rangeButton.dataset.contactId), 'range', Number(rangeButton.dataset.hours));
+            this.handlePopupAction(
+                Number(popupActionButton.dataset.contactId),
+                popupActionButton.dataset.popupAction,
+                popupActionButton.dataset.popupValue
+            );
             return;
         }
 
@@ -3141,19 +3137,8 @@ class MeshLog {
     }
 
     _wirePopupControls(popupElement) {
-        popupElement.onclick = (event) => {
-            const button = event.target.closest('[data-popup-action]');
-            if (!button || !popupElement.contains(button)) return;
-
-            event.preventDefault();
-            event.stopPropagation();
-
-            this.handlePopupAction(
-                Number(button.dataset.contactId),
-                button.dataset.popupAction,
-                button.dataset.popupValue
-            );
-        };
+        // Popup button controls are handled globally in _handlePopupControlPointer.
+        void popupElement;
     }
 
     updateSelectedContactPopup() {
