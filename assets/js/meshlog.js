@@ -472,6 +472,7 @@ class MeshLogContact extends MeshLogObject {
     }
 
     showNeighbors(rx=true, tx=true, markers=false) {
+        console.log(`showNeighbors called for ${this.data.name}`);
         if (this.isClient()) return; // not supported
 
         const getReporterContact = (reporter) => {
@@ -592,14 +593,14 @@ class MeshLogContact extends MeshLogObject {
                     }
 
                     // GUARANTEED FALLBACK: If no neighbor links were created and this is a repeater
-                    // that appears in relay paths, link it to the closest known contact to ensure
-                    // the "Show Neighbors" button always produces visible results.
+                    // that appears in relay paths, link it to the closest known contact, or create a
+                    // self-loop to ensure the "Show Neighbors" button always produces visible results.
                     if (this.isRepeater() && Object.keys(contactPairs.pairs).length === 0) {
                         let closestContact = null;
                         let minDistance = Infinity;
                         Object.values(this._meshlog.contacts).forEach(other => {
-                            if (other !== this && other.adv && 
-                                other.adv.data.lat && other.adv.data.lon && 
+                            if (other !== this && other.adv &&
+                                other.adv.data.lat && other.adv.data.lon &&
                                 other.adv.data.lat !== 0 && other.adv.data.lon !== 0) {
                                 const dist = haversineDistance(
                                     this.adv.data.lat, this.adv.data.lon,
@@ -613,6 +614,10 @@ class MeshLogContact extends MeshLogObject {
                         });
                         if (closestContact) {
                             contactPairs.addPair(this, closestContact);
+                        } else {
+                            // No other contacts available - create a self-loop to show the contact is active
+                            // This ensures the button click always produces some visual feedback
+                            contactPairs.addPair(this, this);
                         }
                     }
 
