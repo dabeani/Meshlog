@@ -516,8 +516,7 @@ class MeshLogContact extends MeshLogObject {
             pairs: {},
             addPair: (src, dst) => {
                 if (!src || !dst) return;
-                // Allow self-loops for guaranteed fallback when no other neighbors exist
-                if (src !== dst && (!src.adv || !dst.adv)) return;
+                if (!src.adv || !dst.adv) return;
 
                 const srcLat = Number(src.adv.data.lat);
                 const srcLon = Number(src.adv.data.lon);
@@ -593,35 +592,6 @@ class MeshLogContact extends MeshLogObject {
                         contactPairs.addPair(this, reporterContact);
                     }
 
-                    // GUARANTEED FALLBACK: If no neighbor links were created and this is a repeater
-                    // that appears in relay paths, link it to the closest known contact, or create a
-                    // self-loop to ensure the "Show Neighbors" button always produces visible results.
-                    if (this.isRepeater() && Object.keys(contactPairs.pairs).length === 0) {
-                        let closestContact = null;
-                        let minDistance = Infinity;
-                        Object.values(this._meshlog.contacts).forEach(other => {
-                            if (other !== this && other.adv &&
-                                other.adv.data.lat && other.adv.data.lon &&
-                                other.adv.data.lat !== 0 && other.adv.data.lon !== 0) {
-                                const dist = haversineDistance(
-                                    this.adv.data.lat, this.adv.data.lon,
-                                    other.adv.data.lat, other.adv.data.lon
-                                );
-                                if (dist < minDistance) {
-                                    minDistance = dist;
-                                    closestContact = other;
-                                }
-                            }
-                        });
-                        if (closestContact) {
-                            contactPairs.addPair(this, closestContact);
-                        } else {
-                            // No other contacts available - create a self-loop to show the contact is active
-                            // This ensures the button click always produces some visual feedback
-                            contactPairs.addPair(this, this);
-                        }
-                    }
-
                     // Link contains contact hash
                     // Simulate link up to contact and check if might be possible
 
@@ -665,6 +635,41 @@ class MeshLogContact extends MeshLogObject {
         });
 
         if (Object.keys(contactPairs.pairs).length < 1) {
+            // No contact pairs found (reporter contacts likely have no adv objects).
+            // Fall back: draw direct lines from this contact to every reporter that
+            // has heard it, using the reporter's own lat/lon coordinates.
+            if (this.adv) {
+                const reporterIds = this.data.reporter_ids ?? [];
+                let drewAny = false;
+                reporterIds.forEach(rid => {
+                    const reporter = this._meshlog.reporters[rid];
+                    if (!reporter) return;
+                    const rLat = Number(reporter.data.lat);
+                    const rLon = Number(reporter.data.lon);
+                    if (!Number.isFinite(rLat) || !Number.isFinite(rLon) || (rLat === 0 && rLon === 0)) return;
+
+                    let key = `${this.getLayerDescPrefix()}reporter_${rid}`;
+                    this._meshlog.layer_descs[key] = {
+                        paths: [
+                            new MeshLogLinkLayer(
+                                { lat: this.adv.data.lat, lon: this.adv.data.lon, contact_id: this.data.id },
+                                { lat: rLat, lon: rLon, contact_id: reporter.getContactId() },
+                                { data: { id: 0 }, getStyle: () => ({ color: 'red', strokeColor: 'white', strokeWeight: '1px' }) },
+                                false
+                            )
+                        ],
+                        markers: new Set([this.data.id]),
+                        warnings: []
+                    };
+                    drewAny = true;
+                });
+
+                if (drewAny) {
+                    this._meshlog.updatePaths();
+                    this.neighbors_visible = true;
+                    return;
+                }
+            }
             this.hideNeighbors();
             return;
         }
