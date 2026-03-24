@@ -516,7 +516,8 @@ class MeshLogContact extends MeshLogObject {
             pairs: {},
             addPair: (src, dst) => {
                 if (!src || !dst) return;
-                if (!src.adv || !dst.adv) return;
+                // Allow self-loops for guaranteed fallback when no other neighbors exist
+                if (src !== dst && (!src.adv || !dst.adv)) return;
 
                 const srcLat = Number(src.adv.data.lat);
                 const srcLon = Number(src.adv.data.lon);
