@@ -552,6 +552,7 @@ class MeshLogContact extends MeshLogObject {
 
             if (!src) return;
 
+            if (!m.reports) return;
             m.reports.forEach(r => {
                 let path = r.data.path ?? undefined;
                 if (path == undefined) return; 
