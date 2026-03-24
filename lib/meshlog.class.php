@@ -1515,6 +1515,51 @@ class MeshLog {
 
     }
 
+    public function getContactAdvertisementsWithCoordinates($contactId) {
+        $contactId = intval($contactId);
+        if ($contactId <= 0) {
+            return array('error' => 'invalid contact_id');
+        }
+
+        $sql = "
+            SELECT
+                id,
+                contact_id,
+                lat,
+                lon,
+                sent_at,
+                created_at
+            FROM advertisements
+            WHERE contact_id = :contact_id
+              AND lat IS NOT NULL
+              AND lon IS NOT NULL
+              AND NOT (lat = 0 AND lon = 0)
+            ORDER BY created_at ASC, id ASC
+        ";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->bindValue(':contact_id', $contactId, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $results = array();
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $results[] = array(
+                'id' => intval($row['id']),
+                'contact_id' => intval($row['contact_id']),
+                'lat' => is_null($row['lat']) ? null : floatval($row['lat']),
+                'lon' => is_null($row['lon']) ? null : floatval($row['lon']),
+                'sent_at' => $row['sent_at'],
+                'created_at' => $row['created_at'],
+            );
+        }
+
+        return array(
+            'contact_id' => $contactId,
+            'count' => count($results),
+            'objects' => $results,
+        );
+    }
+
     public function getContactPacketStats($contactId, $windowHours = 24) {
         $contactId = intval($contactId);
         $windowHours = intval($windowHours);

@@ -934,10 +934,38 @@ class MeshLogContact extends MeshLogObject {
         return new Date(time).toLocaleString();
     }
 
+    getAdvertisementTrailSectionHtml() {
+        if (!this.isClient()) return '';
+
+        const trail = this._meshlog.getContactAdvertisementTrail(this.data.id);
+        const mapId = `device-popup-adv-map-${this.data.id}`;
+        const hasPoints = Array.isArray(trail.points) && trail.points.length > 0;
+
+        let note = '';
+        if (trail.hasError) {
+            note = 'Unable to load advertisement coordinates right now.';
+        } else if (trail.isLoading && !hasPoints) {
+            note = 'Loading advertisement coordinates...';
+        } else if (!hasPoints) {
+            note = 'No advertisements with GPS coordinates recorded.';
+        } else {
+            note = `${trail.points.length} advertisement GPS point${trail.points.length === 1 ? '' : 's'}. Hover or click a dot for date/time.`;
+        }
+
+        return `
+            <div class="device-popup-section">
+                <div class="device-popup-section-title">Advertisement Trail</div>
+                <div id="${mapId}" class="device-popup-mini-map${hasPoints ? '' : ' device-popup-mini-map-empty'}" data-contact-id="${this.data.id}"></div>
+                <div class="device-popup-note">${escapeXml(note)}</div>
+            </div>
+        `;
+    }
+
     getDevicePopupGeneralHtml() {
         const coords = Number.isFinite(Number(this.adv?.data?.lat)) && Number.isFinite(Number(this.adv?.data?.lon))
             ? `${Number(this.adv.data.lat).toFixed(5)}, ${Number(this.adv.data.lon).toFixed(5)}`
             : 'Unknown';
+        const trailHtml = this.getAdvertisementTrailSectionHtml();
         const telemetryLines = this.getMarkerTelemetryLines();
         const telemetryHtml = telemetryLines.length > 0
             ? `<div class="device-popup-section"><div class="device-popup-section-title">Telemetry</div>${telemetryLines.map(line => `<div class="device-popup-list-row">${escapeXml(line)}</div>`).join('')}</div>`
@@ -964,6 +992,7 @@ class MeshLogContact extends MeshLogObject {
                 <div class="device-popup-key-block">Public Key</div>
                 <div class="device-popup-mono">${escapeXml(this.data?.public_key ?? '-')}</div>
             </div>
+            ${trailHtml}
             ${telemetryHtml}
             ${timeSyncHtml}
             ${neighborsHtml}
@@ -2838,9 +2867,12 @@ class MeshLog {
         this.link_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
         this.contactPacketStatsCache = new Map();
+        this.contactAdvertisementTrailCache = new Map();
         this.generalStatsCache = new Map();
         this.generalStatsWindowHours = this._normalizeStatsWindowHours(Number(Settings.get('stats.window.hours', 24)));
         this.activePopupContactId = null;
+        this.activeContactTrailMap = null;
+        this.activeContactTrailContactId = null;
         this._boundPopupControlPointerHandler = (event) => this._handlePopupControlPointer(event);
         document.addEventListener('pointerdown', this._boundPopupControlPointerHandler, true);
         document.addEventListener('click', this._boundPopupControlPointerHandler, true);
@@ -3122,6 +3154,7 @@ class MeshLog {
         if (!contact?.adv) return;
         this.activePopupContactId = Number(contact.data.id);
         const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
+        this._destroyActiveContactTrailMap();
         if (!this.activeContactPopup) {
             this.activeContactPopup = L.popup({
                 className: 'compact-marker-popup',
@@ -3143,6 +3176,7 @@ class MeshLog {
             this.activeContactPopup.on('add', wirePopupControls);
             this.activeContactPopup.on('contentupdate', wirePopupControls);
             this.activeContactPopup.on('remove', () => {
+                this._destroyActiveContactTrailMap();
                 if (this.activeContactPopup && !this.map.hasLayer(this.activeContactPopup)) {
                     this.activeContactPopup = null;
                 }
@@ -3156,6 +3190,8 @@ class MeshLog {
         if (!this.map.hasLayer(popup)) {
             popup.addTo(this.map);
         }
+
+        requestAnimationFrame(() => this._renderPopupContactTrailMap(contact));
     }
 
     _wirePopupControls(popupElement) {
@@ -3169,6 +3205,131 @@ class MeshLog {
         const contact = this.contacts[contactId] ?? null;
         if (!contact?.adv) return;
         this.openContactPopup(contact);
+    }
+
+    _destroyActiveContactTrailMap() {
+        if (!this.activeContactTrailMap) return;
+        try {
+            this.activeContactTrailMap.remove();
+        } catch (_error) {
+            void _error;
+        }
+        this.activeContactTrailMap = null;
+        this.activeContactTrailContactId = null;
+    }
+
+    _renderPopupContactTrailMap(contact) {
+        if (!contact?.adv || !contact.isClient || !contact.isClient() || this.popupUiState?.tab !== 'general') {
+            this._destroyActiveContactTrailMap();
+            return;
+        }
+
+        const trail = this.getContactAdvertisementTrail(contact.data.id);
+        if (!Array.isArray(trail.points) || trail.points.length < 1) {
+            this._destroyActiveContactTrailMap();
+            return;
+        }
+
+        const popupElement = this.activeContactPopup?.getElement?.();
+        if (!popupElement) {
+            this._destroyActiveContactTrailMap();
+            return;
+        }
+
+        const mapElement = popupElement.querySelector(`#device-popup-adv-map-${contact.data.id}`);
+        if (!mapElement) {
+            this._destroyActiveContactTrailMap();
+            return;
+        }
+
+        this._destroyActiveContactTrailMap();
+
+        const miniMap = L.map(mapElement, {
+            zoomControl: false,
+            attributionControl: false,
+            dragging: true,
+            scrollWheelZoom: false,
+            doubleClickZoom: true,
+            boxZoom: false,
+            keyboard: false,
+            tap: false,
+        });
+
+        const layerName = Settings.get('map.layer', 'dark') === 'light' ? 'light' : 'dark';
+        const layerConfig = (typeof _TILE_LAYERS !== 'undefined' && _TILE_LAYERS[layerName])
+            ? _TILE_LAYERS[layerName]
+            : {
+                url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                opts: {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }
+            };
+
+        L.tileLayer(layerConfig.url, {
+            ...(layerConfig.opts ?? {}),
+            attributionControl: false,
+        }).addTo(miniMap);
+
+        const latLngs = [];
+        for (let i = 0; i < trail.points.length; i++) {
+            const point = trail.points[i];
+            const lat = Number(point.lat);
+            const lon = Number(point.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+            const marker = L.circleMarker([lat, lon], {
+                radius: 4,
+                color: '#e6eef7',
+                weight: 1,
+                fillColor: '#67b7ff',
+                fillOpacity: 0.95,
+            }).addTo(miniMap);
+
+            const sentAt = contact.formatPopupTimestamp(point.sent_at);
+            const receivedAt = contact.formatPopupTimestamp(point.created_at);
+            const tooltipText = `${receivedAt}`;
+            const popupHtml = `
+                <div class="device-popup-mini-dot-popup">
+                    <div><strong>Received:</strong> ${escapeXml(receivedAt)}</div>
+                    <div><strong>Sender:</strong> ${escapeXml(sentAt)}</div>
+                </div>
+            `;
+
+            marker.bindTooltip(escapeXml(tooltipText), {
+                direction: 'top',
+                offset: [0, -6],
+                opacity: 0.95,
+                className: 'device-popup-mini-dot-tooltip',
+            });
+            marker.bindPopup(popupHtml, {
+                closeButton: true,
+                autoClose: true,
+                className: 'device-popup-mini-dot-popup-wrap',
+            });
+
+            marker.on('mouseover', () => marker.openTooltip());
+            marker.on('mouseout', () => marker.closeTooltip());
+            latLngs.push([lat, lon]);
+        }
+
+        if (latLngs.length > 0) {
+            const bounds = L.latLngBounds(latLngs);
+            if (bounds.isValid()) {
+                miniMap.fitBounds(bounds, { padding: [20, 20], maxZoom: 16 });
+            }
+        }
+
+        this.activeContactTrailMap = miniMap;
+        this.activeContactTrailContactId = contact.data.id;
+
+        setTimeout(() => {
+            try {
+                miniMap.invalidateSize();
+            } catch (_error) {
+                void _error;
+            }
+        }, 0);
     }
 
     getPacketTypeLabelForStats(msg) {
@@ -3227,6 +3388,128 @@ class MeshLog {
                 </svg>
             </div>
         `;
+    }
+
+    _getEmptyContactAdvertisementTrail(overrides = {}) {
+        const points = Array.isArray(overrides.points) ? overrides.points : [];
+        return {
+            points,
+            count: Number(overrides.count ?? points.length) || 0,
+            note: overrides.note ?? 'All advertisements with stored GPS coordinates for this chat client.',
+            isLoading: overrides.isLoading ?? false,
+            hasError: overrides.hasError ?? false,
+        };
+    }
+
+    _normalizeContactAdvertisementTrailResponse(response) {
+        const objects = Array.isArray(response?.objects) ? response.objects : [];
+        const points = objects
+            .map((row) => ({
+                id: Number(row?.id) || 0,
+                lat: Number(row?.lat),
+                lon: Number(row?.lon),
+                sent_at: row?.sent_at ?? null,
+                created_at: row?.created_at ?? null,
+            }))
+            .filter((row) => Number.isFinite(row.lat) && Number.isFinite(row.lon) && !(row.lat === 0 && row.lon === 0));
+
+        return this._getEmptyContactAdvertisementTrail({
+            points,
+            count: Number(response?.count) || points.length,
+            note: response?.note ?? 'All advertisements with stored GPS coordinates for this chat client.',
+        });
+    }
+
+    _loadContactAdvertisementTrail(contactId, forceRefresh = false) {
+        const numericContactId = Number(contactId);
+        if (!Number.isFinite(numericContactId) || numericContactId <= 0) return;
+
+        const key = `${numericContactId}`;
+        const now = Date.now();
+        const cacheTtlMs = 10 * 60 * 1000;
+        const cached = this.contactAdvertisementTrailCache.get(key) ?? null;
+
+        if (!forceRefresh && cached?.status === 'ready' && (now - cached.fetchedAt) < cacheTtlMs) {
+            return;
+        }
+
+        if (cached?.status === 'loading') {
+            return;
+        }
+
+        const loadingData = cached?.data
+            ? { ...cached.data, isLoading: true, hasError: false }
+            : this._getEmptyContactAdvertisementTrail({ isLoading: true });
+
+        this.contactAdvertisementTrailCache.set(key, {
+            status: 'loading',
+            fetchedAt: cached?.fetchedAt ?? 0,
+            data: loadingData,
+        });
+
+        this.__fetchJson(
+            'api/v1/contact_advertisements',
+            { contact_id: numericContactId },
+            (data) => {
+                const normalized = data?.error
+                    ? this._getEmptyContactAdvertisementTrail({
+                        hasError: true,
+                        note: data.error,
+                    })
+                    : this._normalizeContactAdvertisementTrailResponse(data);
+
+                this.contactAdvertisementTrailCache.set(key, {
+                    status: data?.error ? 'error' : 'ready',
+                    fetchedAt: Date.now(),
+                    data: {
+                        ...normalized,
+                        isLoading: false,
+                        hasError: Boolean(data?.error),
+                    },
+                });
+
+                if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'general') {
+                    this.updateSelectedContactPopup();
+                }
+            },
+            () => {
+                this.contactAdvertisementTrailCache.set(key, {
+                    status: 'error',
+                    fetchedAt: Date.now(),
+                    data: this._getEmptyContactAdvertisementTrail({
+                        hasError: true,
+                        note: 'Failed to fetch advertisement coordinates.',
+                    }),
+                });
+
+                if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'general') {
+                    this.updateSelectedContactPopup();
+                }
+            }
+        );
+    }
+
+    getContactAdvertisementTrail(contactId) {
+        const numericContactId = Number(contactId);
+        const key = `${numericContactId}`;
+        const cacheTtlMs = 10 * 60 * 1000;
+        const cached = this.contactAdvertisementTrailCache.get(key) ?? null;
+
+        if (!cached) {
+            this._loadContactAdvertisementTrail(numericContactId);
+            return this._getEmptyContactAdvertisementTrail({ isLoading: true });
+        }
+
+        if (cached.status === 'ready' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
+            this._loadContactAdvertisementTrail(numericContactId, true);
+            return { ...cached.data, isLoading: true };
+        }
+
+        if (cached.status === 'error' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
+            this._loadContactAdvertisementTrail(numericContactId, true);
+        }
+
+        return cached.data;
     }
 
     _getEmptyContactPacketStats(windowHours = 24, overrides = {}) {
@@ -3792,6 +4075,7 @@ class MeshLog {
 
     clearSelection() {
         try {
+            this._destroyActiveContactTrailMap();
             if (this.previewFocusedContactId) {
                 const previewContact = this.contacts[this.previewFocusedContactId] ?? null;
                 try { previewContact?.showLabel(false); } catch (_) { void _; }
