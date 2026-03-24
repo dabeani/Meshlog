@@ -3598,6 +3598,38 @@ class MeshLog {
         return -1 * (1000000 + Number(pointId || 0));
     }
 
+    _getRouteTrailPointRepeaters(contact, point) {
+        if (!contact?.adv || !point) return [];
+
+        const pointLat = Number(point.lat);
+        const pointLon = Number(point.lon);
+        if (!Number.isFinite(pointLat) || !Number.isFinite(pointLon)) return [];
+
+        const reports = Array.isArray(point.reports) ? point.reports : [];
+        const repeaters = [];
+        const seenContactIds = new Set();
+
+        for (let i = 0; i < reports.length; i++) {
+            const report = reports[i];
+            const firstHopHash = parsePath(report?.path ?? '')[0] ?? '';
+            if (!firstHopHash) continue;
+
+            const nearest = this.findNearestContact(pointLat, pointLon, firstHopHash, true);
+            const repeaterContact = nearest?.result ?? null;
+            if (!repeaterContact?.adv) continue;
+            if (!repeaterContact.isRepeater || !repeaterContact.isRepeater()) continue;
+            if (seenContactIds.has(repeaterContact.data.id)) continue;
+
+            seenContactIds.add(repeaterContact.data.id);
+            repeaters.push({
+                report,
+                contact: repeaterContact,
+            });
+        }
+
+        return repeaters;
+    }
+
     _hideActiveRouteTrailPoint() {
         if (!this.activeRouteTrailPointLayerId) return;
         if (this.layer_descs.hasOwnProperty(this.activeRouteTrailPointLayerId)) {
@@ -3612,21 +3644,8 @@ class MeshLog {
 
         if (!contact?.adv || !point) return;
 
-        const reports = Array.isArray(point.reports) ? point.reports : [];
-        const uniqueReports = [];
-        const seenReporterIds = new Set();
-        for (let i = 0; i < reports.length; i++) {
-            const report = reports[i];
-            const reporterId = Number(report?.reporter_id);
-            if (!Number.isFinite(reporterId) || reporterId <= 0 || seenReporterIds.has(reporterId)) continue;
-            const reporter = this.reporters[reporterId] ?? null;
-            const anchor = this._getReporterAnchor(reporter);
-            if (!reporter || !anchor) continue;
-            seenReporterIds.add(reporterId);
-            uniqueReports.push({ report, reporter, anchor });
-        }
-
-        if (uniqueReports.length < 1) return;
+        const repeaters = this._getRouteTrailPointRepeaters(contact, point);
+        if (repeaters.length < 1) return;
 
         const pointAnchor = {
             lat: Number(point.lat),
@@ -3641,7 +3660,7 @@ class MeshLog {
             warnings: [],
             preview: {
                 title: `${contact.adv?.data?.name ?? contact.data.public_key} route point`,
-                subtitle: `${uniqueReports.length} repeater${uniqueReports.length === 1 ? '' : 's'} heard this advertisement`,
+                subtitle: `${repeaters.length} repeater${repeaters.length === 1 ? '' : 's'} heard this advertisement`,
                 accent: '#ff4d4d',
                 chips: [contact.hash ? `[${contact.hash}]` : null, contact.getContactTypeLabel()].filter(Boolean),
                 footer: point.created_at ? `Seen ${point.created_at}` : '',
@@ -3649,16 +3668,19 @@ class MeshLog {
             animated: false,
         };
 
-        for (let i = 0; i < uniqueReports.length; i++) {
-            const item = uniqueReports[i];
-            if (Number.isFinite(item.anchor.contact_id) && item.anchor.contact_id > 0) {
-                desc.markers.add(item.anchor.contact_id);
-            }
+        for (let i = 0; i < repeaters.length; i++) {
+            const item = repeaters[i];
+            const repeaterAnchor = {
+                lat: Number(item.contact.adv.data.lat),
+                lon: Number(item.contact.adv.data.lon),
+                contact_id: item.contact.data.id,
+            };
+            desc.markers.add(item.contact.data.id);
             desc.paths.push(new MeshLogLinkLayer(
-                item.anchor,
+                repeaterAnchor,
                 pointAnchor,
                 {
-                    data: { id: `route_${point.id}_${item.reporter.data.id}` },
+                    data: { id: `route_${point.id}_${item.contact.data.id}` },
                     getStyle: () => ({ color: '#ff4d4d', stroke: '#ffffff' })
                 },
                 false
@@ -3688,14 +3710,13 @@ class MeshLog {
             const lon = Number(point.lon);
             if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
 
-            const heardBy = Array.from(new Set((Array.isArray(point.reports) ? point.reports : [])
-                .map((report) => this.reporters[Number(report?.reporter_id)]?.data?.name ?? null)
-                .filter(Boolean)));
+            const repeaters = this._getRouteTrailPointRepeaters(contact, point);
+            const heardBy = repeaters.map((item) => item.contact?.adv?.data?.name ?? item.contact?.data?.name ?? null).filter(Boolean);
             const popupHtml = `
                 <div class="device-popup-mini-dot-popup">
                     <div><strong>Received:</strong> ${escapeXml(contact.formatPopupTimestamp(point.created_at))}</div>
                     <div><strong>Sender:</strong> ${escapeXml(contact.formatPopupTimestamp(point.sent_at))}</div>
-                    <div><strong>Heard by:</strong> ${escapeXml(heardBy.length > 0 ? heardBy.join(', ') : 'Unknown repeater')}</div>
+                    <div><strong>Heard by:</strong> ${escapeXml(heardBy.length > 0 ? heardBy.join(', ') : 'No repeater path stored')}</div>
                 </div>
             `;
 
