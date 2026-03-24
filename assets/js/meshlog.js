@@ -247,10 +247,16 @@ class MeshLogReporter extends MeshLogObject {
 
     getContactId() {
         if (this.contact_id == -1) {
-            let contact = Object.values(this._meshlog.contacts)
-                .find(obj => obj.data.public_key == this.data.public_key);
-            if (contact) {
-                this.contact_id = contact.data.id;
+            // Fast path: API already provides contact_id directly
+            if (this.data.contact_id) {
+                this.contact_id = this.data.contact_id;
+            } else {
+                // Fallback: case-insensitive lookup (reporters may store keys in different case)
+                let contact = Object.values(this._meshlog.contacts)
+                    .find(obj => obj.data.public_key.toLowerCase() == this.data.public_key.toLowerCase());
+                if (contact) {
+                    this.contact_id = contact.data.id;
+                }
             }
         }
 
@@ -472,7 +478,6 @@ class MeshLogContact extends MeshLogObject {
     }
 
     showNeighbors(rx=true, tx=true, markers=false) {
-        console.log(`showNeighbors called for ${this.data.name}`);
         if (this.isClient()) return; // not supported
 
         const getReporterContact = (reporter) => {
@@ -635,41 +640,6 @@ class MeshLogContact extends MeshLogObject {
         });
 
         if (Object.keys(contactPairs.pairs).length < 1) {
-            // No contact pairs found (reporter contacts likely have no adv objects).
-            // Fall back: draw direct lines from this contact to every reporter that
-            // has heard it, using the reporter's own lat/lon coordinates.
-            if (this.adv) {
-                const reporterIds = this.data.reporter_ids ?? [];
-                let drewAny = false;
-                reporterIds.forEach(rid => {
-                    const reporter = this._meshlog.reporters[rid];
-                    if (!reporter) return;
-                    const rLat = Number(reporter.data.lat);
-                    const rLon = Number(reporter.data.lon);
-                    if (!Number.isFinite(rLat) || !Number.isFinite(rLon) || (rLat === 0 && rLon === 0)) return;
-
-                    let key = `${this.getLayerDescPrefix()}reporter_${rid}`;
-                    this._meshlog.layer_descs[key] = {
-                        paths: [
-                            new MeshLogLinkLayer(
-                                { lat: this.adv.data.lat, lon: this.adv.data.lon, contact_id: this.data.id },
-                                { lat: rLat, lon: rLon, contact_id: reporter.getContactId() },
-                                { data: { id: 0 }, getStyle: () => ({ color: 'red', strokeColor: 'white', strokeWeight: '1px' }) },
-                                false
-                            )
-                        ],
-                        markers: new Set([this.data.id]),
-                        warnings: []
-                    };
-                    drewAny = true;
-                });
-
-                if (drewAny) {
-                    this._meshlog.updatePaths();
-                    this.neighbors_visible = true;
-                    return;
-                }
-            }
             this.hideNeighbors();
             return;
         }
