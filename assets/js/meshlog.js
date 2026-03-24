@@ -4050,8 +4050,8 @@ class MeshLog {
             if (!hidden) {
                 let filter = Settings.get('contactFilter.value', '').trim().toLowerCase();
                 if (filter) {
-                    let cmp1 = item.dataset.name.toLowerCase().includes(filter);
-                    let cmp2 = item.dataset.hash.toLowerCase().includes(filter);
+                    let cmp1 = (item.dataset.name ?? '').toLowerCase().includes(filter);
+                    let cmp2 = (item.dataset.hash ?? '').toLowerCase().includes(filter);
                     hidden = !cmp1 && !cmp2;
                 }
             }
@@ -4078,13 +4078,13 @@ class MeshLog {
             {
                 name: 'Name',
                 fn: (a, b) => { 
-                    return a.dataset.name.localeCompare(b.dataset.name);
+                    return (a.dataset.name ?? '').localeCompare(b.dataset.name ?? '');
                 },
             },
             {
                 name: 'First Seen',
                 fn: (a, b) => {
-                    return b.dataset.first_seen.localeCompare(a.dataset.first_seen);
+                    return (b.dataset.first_seen ?? '').localeCompare(a.dataset.first_seen ?? '');
                 },
             },
         ];
