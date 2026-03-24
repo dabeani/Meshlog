@@ -1528,7 +1528,24 @@ class MeshLog {
                 lat,
                 lon,
                 sent_at,
-                created_at
+                created_at,
+                (
+                    SELECT JSON_ARRAYAGG(
+                        JSON_OBJECT(
+                            'id', ar.id,
+                            'reporter_id', ar.reporter_id,
+                            'path', ar.path,
+                            'snr', ar.snr,
+                            'scope', ar.scope,
+                            'route_type', ar.route_type,
+                            'sender_at', ar.sender_at,
+                            'received_at', ar.received_at,
+                            'created_at', ar.created_at
+                        )
+                    )
+                    FROM advertisement_reports ar
+                    WHERE ar.advertisement_id = advertisements.id
+                ) AS reports
             FROM advertisements
             WHERE contact_id = :contact_id
               AND lat IS NOT NULL
@@ -1550,6 +1567,7 @@ class MeshLog {
                 'lon' => is_null($row['lon']) ? null : floatval($row['lon']),
                 'sent_at' => $row['sent_at'],
                 'created_at' => $row['created_at'],
+                'reports' => json_decode($row['reports'], true) ?? array(),
             );
         }
 

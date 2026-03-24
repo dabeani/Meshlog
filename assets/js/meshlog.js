@@ -754,6 +754,7 @@ class MeshLogContact extends MeshLogObject {
         let divDetailsKey = document.createElement("div");
         let divDetailsTelemetry = document.createElement("div");
         let btnShowNeighbors = document.createElement("button");
+        let btnShowRoutes = document.createElement("button");
 
         divDetails.append(divDetailsType);
         divDetails.append(divDetailsFirst);
@@ -762,6 +763,8 @@ class MeshLogContact extends MeshLogObject {
 
         if (!this.isClient()) {
             divDetails.append(btnShowNeighbors);
+        } else {
+            divDetails.append(btnShowRoutes);
         }
 
         divContainer.append(divContact);
@@ -783,6 +786,22 @@ class MeshLogContact extends MeshLogObject {
             }
         };
 
+        btnShowRoutes.classList.add('btn');
+        btnShowRoutes.classList.add('contact-routes-btn');
+        btnShowRoutes.dataset.contactId = `${this.data.id}`;
+        btnShowRoutes.innerText = "Routes";
+        btnShowRoutes.onclick = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (this._meshlog.toggleRouteTrail(this)) {
+                event.target.innerText = "Hide Routes";
+                event.target.classList.add("active");
+            } else {
+                event.target.innerText = "Routes";
+                event.target.classList.remove("active");
+            }
+        };
+
         this.dom = {
             container: divContainer,
             contact: divContact,
@@ -799,7 +818,8 @@ class MeshLogContact extends MeshLogObject {
             detailsFirst: divDetailsFirst,
             detailsKey: divDetailsKey,
             detailsTelemetry: divDetailsTelemetry,
-            btnShowNeighbors: btnShowNeighbors
+            btnShowNeighbors: btnShowNeighbors,
+            btnShowRoutes: btnShowRoutes
         };
 
         divContact.instance = this;
@@ -879,6 +899,10 @@ class MeshLogContact extends MeshLogObject {
         if (this.isRoom()) return 'Room';
         if (this.isSensor()) return 'Sensor';
         return 'Unknown';
+    }
+
+    isRouteTrailVisible() {
+        return this._meshlog.isRouteTrailVisible(this.data.id);
     }
 
     getMarkerStatusLabel() {
@@ -961,6 +985,13 @@ class MeshLogContact extends MeshLogObject {
         `;
     }
 
+    getRouteTrailButtonHtml() {
+        if (!this.isClient()) return '';
+        const activeClass = this.isRouteTrailVisible() ? ' device-popup-tab-active' : '';
+        const label = this.isRouteTrailVisible() ? 'Hide Routes' : 'Routes';
+        return `<div class="device-popup-section"><button type="button" class="device-popup-neighbors-btn${activeClass}" data-contact-id="${this.data.id}" data-popup-action="routes">${label}</button></div>`;
+    }
+
     getDevicePopupGeneralHtml() {
         const coords = Number.isFinite(Number(this.adv?.data?.lat)) && Number.isFinite(Number(this.adv?.data?.lon))
             ? `${Number(this.adv.data.lat).toFixed(5)}, ${Number(this.adv.data.lon).toFixed(5)}`
@@ -976,6 +1007,7 @@ class MeshLogContact extends MeshLogObject {
         const reporterHtml = this.isReporter()
             ? `<div class="device-popup-row"><span class="device-popup-key">Reporter</span><span class="device-popup-value">Yes</span></div>`
             : '';
+        const routeTrailButtonHtml = this.getRouteTrailButtonHtml();
         const neighborsHtml = !this.isClient()
             ? `<div class="device-popup-section"><button type="button" class="device-popup-neighbors-btn${this.neighbors_visible ? ' device-popup-tab-active' : ''}" data-contact-id="${this.data.id}" data-popup-action="neighbors">${this.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors'}</button></div>`
             : '';
@@ -992,6 +1024,7 @@ class MeshLogContact extends MeshLogObject {
                 <div class="device-popup-key-block">Public Key</div>
                 <div class="device-popup-mono">${escapeXml(this.data?.public_key ?? '-')}</div>
             </div>
+            ${routeTrailButtonHtml}
             ${trailHtml}
             ${telemetryHtml}
             ${timeSyncHtml}
@@ -1313,6 +1346,10 @@ class MeshLogContact extends MeshLogObject {
         if (this.dom.btnShowNeighbors) {
             this.dom.btnShowNeighbors.innerText = this.neighbors_visible ? "Hide Neighbors" : "Show Neighbors";
             this.dom.btnShowNeighbors.classList.toggle("active", this.neighbors_visible);
+        }
+        if (this.dom.btnShowRoutes) {
+            this.dom.btnShowRoutes.innerText = this.isRouteTrailVisible() ? "Hide Routes" : "Routes";
+            this.dom.btnShowRoutes.classList.toggle("active", this.isRouteTrailVisible());
         }
 
         this.dom.contactDate.classList.remove("prio-5", "prio-6");
@@ -2790,6 +2827,7 @@ class MeshLog {
     static MARKER_PANE_BACKGROUND = 'meshlog-marker-background';
     static MARKER_PANE_ROUTE = 'meshlog-marker-route';
     static ROUTE_PANE = 'meshlog-route-lines';
+    static ROUTE_POINT_PANE = 'meshlog-route-points';
 
     constructor(map, logsid, contactsid, stypesid, sreportersid, scontactsid, warningid, errorid, contextmenuid) {
         this.reporters = {};
@@ -2801,6 +2839,7 @@ class MeshLog {
         this.map = map;
         this.layer_descs = {};
         this.link_layers = L.layerGroup([]);
+        this.route_trail_layers = L.layerGroup([]);
         this.visible_markers = new Set();
         this._initialLoad = true;
         this.visible_contacts = {};
@@ -2865,6 +2904,7 @@ class MeshLog {
         this._initMapSearchControl();
 
         this.link_layers.addTo(this.map);
+        this.route_trail_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
         this.contactPacketStatsCache = new Map();
         this.contactAdvertisementTrailCache = new Map();
@@ -2873,6 +2913,8 @@ class MeshLog {
         this.activePopupContactId = null;
         this.activeContactTrailMap = null;
         this.activeContactTrailContactId = null;
+        this.activeRouteTrailContactId = null;
+        this.activeRouteTrailPointLayerId = null;
         this._boundPopupControlPointerHandler = (event) => this._handlePopupControlPointer(event);
         document.addEventListener('pointerdown', this._boundPopupControlPointerHandler, true);
         document.addEventListener('click', this._boundPopupControlPointerHandler, true);
@@ -3040,6 +3082,16 @@ class MeshLog {
 
         if (action === 'neighbors') {
             contact.toggleNeighbors();
+            this.popupUiState = {
+                ...this.popupUiState,
+                tab: 'general',
+            };
+            this.openContactPopup(contact);
+            return;
+        }
+
+        if (action === 'routes') {
+            this.toggleRouteTrail(contact);
             this.popupUiState = {
                 ...this.popupUiState,
                 tab: 'general',
@@ -3406,10 +3458,24 @@ class MeshLog {
         const points = objects
             .map((row) => ({
                 id: Number(row?.id) || 0,
+                contact_id: Number(row?.contact_id) || 0,
                 lat: Number(row?.lat),
                 lon: Number(row?.lon),
                 sent_at: row?.sent_at ?? null,
                 created_at: row?.created_at ?? null,
+                reports: Array.isArray(row?.reports)
+                    ? row.reports.map((report) => ({
+                        id: Number(report?.id) || 0,
+                        reporter_id: Number(report?.reporter_id) || 0,
+                        path: report?.path ?? null,
+                        snr: Number(report?.snr),
+                        scope: report?.scope ?? null,
+                        route_type: report?.route_type ?? null,
+                        sender_at: report?.sender_at ?? null,
+                        received_at: report?.received_at ?? null,
+                        created_at: report?.created_at ?? null,
+                    })).filter((report) => report.reporter_id > 0)
+                    : [],
             }))
             .filter((row) => Number.isFinite(row.lat) && Number.isFinite(row.lon) && !(row.lat === 0 && row.lon === 0));
 
@@ -3468,6 +3534,10 @@ class MeshLog {
                     },
                 });
 
+                if (this.activeRouteTrailContactId === numericContactId) {
+                    this._renderActiveRouteTrail();
+                }
+
                 if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'general') {
                     this.updateSelectedContactPopup();
                 }
@@ -3481,6 +3551,10 @@ class MeshLog {
                         note: 'Failed to fetch advertisement coordinates.',
                     }),
                 });
+
+                if (this.activeRouteTrailContactId === numericContactId) {
+                    this._renderActiveRouteTrail();
+                }
 
                 if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'general') {
                     this.updateSelectedContactPopup();
@@ -3510,6 +3584,190 @@ class MeshLog {
         }
 
         return cached.data;
+    }
+
+    isRouteTrailVisible(contactId) {
+        return Number(contactId) === Number(this.activeRouteTrailContactId);
+    }
+
+    _getRouteTrailPointLayerId(contactId, pointId) {
+        return `route_trail_${contactId}_${pointId}`;
+    }
+
+    _getRouteTrailSyntheticPointId(pointId) {
+        return -1 * (1000000 + Number(pointId || 0));
+    }
+
+    _hideActiveRouteTrailPoint() {
+        if (!this.activeRouteTrailPointLayerId) return;
+        if (this.layer_descs.hasOwnProperty(this.activeRouteTrailPointLayerId)) {
+            delete this.layer_descs[this.activeRouteTrailPointLayerId];
+            this.updatePaths();
+        }
+        this.activeRouteTrailPointLayerId = null;
+    }
+
+    _showRouteTrailPointReports(contact, point) {
+        this._hideActiveRouteTrailPoint();
+
+        if (!contact?.adv || !point) return;
+
+        const reports = Array.isArray(point.reports) ? point.reports : [];
+        const uniqueReports = [];
+        const seenReporterIds = new Set();
+        for (let i = 0; i < reports.length; i++) {
+            const report = reports[i];
+            const reporterId = Number(report?.reporter_id);
+            if (!Number.isFinite(reporterId) || reporterId <= 0 || seenReporterIds.has(reporterId)) continue;
+            const reporter = this.reporters[reporterId] ?? null;
+            const anchor = this._getReporterAnchor(reporter);
+            if (!reporter || !anchor) continue;
+            seenReporterIds.add(reporterId);
+            uniqueReports.push({ report, reporter, anchor });
+        }
+
+        if (uniqueReports.length < 1) return;
+
+        const pointAnchor = {
+            lat: Number(point.lat),
+            lon: Number(point.lon),
+            contact_id: this._getRouteTrailSyntheticPointId(point.id),
+        };
+
+        const layerId = this._getRouteTrailPointLayerId(contact.data.id, point.id);
+        const desc = {
+            paths: [],
+            markers: new Set([contact.data.id]),
+            warnings: [],
+            preview: {
+                title: `${contact.adv?.data?.name ?? contact.data.public_key} route point`,
+                subtitle: `${uniqueReports.length} repeater${uniqueReports.length === 1 ? '' : 's'} heard this advertisement`,
+                accent: '#ff4d4d',
+                chips: [contact.hash ? `[${contact.hash}]` : null, contact.getContactTypeLabel()].filter(Boolean),
+                footer: point.created_at ? `Seen ${point.created_at}` : '',
+            },
+            animated: false,
+        };
+
+        for (let i = 0; i < uniqueReports.length; i++) {
+            const item = uniqueReports[i];
+            if (Number.isFinite(item.anchor.contact_id) && item.anchor.contact_id > 0) {
+                desc.markers.add(item.anchor.contact_id);
+            }
+            desc.paths.push(new MeshLogLinkLayer(
+                item.anchor,
+                pointAnchor,
+                {
+                    data: { id: `route_${point.id}_${item.reporter.data.id}` },
+                    getStyle: () => ({ color: '#ff4d4d', stroke: '#ffffff' })
+                },
+                false
+            ));
+        }
+
+        this.layer_descs[layerId] = desc;
+        this.activeRouteTrailPointLayerId = layerId;
+        this.updatePaths();
+    }
+
+    _renderActiveRouteTrail() {
+        this.route_trail_layers.clearLayers();
+
+        const contactId = Number(this.activeRouteTrailContactId);
+        if (!Number.isFinite(contactId) || contactId <= 0) return;
+
+        const contact = this.contacts[contactId] ?? null;
+        if (!contact?.adv) return;
+
+        const trail = this.getContactAdvertisementTrail(contactId);
+        if (!Array.isArray(trail.points) || trail.points.length < 1) return;
+
+        for (let i = 0; i < trail.points.length; i++) {
+            const point = trail.points[i];
+            const lat = Number(point.lat);
+            const lon = Number(point.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+            const heardBy = Array.from(new Set((Array.isArray(point.reports) ? point.reports : [])
+                .map((report) => this.reporters[Number(report?.reporter_id)]?.data?.name ?? null)
+                .filter(Boolean)));
+            const popupHtml = `
+                <div class="device-popup-mini-dot-popup">
+                    <div><strong>Received:</strong> ${escapeXml(contact.formatPopupTimestamp(point.created_at))}</div>
+                    <div><strong>Sender:</strong> ${escapeXml(contact.formatPopupTimestamp(point.sent_at))}</div>
+                    <div><strong>Heard by:</strong> ${escapeXml(heardBy.length > 0 ? heardBy.join(', ') : 'Unknown repeater')}</div>
+                </div>
+            `;
+
+            const marker = L.circleMarker([lat, lon], {
+                pane: MeshLog.ROUTE_POINT_PANE,
+                radius: 6,
+                color: '#ffd4d4',
+                weight: 1.5,
+                fillColor: '#ff3030',
+                fillOpacity: 0.92,
+            });
+            marker.bindTooltip(escapeXml(contact.formatPopupTimestamp(point.created_at)), {
+                direction: 'top',
+                offset: [0, -8],
+                opacity: 0.95,
+                className: 'device-popup-mini-dot-tooltip',
+            });
+            marker.bindPopup(popupHtml, {
+                closeButton: true,
+                autoClose: true,
+                className: 'device-popup-mini-dot-popup-wrap',
+            });
+            marker.on('click', (event) => {
+                if (event?.originalEvent) {
+                    L.DomEvent.stopPropagation(event.originalEvent);
+                }
+                this._showRouteTrailPointReports(contact, point);
+            });
+            marker.addTo(this.route_trail_layers);
+        }
+    }
+
+    hideRouteTrail(contactId = null) {
+        const targetId = contactId === null ? this.activeRouteTrailContactId : Number(contactId);
+        if (!Number.isFinite(Number(targetId)) || Number(targetId) <= 0) return false;
+        if (this.activeRouteTrailContactId !== Number(targetId)) return false;
+
+        this.activeRouteTrailContactId = null;
+        this.route_trail_layers.clearLayers();
+        this._hideActiveRouteTrailPoint();
+
+        const contact = this.contacts[Number(targetId)] ?? null;
+        contact?.update?.();
+        if (this.activePopupContactId === Number(targetId) && this.popupUiState?.tab === 'general') {
+            this.openContactPopup(contact);
+        }
+        return false;
+    }
+
+    showRouteTrail(contact) {
+        if (!contact?.adv || !contact.isClient || !contact.isClient()) return false;
+
+        const previousId = Number(this.activeRouteTrailContactId) || null;
+        if (previousId && previousId !== Number(contact.data.id)) {
+            this.hideRouteTrail(previousId);
+        }
+
+        this.activeRouteTrailContactId = Number(contact.data.id);
+        this._renderActiveRouteTrail();
+        contact.update?.();
+        if (this.activePopupContactId === Number(contact.data.id) && this.popupUiState?.tab === 'general') {
+            this.openContactPopup(contact);
+        }
+        return true;
+    }
+
+    toggleRouteTrail(contact) {
+        if (!contact?.adv || !contact.isClient || !contact.isClient()) return false;
+        if (this.isRouteTrailVisible(contact.data.id)) {
+            return this.hideRouteTrail(contact.data.id);
+        }
+        return this.showRouteTrail(contact);
     }
 
     _getEmptyContactPacketStats(windowHours = 24, overrides = {}) {
@@ -3978,6 +4236,10 @@ class MeshLog {
         routePane.style.zIndex = '450';
         routePane.style.pointerEvents = 'auto';
 
+        const routePointPane = this.map.createPane(MeshLog.ROUTE_POINT_PANE);
+        routePointPane.style.zIndex = '610';
+        routePointPane.style.pointerEvents = 'auto';
+
         // Background (non-highlighted) markers sit ABOVE route lines so they stay clickable
         // even when routes are displayed.  Previously this was 350 (below routes at 500),
         // which let glow-lines and animation trails intercept click events on markers.
@@ -4076,6 +4338,7 @@ class MeshLog {
     clearSelection() {
         try {
             this._destroyActiveContactTrailMap();
+            this._hideActiveRouteTrailPoint();
             if (this.previewFocusedContactId) {
                 const previewContact = this.contacts[this.previewFocusedContactId] ?? null;
                 try { previewContact?.showLabel(false); } catch (_) { void _; }
