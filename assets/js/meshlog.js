@@ -1286,23 +1286,8 @@ class MeshLogContact extends MeshLogObject {
             this.dom.btnShowNeighbors.classList.toggle("active", this.neighbors_visible);
         }
 
-        if (this.isVeryExpired()) { // 3 days
-            this.dom.contactDate.classList.add("prio-6");
-        } else if (this.isExpired()) { // 3 days
-            this.dom.contactDate.classList.add("prio-5");
-        } else {
-            this.dom.contactDate.classList.remove("prio-5");
-            this.dom.contactDate.classList.remove("prio-6");
-        }
-
-        if (this.flags.dupe) {
-            this.dom.contactHash.classList.add("prio-5");
-        } if (this.isRepeater()) {
-            this.dom.contactHash.classList.add("prio-4");
-        } else {
-            this.dom.contactHash.classList.remove("prio-4");
-            this.dom.contactHash.classList.remove("prio-5");
-        }
+        this.dom.contactDate.classList.remove("prio-5", "prio-6");
+        this.dom.contactHash.classList.remove("prio-4", "prio-5");
 
 
         let type = '';
@@ -1572,7 +1557,12 @@ class MeshLogReport {
         spPath.classList.add(...['sp']);
         spSnr.classList.add(...['sp']);
 
+        let textColor = reporter.getStyle().color;
+        let strokeColor = reporter.getStyle().stroke ?? textColor;
+        let strokeWeight = reporter.getStyle().weight ?? '1px';
         spDot.innerText = reporter.data.name;
+        spDot.style.color = textColor;
+        spDot.style.border = `solid ${strokeWeight} ${strokeColor}`;
 
         spDate.innerText = this.data['created_at'].split(' ').pop();
         spPath.innerText = this.data['path'] || "direct";
@@ -2343,7 +2333,13 @@ class MeshLogTelemetryMessage extends MeshLogObject {
         if (reporter) {
             const spDot = document.createElement('span');
             spDot.classList.add('dot');
+            const style = reporter.getStyle();
+            const textColor = style.color;
+            const strokeColor = style.stroke ?? textColor;
+            const strokeWeight = style.weight ?? '1px';
             spDot.innerText = reporter.data.name;
+            spDot.style.color = textColor;
+            spDot.style.border = `solid ${strokeWeight} ${strokeColor}`;
             divLine1.append(spDot);
         }
 
@@ -2705,7 +2701,13 @@ class MeshLogRawPacket extends MeshLogObject {
         if (reporter) {
             let spDot = document.createElement("span");
             spDot.classList.add('dot');
+            let style = reporter.getStyle();
+            let textColor = style.color;
+            let strokeColor = style.stroke ?? textColor;
+            let strokeWeight = style.weight ?? '1px';
             spDot.innerText = reporter.data.name;
+            spDot.style.color = textColor;
+            spDot.style.border = `solid ${strokeWeight} ${strokeColor}`;
             divLine.append(spDot);
         }
 
