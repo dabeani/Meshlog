@@ -320,6 +320,36 @@ const formatedTimestamp = (d=new Date())=> {
 
 var map = L.map('map', { zoomControl: true }).setView([<?= json_encode($mapLat) ?>, <?= json_encode($mapLon) ?>], <?= json_encode($mapZoom) ?>);
 
+function focusMapOnUserLocation() {
+    if (!('geolocation' in navigator)) {
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        function(position) {
+            var latitude = Number(position.coords.latitude);
+            var longitude = Number(position.coords.longitude);
+
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                return;
+            }
+
+            var targetZoom = Math.max(map.getZoom(), 12);
+            map.setView([latitude, longitude], targetZoom);
+        },
+        function(_error) {
+            // Keep configured map center when geolocation is unavailable or denied.
+        },
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 60000,
+        }
+    );
+}
+
+focusMapOnUserLocation();
+
 var _TILE_LAYERS = {
     dark:  { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
              opts: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>' } },

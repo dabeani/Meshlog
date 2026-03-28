@@ -2828,6 +2828,7 @@ class MeshLog {
     static MARKER_PANE_ROUTE = 'meshlog-marker-route';
     static ROUTE_PANE = 'meshlog-route-lines';
     static ROUTE_POINT_PANE = 'meshlog-route-points';
+    static ZERO_HOP_HEAT_SETTING_KEY = 'map.zerohop.heat.enabled';
 
     constructor(map, logsid, contactsid, stypesid, sreportersid, scontactsid, warningid, errorid, contextmenuid) {
         this.reporters = {};
@@ -2840,6 +2841,9 @@ class MeshLog {
         this.layer_descs = {};
         this.link_layers = L.layerGroup([]);
         this.route_trail_layers = L.layerGroup([]);
+        this.zeroHopHeatLayer = L.layerGroup([]);
+        this.zeroHopHeatEnabled = Settings.getBool(MeshLog.ZERO_HOP_HEAT_SETTING_KEY, false);
+        this.zeroHopHeatRefreshTimer = null;
         this.visible_markers = new Set();
         this._initialLoad = true;
         this.visible_contacts = {};
@@ -2902,6 +2906,7 @@ class MeshLog {
         this.__init_contact_types();
         this.__init_warnings();
         this._initMapSearchControl();
+        this._initZeroHopHeatControl();
 
         this.link_layers.addTo(this.map);
         this.route_trail_layers.addTo(this.map);
@@ -2998,6 +3003,243 @@ class MeshLog {
         };
 
         control.addTo(this.map);
+    }
+
+    _initZeroHopHeatControl() {
+        const SNR_BANDS = [
+            { color: '#2ad48c', label: '≥ 10 dB' },
+            { color: '#6adf4c', label: '≥ 5 dB' },
+            { color: '#b8de3c', label: '≥ 1 dB' },
+            { color: '#ffd34f', label: '≥ −3 dB' },
+            { color: '#f39a38', label: '≥ −8 dB' },
+            { color: '#e24a4a', label: '< −8 dB' },
+        ];
+
+        const control = L.control({ position: 'bottomleft' });
+
+        control.onAdd = () => {
+            const root = document.createElement('div');
+            root.className = 'map-heat-toggle';
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'map-layer-btn map-heat-btn';
+            button.textContent = 'Zero-Hop Heat';
+            button.title = 'Toggle zero-hop repeater signal heat layer';
+            button.setAttribute('aria-label', button.title);
+            button.addEventListener('click', () => {
+                this.setZeroHopHeatEnabled(!this.zeroHopHeatEnabled);
+            });
+
+            // Small legend toggle
+            const legendToggle = document.createElement('button');
+            legendToggle.type = 'button';
+            legendToggle.className = 'map-layer-btn map-heat-legend-toggle';
+            legendToggle.textContent = '?';
+            legendToggle.title = 'Show / hide SNR colour legend';
+            legendToggle.setAttribute('aria-label', legendToggle.title);
+
+            const legend = document.createElement('div');
+            legend.className = 'map-heat-legend';
+            legend.hidden = true;
+            SNR_BANDS.forEach(({ color, label }) => {
+                const row = document.createElement('div');
+                row.className = 'map-heat-legend-row';
+                const swatch = document.createElement('span');
+                swatch.className = 'map-heat-legend-swatch';
+                swatch.style.background = color;
+                const text = document.createElement('span');
+                text.textContent = label;
+                row.append(swatch, text);
+                legend.append(row);
+            });
+
+            legendToggle.addEventListener('click', () => {
+                legend.hidden = !legend.hidden;
+                legendToggle.classList.toggle('active', !legend.hidden);
+            });
+
+            root.append(button, legendToggle, legend);
+            L.DomEvent.disableClickPropagation(root);
+            L.DomEvent.disableScrollPropagation(root);
+
+            this._zeroHopHeatControl = {
+                control,
+                root,
+                button,
+            };
+
+            this._syncZeroHopHeatControl();
+            return root;
+        };
+
+        control.addTo(this.map);
+        this._syncZeroHopHeatControl();
+        if (this.zeroHopHeatEnabled) {
+            this._scheduleZeroHopHeatRefresh();
+        }
+    }
+
+    _syncZeroHopHeatControl() {
+        if (!this._zeroHopHeatControl?.button) return;
+        this._zeroHopHeatControl.button.classList.toggle('active', this.zeroHopHeatEnabled);
+    }
+
+    setZeroHopHeatEnabled(enabled) {
+        const normalized = Boolean(enabled);
+        if (this.zeroHopHeatEnabled === normalized) {
+            this._syncZeroHopHeatControl();
+            return;
+        }
+
+        this.zeroHopHeatEnabled = normalized;
+        Settings.set(MeshLog.ZERO_HOP_HEAT_SETTING_KEY, this.zeroHopHeatEnabled ? '1' : '0');
+        this._syncZeroHopHeatControl();
+
+        if (this.zeroHopHeatEnabled) {
+            this._scheduleZeroHopHeatRefresh();
+            return;
+        }
+
+        if (this.zeroHopHeatRefreshTimer) {
+            clearTimeout(this.zeroHopHeatRefreshTimer);
+            this.zeroHopHeatRefreshTimer = null;
+        }
+
+        this.zeroHopHeatLayer.clearLayers();
+        if (this.map.hasLayer(this.zeroHopHeatLayer)) {
+            this.map.removeLayer(this.zeroHopHeatLayer);
+        }
+    }
+
+    _scheduleZeroHopHeatRefresh() {
+        if (!this.zeroHopHeatEnabled) return;
+        if (this.zeroHopHeatRefreshTimer) return;
+
+        this.zeroHopHeatRefreshTimer = setTimeout(() => {
+            this.zeroHopHeatRefreshTimer = null;
+            this._refreshZeroHopHeatLayer();
+        }, 220);
+    }
+
+    _resolveZeroHopHeatColor(snr) {
+        if (!Number.isFinite(snr)) return '#8f8f8f';
+        if (snr >= 10) return '#2ad48c';
+        if (snr >= 5) return '#6adf4c';
+        if (snr >= 1) return '#b8de3c';
+        if (snr >= -3) return '#ffd34f';
+        if (snr >= -8) return '#f39a38';
+        return '#e24a4a';
+    }
+
+    _collectZeroHopHeatPoints() {
+        const buckets = new Map();
+
+        Object.values(this.messages).forEach((message) => {
+            if (!(message instanceof MeshLogReportedObject)) return;
+            if (!Array.isArray(message.reports) || message.reports.length < 1) return;
+
+            const sender = this.contacts[Number(message.data.contact_id)] ?? null;
+            if (!sender?.adv) return;
+
+            const lat = Number(sender.adv.data.lat);
+            const lon = Number(sender.adv.data.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+            if (lat === 0 && lon === 0) return;
+
+            for (let i = 0; i < message.reports.length; i++) {
+                const report = message.reports[i];
+                const reporterId = Number(report?.data?.reporter_id);
+                if (!Number.isFinite(reporterId) || reporterId <= 0) continue;
+                if (!this.isReporterAllowed(reporterId)) continue;
+
+                const hops = parsePath(report?.data?.path ?? '').length;
+                if (hops !== 0) continue;
+
+                const reporter = this.reporters[reporterId] ?? null;
+                if (!reporter) continue;
+
+                const reporterContactId = Number(reporter.getContactId());
+                if (!Number.isFinite(reporterContactId) || reporterContactId <= 0) continue;
+
+                const repeaterContact = this.contacts[reporterContactId] ?? null;
+                if (!repeaterContact?.isRepeater || !repeaterContact.isRepeater()) continue;
+
+                const snr = Number(report?.data?.snr);
+                if (!Number.isFinite(snr)) continue;
+
+                const bucketKey = `${lat.toFixed(5)}:${lon.toFixed(5)}`;
+                if (!buckets.has(bucketKey)) {
+                    buckets.set(bucketKey, {
+                        lat,
+                        lon,
+                        count: 0,
+                        snrSum: 0,
+                        snrMax: -Infinity,
+                        snrMin: Infinity,
+                        reporters: new Set(),
+                    });
+                }
+
+                const bucket = buckets.get(bucketKey);
+                bucket.count += 1;
+                bucket.snrSum += snr;
+                bucket.snrMax = Math.max(bucket.snrMax, snr);
+                bucket.snrMin = Math.min(bucket.snrMin, snr);
+                bucket.reporters.add(reporterId);
+            }
+        });
+
+        return Array.from(buckets.values());
+    }
+
+    _refreshZeroHopHeatLayer() {
+        this.zeroHopHeatLayer.clearLayers();
+
+        if (!this.zeroHopHeatEnabled) {
+            if (this.map.hasLayer(this.zeroHopHeatLayer)) {
+                this.map.removeLayer(this.zeroHopHeatLayer);
+            }
+            return;
+        }
+
+        const points = this._collectZeroHopHeatPoints();
+
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            const snrAvg = point.count > 0 ? point.snrSum / point.count : NaN;
+            const color = this._resolveZeroHopHeatColor(snrAvg);
+            const radius = Math.max(8, Math.min(26, 7 + Math.sqrt(point.count) * 2.6));
+            const opacityBoost = Number.isFinite(snrAvg) ? Math.max(0, Math.min(1, (snrAvg + 16) / 30)) : 0;
+            const fillOpacity = 0.22 + opacityBoost * 0.38;
+
+            const marker = L.circleMarker([point.lat, point.lon], {
+                pane: MeshLog.ROUTE_POINT_PANE,
+                radius,
+                stroke: true,
+                weight: 1,
+                color,
+                opacity: Math.min(1, fillOpacity + 0.25),
+                fillColor: color,
+                fillOpacity: Math.min(0.78, fillOpacity),
+                interactive: true,
+                bubblingMouseEvents: false,
+            });
+
+            const avgText = Number.isFinite(snrAvg) ? (Number.isInteger(snrAvg) ? `${snrAvg}` : snrAvg.toFixed(1)) : 'n/a';
+            const minText = Number.isFinite(point.snrMin) ? (Number.isInteger(point.snrMin) ? `${point.snrMin}` : point.snrMin.toFixed(1)) : 'n/a';
+            const maxText = Number.isFinite(point.snrMax) ? (Number.isInteger(point.snrMax) ? `${point.snrMax}` : point.snrMax.toFixed(1)) : 'n/a';
+            marker.bindTooltip(
+                `Zero-hop repeater reports: ${point.count}<br>Average SNR: ${avgText} dB<br>Range: ${minText} to ${maxText} dB<br>Repeaters: ${point.reporters.size}`,
+                { className: 'hop-tooltip', direction: 'top' }
+            );
+
+            marker.addTo(this.zeroHopHeatLayer);
+        }
+
+        if (!this.map.hasLayer(this.zeroHopHeatLayer)) {
+            this.zeroHopHeatLayer.addTo(this.map);
+        }
     }
 
     _normalizeSearchText(value) {
@@ -3308,8 +3550,9 @@ class MeshLog {
         });
 
         const layerName = Settings.get('map.layer', 'dark') === 'light' ? 'light' : 'dark';
-        const layerConfig = (typeof _TILE_LAYERS !== 'undefined' && _TILE_LAYERS[layerName])
-            ? _TILE_LAYERS[layerName]
+        const tileLayers = (typeof window !== 'undefined' && window._TILE_LAYERS) ? window._TILE_LAYERS : null;
+        const layerConfig = (tileLayers && tileLayers[layerName])
+            ? tileLayers[layerName]
             : {
                 url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 opts: {
@@ -4591,6 +4834,7 @@ class MeshLog {
     __onTypesChanged() {
         this.updateMessagesDom();
         this.updateMarkersForFilter();
+        this._scheduleZeroHopHeatRefresh();
     }
 
     // Show/hide every contact map marker based on the active collector filter.
@@ -5349,6 +5593,7 @@ class MeshLog {
         this.onLoadMessages();
         this.onLoadContacts();
         this.onLoadChannels();
+        this._scheduleZeroHopHeatRefresh();
     }
 
     loadReporters(params={}, onload=null) {
@@ -5962,6 +6207,7 @@ class MeshLog {
         }
         // Animate the path of any newly received packet on the map
         this._animateNewPacketPath(msg);
+        this._scheduleZeroHopHeatRefresh();
     }
 
     clearNotifications() {
