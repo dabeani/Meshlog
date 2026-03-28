@@ -529,6 +529,10 @@ h2 {
     gap: 3px;
 }
 
+.map-heat-legend[hidden] {
+    display: none;
+}
+
 .map-heat-legend-row {
     display: flex;
     align-items: center;
