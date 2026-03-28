@@ -34,6 +34,21 @@
         return $stmt->fetchColumn();
     }
 
+    function hasColumn($pdo, $tableName, $columnName) {
+        $stmt = $pdo->prepare('
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = :table_name
+              AND column_name = :column_name
+        ');
+        $stmt->execute(array(
+            ':table_name' => $tableName,
+            ':column_name' => $columnName,
+        ));
+        return intval($stmt->fetchColumn()) > 0;
+    }
+
     $windowHours = clampInt($_GET['window_hours'] ?? 24, 1, 168, 24);
 
     try {
@@ -104,8 +119,12 @@
             $tables[] = $tableData;
         }
 
+        $rawPacketTypeExpr = hasColumn($pdo, 'raw_packets', 'packet_type')
+            ? '`packet_type`'
+            : '((`header` >> 2) & 15)';
+
         $packetTypeStmt = $pdo->prepare('
-            SELECT packet_type, COUNT(*) AS count
+            SELECT ' . $rawPacketTypeExpr . ' AS packet_type, COUNT(*) AS count
             FROM raw_packets
             WHERE received_at >= DATE_SUB(NOW(), INTERVAL :window HOUR)
             GROUP BY packet_type
