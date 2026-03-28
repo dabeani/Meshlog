@@ -383,6 +383,91 @@ if ($user && $meshlog->updateAvailable()) {
             border-top: 1px solid var(--admin-line);
         }
 
+        /* Stats page */
+        .stats-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .stats-kpis {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .stats-kpi {
+            border: 1px solid var(--admin-line);
+            border-radius: 12px;
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.025);
+        }
+
+        .stats-kpi-label {
+            color: var(--admin-muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .stats-kpi-value {
+            color: #f5fbff;
+            font-size: 1.05rem;
+            margin-top: 4px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .stats-card {
+            border: 1px solid var(--admin-line);
+            border-radius: 12px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            min-width: 0;
+        }
+
+        .stats-card h3 {
+            margin: 0 0 10px;
+            color: #f0f6ff;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .stats-table-wrap {
+            overflow-x: auto;
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.84rem;
+        }
+
+        .stats-table th,
+        .stats-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--admin-line);
+            white-space: nowrap;
+            text-align: left;
+        }
+
+        .stats-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .stats-muted {
+            color: var(--admin-muted);
+            font-size: 0.84rem;
+        }
+
         /* Help modal */
         .admin-modal {
             position: fixed;
@@ -658,6 +743,9 @@ if ($user && $meshlog->updateAvailable()) {
             .admin-body {
                 padding: 14px;
             }
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -689,6 +777,7 @@ if ($user && $meshlog->updateAvailable()) {
             <button type="button" class="admin-nav-btn" data-page="channels">Channels</button>
             <button type="button" class="admin-nav-btn" data-page="settings">Settings</button>
             <button type="button" class="admin-nav-btn" data-page="audit">Audit Log</button>
+            <button type="button" class="admin-nav-btn" data-page="stats">Stats</button>
             <div class="admin-nav-sep"></div>
             <a href="?logout" class="admin-nav-btn">Log out</a>
         </nav>
@@ -809,6 +898,113 @@ if ($user && $meshlog->updateAvailable()) {
             </section>
         </div>
 
+        <!-- PAGE: Stats -->
+        <div class="admin-page" id="page-stats">
+            <section class="admin-section">
+                <div class="section-title">
+                    <span>Database Statistics</span>
+                    <span class="section-kicker">Live database footprint, ingest throughput, and retention state</span>
+                </div>
+                <div class="section-body">
+                    <div class="stats-toolbar">
+                        <div class="stats-muted">Last update: <span id="stats-last-update">-</span></div>
+                        <div>
+                            <label for="stats-window-hours" class="stats-muted">Window</label>
+                            <select id="stats-window-hours">
+                                <option value="1">1h</option>
+                                <option value="6">6h</option>
+                                <option value="24" selected>24h</option>
+                                <option value="72">72h</option>
+                                <option value="168">7d</option>
+                            </select>
+                            <button type="button" id="stats-refresh-btn">Refresh</button>
+                        </div>
+                    </div>
+
+                    <div class="stats-kpis">
+                        <div class="stats-kpi">
+                            <div class="stats-kpi-label">Database Size</div>
+                            <div class="stats-kpi-value" id="stats-kpi-db-size">-</div>
+                        </div>
+                        <div class="stats-kpi">
+                            <div class="stats-kpi-label">Tracked Tables</div>
+                            <div class="stats-kpi-value" id="stats-kpi-table-count">-</div>
+                        </div>
+                        <div class="stats-kpi">
+                            <div class="stats-kpi-label">Rows in Window</div>
+                            <div class="stats-kpi-value" id="stats-kpi-window-rows">-</div>
+                        </div>
+                        <div class="stats-kpi">
+                            <div class="stats-kpi-label">Last Auto Purge</div>
+                            <div class="stats-kpi-value" id="stats-kpi-last-purge">-</div>
+                        </div>
+                        <div class="stats-kpi">
+                            <div class="stats-kpi-label">Auto-Purge Timer</div>
+                            <div class="stats-kpi-value" id="stats-kpi-auto-purge">-</div>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stats-card">
+                            <h3>Retention (days)</h3>
+                            <div id="stats-retention" class="stats-muted">-</div>
+                        </div>
+
+                        <div class="stats-card">
+                            <h3>Ingest Breakdown (window)</h3>
+                            <div class="stats-table-wrap">
+                                <table class="stats-table">
+                                    <thead><tr><th>Type</th><th>Count</th></tr></thead>
+                                    <tbody id="stats-ingest-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="stats-card">
+                            <h3>Top Reporters (window)</h3>
+                            <div class="stats-table-wrap">
+                                <table class="stats-table">
+                                    <thead><tr><th>#</th><th>Name</th><th>Public Key</th><th>Packets</th></tr></thead>
+                                    <tbody id="stats-reporters-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="stats-card">
+                            <h3>Raw Packet Types (window)</h3>
+                            <div class="stats-table-wrap">
+                                <table class="stats-table">
+                                    <thead><tr><th>Packet Type</th><th>Count</th></tr></thead>
+                                    <tbody id="stats-raw-types-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stats-card" style="margin-top:14px;">
+                        <h3>Table Statistics</h3>
+                        <div class="stats-table-wrap">
+                            <table class="stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>Table</th>
+                                        <th>Rows</th>
+                                        <th>Rows in Window</th>
+                                        <th>Size</th>
+                                        <th>Oldest</th>
+                                        <th>Newest</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stats-tables-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="stats-muted" id="stats-error" style="margin-top:10px;"></div>
+                </div>
+            </section>
+        </div>
+
     </div><!-- /.admin-body -->
 
     <!-- Help modal (shared) -->
@@ -824,7 +1020,7 @@ if ($user && $meshlog->updateAvailable()) {
 
     <script>
         /* ── Tabs ────────────────────────────────────────────────────── */
-        const PAGES = ['devices', 'channels', 'settings', 'audit'];
+        const PAGES = ['devices', 'channels', 'settings', 'audit', 'stats'];
         const loadedPages = new Set();
 
         function switchPage(name) {
@@ -837,12 +1033,19 @@ if ($user && $meshlog->updateAvailable()) {
             });
             history.replaceState(null, '', `#${name}`);
 
+            if (name === 'stats') {
+                startStatsAutoRefresh();
+            } else {
+                stopStatsAutoRefresh();
+            }
+
             if (!loadedPages.has(name)) {
                 loadedPages.add(name);
                 if (name === 'devices')  loadReporters();
                 if (name === 'channels') loadChannels();
                 if (name === 'settings') loadSettings();
                 if (name === 'audit')    loadAudit(0);
+                if (name === 'stats')    loadStats();
             }
         }
 
@@ -1449,38 +1652,39 @@ if ($user && $meshlog->updateAvailable()) {
                 key: 'DATA_RETENTION_ADV',
                 label: 'Advertisement retention',
                 type: 'number',
-                placeholder: '604800',
-                unit: 'seconds',
-                description: 'Advertisements older than this period are automatically deleted (reports included). Set to 0 to keep forever.',
-                help: 'Default: 604800 s (7 days).\n\nIncludes all associated advertisement_reports rows. Purge runs automatically at most once per hour during ingest. Use "Purge Now" to run immediately.\n\nSet to 0 to disable automatic deletion.',
+                placeholder: '7',
+                unit: 'days',
+                description: 'Advertisements older than this many days are automatically deleted (reports included). Set to 0 to keep forever.',
+                help: 'Default: 7 days.\n\nIncludes all associated advertisement_reports rows. Purge runs automatically at most once per hour during ingest. Use "Purge Now" to run immediately.\n\nSet to 0 to disable automatic deletion.',
                 formatHint: (v) => formatRetentionHint(v)
             },
             {
                 key: 'DATA_RETENTION_MSG',
                 label: 'Message retention',
                 type: 'number',
-                placeholder: '604800',
-                unit: 'seconds',
-                description: 'Direct messages and channel messages older than this period are deleted. Set to 0 to keep forever.',
-                help: 'Default: 604800 s (7 days).\n\nApplies to both direct_messages and channel_messages including their report sub-rows. Set to 0 to disable automatic deletion.',
+                placeholder: '7',
+                unit: 'days',
+                description: 'Direct messages and channel messages older than this many days are deleted. Set to 0 to keep forever.',
+                help: 'Default: 7 days.\n\nApplies to both direct_messages and channel_messages including their report sub-rows. Set to 0 to disable automatic deletion.',
                 formatHint: (v) => formatRetentionHint(v)
             },
             {
                 key: 'DATA_RETENTION_RAW',
                 label: 'Raw packet retention',
                 type: 'number',
-                placeholder: '604800',
-                unit: 'seconds',
-                description: 'Raw (undecoded / encrypted) packets older than this period are deleted. Set to 0 to keep forever.',
-                help: 'Default: 604800 s (7 days).\n\nRaw packets accumulate quickly on busy nodes. Set to 0 to keep all raw packets indefinitely.',
+                placeholder: '7',
+                unit: 'days',
+                description: 'Raw (undecoded / encrypted) packets older than this many days are deleted. Set to 0 to keep forever.',
+                help: 'Default: 7 days.\n\nRaw packets accumulate quickly on busy nodes. Set to 0 to keep all raw packets indefinitely.',
                 formatHint: (v) => formatRetentionHint(v)
             },
         ];
 
         function formatRetentionHint(value) {
-            const seconds = parseInt(value ?? 0, 10);
-            if (!Number.isFinite(seconds) || seconds === 0) return 'Disabled — data kept forever';
-            return 'Delete after ' + formatDurationHint(seconds, '').trim();
+            const days = parseInt(value ?? 0, 10);
+            if (!Number.isFinite(days) || days === 0) return 'Disabled - data kept forever';
+            if (days === 1) return 'Delete after 1 day';
+            return `Delete after ${days} days`;
         }
 
         function formatDurationHint(value, prefix) {
@@ -1697,6 +1901,165 @@ if ($user && $meshlog->updateAvailable()) {
 
         auditPrevBtn.addEventListener('click', () => loadAudit(Math.max(0, auditOffset - AUDIT_LIMIT)));
         auditNextBtn.addEventListener('click', () => loadAudit(auditOffset + AUDIT_LIMIT));
+
+        /* ── Stats ───────────────────────────────────────────────────── */
+        const statsWindowSelect = document.getElementById('stats-window-hours');
+        const statsRefreshBtn = document.getElementById('stats-refresh-btn');
+        const statsLastUpdate = document.getElementById('stats-last-update');
+        const statsError = document.getElementById('stats-error');
+        const statsKpiDbSize = document.getElementById('stats-kpi-db-size');
+        const statsKpiTableCount = document.getElementById('stats-kpi-table-count');
+        const statsKpiWindowRows = document.getElementById('stats-kpi-window-rows');
+        const statsKpiLastPurge = document.getElementById('stats-kpi-last-purge');
+        const statsKpiAutoPurge = document.getElementById('stats-kpi-auto-purge');
+        const statsRetention = document.getElementById('stats-retention');
+        const statsIngestTbody = document.getElementById('stats-ingest-tbody');
+        const statsReportersTbody = document.getElementById('stats-reporters-tbody');
+        const statsRawTypesTbody = document.getElementById('stats-raw-types-tbody');
+        const statsTablesTbody = document.getElementById('stats-tables-tbody');
+        let statsAutoRefreshTimer = null;
+
+        function formatBytes(bytes) {
+            const num = Number(bytes ?? 0);
+            if (!Number.isFinite(num) || num <= 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let v = num;
+            let i = 0;
+            while (v >= 1024 && i < units.length - 1) {
+                v /= 1024;
+                i += 1;
+            }
+            const digits = v >= 100 || i === 0 ? 0 : 1;
+            return `${v.toFixed(digits)} ${units[i]}`;
+        }
+
+        function formatLocalDateTime(sqlOrUnix) {
+            if (!sqlOrUnix) return '-';
+            if (typeof sqlOrUnix === 'number' || /^\d+$/.test(String(sqlOrUnix))) {
+                const d = new Date(Number(sqlOrUnix) * 1000);
+                if (Number.isFinite(d.getTime())) return d.toLocaleString();
+            }
+            const parsed = Date.parse(String(sqlOrUnix).replace(' ', 'T'));
+            if (!Number.isFinite(parsed)) return String(sqlOrUnix);
+            return new Date(parsed).toLocaleString();
+        }
+
+        function formatDurationCompact(secondsValue) {
+            const seconds = Math.max(0, Math.floor(Number(secondsValue) || 0));
+            if (seconds < 60) return `${seconds}s`;
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            if (minutes < 60) return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m ${remainingSeconds}s`;
+            const hours = Math.floor(minutes / 60);
+            const remainingMinutes = minutes % 60;
+            return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
+        }
+
+        function renderSimpleRows(tbody, rows, emptyText, rowRenderer) {
+            tbody.innerHTML = '';
+            if (!rows.length) {
+                const tr = tbody.insertRow();
+                const td = tr.insertCell();
+                td.colSpan = 4;
+                td.className = 'stats-muted';
+                td.innerText = emptyText;
+                return;
+            }
+            rows.forEach((row, idx) => rowRenderer(row, idx));
+        }
+
+        function renderStats(result) {
+            const tables = result.tables ?? [];
+            const totalWindowRows = tables.reduce((sum, t) => sum + Number(t.rows_in_window ?? 0), 0);
+
+            statsKpiDbSize.innerText = formatBytes(result.database?.total_bytes ?? 0);
+            statsKpiTableCount.innerText = String(result.database?.table_count ?? tables.length ?? 0);
+            statsKpiWindowRows.innerText = String(totalWindowRows);
+            statsKpiLastPurge.innerText = formatLocalDateTime(result.retention?.last_purge_at_unix ?? 0);
+            statsLastUpdate.innerText = result.generated_at ?? new Date().toLocaleString();
+
+            const ret = result.retention ?? {};
+            const autoPurge = ret.auto_purge ?? {};
+            statsRetention.innerText = `ADV: ${ret.advertisements_days ?? 0} days | MSG: ${ret.messages_days ?? 0} days | RAW: ${ret.raw_packets_days ?? 0} days`;
+
+            if (!autoPurge.enabled) {
+                statsKpiAutoPurge.innerText = 'Disabled';
+            } else if (autoPurge.state === 'cooldown') {
+                const remaining = formatDurationCompact(autoPurge.cooldown_remaining_seconds ?? 0);
+                const nextAt = formatLocalDateTime(autoPurge.next_auto_purge_at_unix ?? 0);
+                statsKpiAutoPurge.innerText = `Next in ${remaining} (${nextAt})`;
+            } else {
+                statsKpiAutoPurge.innerText = 'Ready now (on next ingest)';
+            }
+
+            renderSimpleRows(statsIngestTbody, result.ingest_breakdown ?? [], 'No ingest data in selected window.', (row) => {
+                const tr = statsIngestTbody.insertRow();
+                tr.insertCell().innerText = row.type ?? '';
+                tr.insertCell().innerText = String(row.count ?? 0);
+            });
+
+            renderSimpleRows(statsRawTypesTbody, result.raw_packet_type_breakdown ?? [], 'No raw packet types in selected window.', (row) => {
+                const tr = statsRawTypesTbody.insertRow();
+                tr.insertCell().innerText = String(row.packet_type ?? '-');
+                tr.insertCell().innerText = String(row.count ?? 0);
+            });
+
+            renderSimpleRows(statsReportersTbody, result.top_reporters ?? [], 'No reporter activity in selected window.', (row, idx) => {
+                const tr = statsReportersTbody.insertRow();
+                tr.insertCell().innerText = String(idx + 1);
+                tr.insertCell().innerText = row.name ?? '';
+                tr.insertCell().innerText = row.public_key ?? '';
+                tr.insertCell().innerText = String(row.packets_in_window ?? 0);
+            });
+
+            renderSimpleRows(statsTablesTbody, tables, 'No table stats available.', (row) => {
+                const tr = statsTablesTbody.insertRow();
+                tr.insertCell().innerText = row.name ?? '';
+                tr.insertCell().innerText = String(row.rows ?? 0);
+                tr.insertCell().innerText = row.rows_in_window != null ? String(row.rows_in_window) : '-';
+                tr.insertCell().innerText = formatBytes(row.bytes ?? 0);
+                tr.insertCell().innerText = row.oldest_at ?? '-';
+                tr.insertCell().innerText = row.newest_at ?? '-';
+            });
+        }
+
+        function loadStats() {
+            statsRefreshBtn.disabled = true;
+            statsError.innerText = '';
+            const hours = Number(statsWindowSelect.value || 24);
+            fetch(`api/stats/?window_hours=${encodeURIComponent(hours)}`)
+                .then(r => r.json())
+                .then(result => {
+                    statsRefreshBtn.disabled = false;
+                    if (getError(result)) {
+                        statsError.innerText = 'Error: ' + getError(result);
+                        return;
+                    }
+                    renderStats(result);
+                })
+                .catch(() => {
+                    statsRefreshBtn.disabled = false;
+                    statsError.innerText = 'Request failed';
+                });
+        }
+
+        function startStatsAutoRefresh() {
+            if (statsAutoRefreshTimer) return;
+            statsAutoRefreshTimer = setInterval(() => {
+                if (location.hash.slice(1) === 'stats') {
+                    loadStats();
+                }
+            }, 10000);
+        }
+
+        function stopStatsAutoRefresh() {
+            if (!statsAutoRefreshTimer) return;
+            clearInterval(statsAutoRefreshTimer);
+            statsAutoRefreshTimer = null;
+        }
+
+        statsRefreshBtn.addEventListener('click', loadStats);
+        statsWindowSelect.addEventListener('change', loadStats);
 
         /* ── Init ────────────────────────────────────────────────────── */
         const initialPage = PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'devices';

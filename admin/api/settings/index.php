@@ -5,6 +5,30 @@
     $results = array('status' => 'unknown');
     $adminDefs = MeshLogSetting::getAdminDefinitions();
 
+    function isRetentionKey($key) {
+        return in_array($key, array(
+            MeshLogSetting::KEY_DATA_RETENTION_ADV,
+            MeshLogSetting::KEY_DATA_RETENTION_MSG,
+            MeshLogSetting::KEY_DATA_RETENTION_RAW,
+        ), true);
+    }
+
+    function daysToSeconds($days) {
+        $days = intval($days);
+        if ($days <= 0) {
+            return 0;
+        }
+        return $days * 86400;
+    }
+
+    function secondsToDays($seconds) {
+        $seconds = intval($seconds);
+        if ($seconds <= 0) {
+            return 0;
+        }
+        return max(1, (int)ceil($seconds / 86400));
+    }
+
     function normalizeSettingValue($key, $value, $definitions, &$errors) {
         if (!isset($definitions[$key])) return null;
 
@@ -23,6 +47,11 @@
             if ($normalized < 0) {
                 $errors[] = "Invalid value for $key";
                 return null;
+            }
+
+            if (isRetentionKey($key)) {
+                // Admin retention fields are entered in days; DB stores seconds.
+                return daysToSeconds($normalized);
             }
 
             return $normalized;
@@ -71,7 +100,11 @@
     } else {
         $settings = array();
         foreach ($adminDefs as $key => $definition) {
-            $settings[$key] = $meshlog->getConfig($key, $definition['default'] ?? null);
+            $value = $meshlog->getConfig($key, $definition['default'] ?? null);
+            if (isRetentionKey($key)) {
+                $value = secondsToDays($value);
+            }
+            $settings[$key] = $value;
         }
 
         $results = array(

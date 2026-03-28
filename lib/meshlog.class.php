@@ -165,12 +165,27 @@ class MeshLog {
      * Delete records older than the configured retention periods.
      * Returns array with row counts deleted per category.
      */
+    private function retentionSecondsFromConfig($key) {
+        $value = intval($this->getConfig($key, 0));
+        if ($value <= 0) {
+            return 0;
+        }
+
+        // Retention is managed as days in admin; tiny values likely came from
+        // old second-based input and should be treated as day counts.
+        if ($value <= 365) {
+            return $value * 86400;
+        }
+
+        return $value;
+    }
+
     function purgeOldData() {
         $stats = array('advertisements' => 0, 'messages' => 0, 'raw_packets' => 0);
 
-        $retAdv = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_ADV, 0));
-        $retMsg = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_MSG, 0));
-        $retRaw = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_RAW, 0));
+        $retAdv = $this->retentionSecondsFromConfig(MeshlogSetting::KEY_DATA_RETENTION_ADV);
+        $retMsg = $this->retentionSecondsFromConfig(MeshlogSetting::KEY_DATA_RETENTION_MSG);
+        $retRaw = $this->retentionSecondsFromConfig(MeshlogSetting::KEY_DATA_RETENTION_RAW);
 
         if ($retAdv > 0) {
             $this->pdo->prepare("
@@ -228,9 +243,9 @@ class MeshLog {
      * Called automatically from HTTP/MQTT ingest.
      */
     function maybeAutoPurge() {
-        $retAdv = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_ADV, 0));
-        $retMsg = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_MSG, 0));
-        $retRaw = intval($this->getConfig(MeshlogSetting::KEY_DATA_RETENTION_RAW, 0));
+        $retAdv = $this->retentionSecondsFromConfig(MeshlogSetting::KEY_DATA_RETENTION_ADV);
+        $retMsg = $this->retentionSecondsFromConfig(MeshlogSetting::KEY_DATA_RETENTION_MSG);
+        $retRaw = $this->retentionSecondsFromConfig(MeshlogSetting::KEY_DATA_RETENTION_RAW);
         if ($retAdv === 0 && $retMsg === 0 && $retRaw === 0) return;
 
         $lastPurge = intval($this->getConfig(MeshlogSetting::KEY_LAST_PURGE_AT, 0));
