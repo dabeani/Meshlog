@@ -3136,16 +3136,20 @@ class MeshLog {
         const buckets = new Map();
 
         Object.values(this.messages).forEach((message) => {
-            if (!(message instanceof MeshLogReportedObject)) return;
+            // Only advertisement packets carry per-packet GPS coordinates.
+            if (!(message instanceof MeshLogAdvertisement)) return;
             if (!Array.isArray(message.reports) || message.reports.length < 1) return;
 
-            const sender = this.contacts[Number(message.data.contact_id)] ?? null;
-            if (!sender?.adv) return;
-
-            const lat = Number(sender.adv.data.lat);
-            const lon = Number(sender.adv.data.lon);
+            // GPS must come from the coordinates embedded in THIS specific ADV packet,
+            // not the contact's latest known position (sender is mobile).
+            const lat = Number(message.data.lat);
+            const lon = Number(message.data.lon);
             if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
             if (lat === 0 && lon === 0) return;
+
+            // Only map chat clients (type=1) — repeaters/rooms/sensors are fixed nodes.
+            const sender = this.contacts[Number(message.data.contact_id)] ?? null;
+            if (!sender?.isClient || !sender.isClient()) return;
 
             for (let i = 0; i < message.reports.length; i++) {
                 const report = message.reports[i];
