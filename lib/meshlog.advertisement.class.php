@@ -3,6 +3,9 @@
 class MeshLogAdvertisement extends MeshLogEntity {
     protected static $table = "advertisements";
 
+    private const LATITUDE_ABS_MAX = 90.0;
+    private const LONGITUDE_ABS_MAX = 180.0;
+
     public $contact_ref = null;  // MeshLogContact
 
     public $hash = null;
@@ -16,22 +19,37 @@ class MeshLogAdvertisement extends MeshLogEntity {
     public $sent_at = null;
     public $created_at = null;
 
+    private static function normalizeCoordinate($value, $maxAbs) {
+        if ($value === null || $value === '') return null;
+        if (!is_scalar($value) || !is_numeric($value)) return null;
+
+        $coordinate = floatval($value);
+        if (!is_finite($coordinate)) return null;
+
+        if (abs($coordinate) > $maxAbs) {
+            $coordinate /= 1000000.0;
+        }
+
+        if (!is_finite($coordinate) || abs($coordinate) > $maxAbs) return null;
+
+        return $coordinate;
+    }
+
     public static function fromJson($data, $meshlog) {
         $m = new MeshLogAdvertisement($meshlog);
         
-        if (!isset($data['contact'])) return $m;
+        if (!isset($data['contact']) && !isset($data['lat']) && !isset($data['lon'])) return $m;
         if (!isset($data['time'])) return $m;
 
-        $m->hash = $data['hash'] ?? null;
-        $m->hash_size = $data['hash_size'] ?? 1;
-        $m->name = $data['contact']['name'] ?? null;
-        $m->lat = floatval($data['contact']['lat']) ?? 0.0;
-        $m->lon = floatval($data['contact']['lon']) ?? 0.0;
-        $m->type = $data['contact']['type'] ?? 0;
-        $m->flags = $data['contact']['flags'] ?? 0;
+        $contact = isset($data['contact']) && is_array($data['contact']) ? $data['contact'] : array();
 
-        $m->lat /= 1000000.0;
-        $m->lon /= 1000000.0;
+        $m->hash = $data['hash'] ?? ($data['message_hash'] ?? null);
+        $m->hash_size = $data['hash_size'] ?? 1;
+        $m->name = $contact['name'] ?? ($data['name'] ?? null);
+        $m->lat = static::normalizeCoordinate($contact['lat'] ?? ($data['lat'] ?? null), static::LATITUDE_ABS_MAX);
+        $m->lon = static::normalizeCoordinate($contact['lon'] ?? ($data['lon'] ?? null), static::LONGITUDE_ABS_MAX);
+        $m->type = intval($contact['type'] ?? 0);
+        $m->flags = intval($contact['flags'] ?? 0);
 
         $m->sent_at = Utils::time2str($data['time']['sender']) ?? null;
 
