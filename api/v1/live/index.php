@@ -80,25 +80,33 @@ $combined = [];
 
 if (in_array('ADV', $types)) {
     foreach ($advertisementRows as $adv) {
-        $combined[] = array_merge(['type' => 'ADV'], $adv);
+        $packet = $adv;
+        $packet['type'] = 'ADV';
+        $combined[] = $packet;
     }
 }
 
 if (in_array('MSG', $types)) {
     foreach ($messageRows as $msg) {
-        $combined[] = array_merge(['type' => 'MSG'], $msg);
+        $packet = $msg;
+        $packet['type'] = 'MSG';
+        $combined[] = $packet;
     }
 }
 
 if (in_array('PUB', $types)) {
     foreach ($channelMessageRows as $cmsg) {
-        $combined[] = array_merge(['type' => 'PUB'], $cmsg);
+        $packet = $cmsg;
+        $packet['type'] = 'PUB';
+        $combined[] = $packet;
     }
 }
 
 if (in_array('RAW', $types)) {
     foreach ($rawPacketRows as $raw) {
-        $combined[] = array_merge(['type' => 'RAW'], $raw);
+        $packet = $raw;
+        $packet['type'] = 'RAW';
+        $combined[] = $packet;
     }
 }
 
