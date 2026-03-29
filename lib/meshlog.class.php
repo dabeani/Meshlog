@@ -1511,7 +1511,13 @@ class MeshLog {
                     )
                     FROM advertisements a
                     WHERE a.contact_id = t.id
-                    ORDER BY a.created_at DESC, a.id DESC
+                    ORDER BY
+                        CASE
+                            WHEN a.lat IS NOT NULL AND a.lon IS NOT NULL AND NOT (a.lat = 0 AND a.lon = 0) THEN 0
+                            ELSE 1
+                        END,
+                        a.created_at DESC,
+                        a.id DESC
                     LIMIT 1
                 ) AS advertisement,
 

@@ -5255,6 +5255,17 @@ class MeshLog {
         if (!(incomingAdvertisement instanceof MeshLogAdvertisement)) return false;
         if (!(existingAdvertisement instanceof MeshLogAdvertisement)) return true;
 
+        const incomingLat = Number(incomingAdvertisement.data?.lat);
+        const incomingLon = Number(incomingAdvertisement.data?.lon);
+        const existingLat = Number(existingAdvertisement.data?.lat);
+        const existingLon = Number(existingAdvertisement.data?.lon);
+
+        const incomingHasCoords = Number.isFinite(incomingLat) && Number.isFinite(incomingLon) && !(incomingLat === 0 && incomingLon === 0);
+        const existingHasCoords = Number.isFinite(existingLat) && Number.isFinite(existingLon) && !(existingLat === 0 && existingLon === 0);
+
+        if (incomingHasCoords && !existingHasCoords) return true;
+        if (!incomingHasCoords && existingHasCoords) return false;
+
         const incomingTime = Number(incomingAdvertisement.time ?? 0);
         const existingTime = Number(existingAdvertisement.time ?? 0);
         if (incomingTime > existingTime) return true;
