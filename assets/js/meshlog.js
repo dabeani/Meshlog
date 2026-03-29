@@ -373,6 +373,12 @@ class MeshLogContact extends MeshLogObject {
         }
     }
 
+    hasValidCoordinates() {
+        const lat = Number(this.adv?.data?.lat);
+        const lon = Number(this.adv?.data?.lon);
+        return Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
+    }
+
     static onclick(e) {
         this.expanded = !this.expanded;
         this.updateDom();
@@ -1110,7 +1116,7 @@ class MeshLogContact extends MeshLogObject {
         if (this.marker) return;
         this.map = map;
 
-        if (!this.adv || (this.adv.data.lat == 0 && this.adv.data.lon == 0)) {
+        if (!this.hasValidCoordinates()) {
             return
         }
 
@@ -1459,7 +1465,38 @@ class MeshLogContact extends MeshLogObject {
     }
 
     updateMarker() {
-        if (!this.marker || !this.markerIconRoot) return;
+        if (!this._meshlog?.map) return;
+
+        if (!this.hasValidCoordinates()) {
+            if (this.marker) {
+                try {
+                    this.marker.closeTooltip();
+                    this.marker.unbindTooltip();
+                    this.marker.remove();
+                } catch (_error) {
+                    void _error;
+                }
+                this.marker = null;
+                this.markerPane = null;
+                this.markerTooltip = undefined;
+                this.markerIconRoot = null;
+            }
+            return;
+        }
+
+        if (!this.marker) {
+            this.addToMap(this._meshlog.map);
+            if (!this.marker || !this.markerIconRoot) return;
+        }
+
+        const lat = Number(this.adv.data.lat);
+        const lon = Number(this.adv.data.lon);
+        const current = this.marker.getLatLng();
+        if (!current || current.lat !== lat || current.lng !== lon) {
+            this.marker.setLatLng([lat, lon]);
+        }
+
+        if (!this.markerIconRoot) return;
 
         // Sync the time-sync warning badge (the red "!" on the map bubble).
         // This mirrors what updateDom() does for the sidebar badge: the icon DOM
@@ -5121,6 +5158,231 @@ class MeshLog {
         return data.objects;
     }
 
+    _removeContactByKey(contactKey) {
+        const contact = this.contacts[contactKey] ?? null;
+        if (!contact) return false;
+
+        const contactId = Number(contact.data?.id);
+        if (this.selectedMarkerId === contactId || this.previewFocusedContactId === contactId || this.activePopupContactId === contactId) {
+            this.clearSelection();
+        }
+
+        if (this.isRouteTrailVisible(contactId)) {
+            this.hideRouteTrail(contactId);
+        }
+
+        if (contact.marker) {
+            try {
+                contact.marker.closeTooltip();
+                contact.marker.unbindTooltip();
+                contact.marker.remove();
+            } catch (_error) {
+                void _error;
+            }
+            contact.marker = null;
+            contact.markerPane = null;
+            contact.markerTooltip = undefined;
+            contact.markerIconRoot = null;
+        }
+
+        if (contact.dom?.container?.parentNode) {
+            contact.dom.container.parentNode.removeChild(contact.dom.container);
+        }
+
+        delete this.contacts[contactKey];
+        return true;
+    }
+
+    _removeReporterByKey(reporterKey) {
+        const reporter = this.reporters[reporterKey] ?? null;
+        if (!reporter) return false;
+        delete this.reporters[reporterKey];
+        return true;
+    }
+
+    _pruneRouteDescsByContactIds(contactIds) {
+        if (!(contactIds instanceof Set) || contactIds.size < 1) return false;
+        let changed = false;
+        Object.keys(this.layer_descs).forEach((layerId) => {
+            const desc = this.layer_descs[layerId];
+            if (!desc) return;
+            const markerHit = desc.markers instanceof Set
+                ? Array.from(desc.markers).some((id) => contactIds.has(Number(id)))
+                : false;
+            const pathHit = Array.isArray(desc.paths)
+                ? desc.paths.some((path) => contactIds.has(Number(path?.from?.contact_id)) || contactIds.has(Number(path?.to?.contact_id)))
+                : false;
+            if (markerHit || pathHit) {
+                delete this.layer_descs[layerId];
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
+    _pruneRouteDescsByReporterIds(reporterIds) {
+        if (!(reporterIds instanceof Set) || reporterIds.size < 1) return false;
+        let changed = false;
+        Object.keys(this.layer_descs).forEach((layerId) => {
+            const desc = this.layer_descs[layerId];
+            if (!desc || !Array.isArray(desc.paths)) return;
+            const reporterHit = desc.paths.some((path) => reporterIds.has(Number(path?.reporter?.data?.id)));
+            if (reporterHit) {
+                delete this.layer_descs[layerId];
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
+    _mergeLiveContactSnapshot(existing, incoming) {
+        if (!existing || !incoming) return;
+
+        existing.merge(incoming.data);
+        existing.telemetry = incoming.telemetry;
+
+        if (incoming.adv) {
+            const incomingTime = Number(incoming.last?.time ?? 0);
+            const existingTime = Number(existing.last?.time ?? 0);
+            if (!existing.last || incomingTime >= existingTime) {
+                existing.adv = incoming.adv;
+                existing.last = incoming.last;
+            }
+        } else {
+            existing.adv = null;
+            if (existing.last instanceof MeshLogAdvertisement) {
+                existing.last = null;
+            }
+        }
+    }
+
+    _syncLiveContacts(data) {
+        if (data?.error) {
+            this.showError(data.error, 4000);
+            return false;
+        }
+        if (!Array.isArray(data?.objects)) return false;
+
+        const seenKeys = new Set();
+        for (let i = 0; i < data.objects.length; i++) {
+            const row = data.objects[i];
+            const key = `${row.id}`;
+            seenKeys.add(key);
+            const incoming = new MeshLogContact(this, row);
+            if (this.contacts.hasOwnProperty(key)) {
+                this._mergeLiveContactSnapshot(this.contacts[key], incoming);
+            } else {
+                this.contacts[key] = incoming;
+            }
+        }
+
+        const removedContactKeys = [];
+        Object.keys(this.contacts).forEach((key) => {
+            if (!seenKeys.has(key)) {
+                removedContactKeys.push(key);
+            }
+        });
+
+        let routesChanged = false;
+        const removedContactIds = new Set();
+        for (let i = 0; i < removedContactKeys.length; i++) {
+            const key = removedContactKeys[i];
+            const contactId = Number(this.contacts[key]?.data?.id);
+            if (Number.isFinite(contactId)) {
+                removedContactIds.add(contactId);
+            }
+            this._removeContactByKey(key);
+            routesChanged = true;
+        }
+
+        if (this._pruneRouteDescsByContactIds(removedContactIds)) {
+            routesChanged = true;
+        }
+
+        if (routesChanged) {
+            this.updatePaths();
+        }
+
+        this.onLoadContacts();
+        return true;
+    }
+
+    _syncLiveReporters(data) {
+        if (data?.error) {
+            this.showError(data.error, 4000);
+            return false;
+        }
+        if (!Array.isArray(data?.objects)) return false;
+
+        const seenKeys = new Set();
+        for (let i = 0; i < data.objects.length; i++) {
+            const row = data.objects[i];
+            const key = `${row.id}`;
+            seenKeys.add(key);
+            const incoming = new MeshLogReporter(this, row);
+            if (this.reporters.hasOwnProperty(key)) {
+                this.reporters[key].merge(incoming.data);
+            } else {
+                this.reporters[key] = incoming;
+            }
+        }
+
+        const removedReporterKeys = [];
+        const removedReporterIds = new Set();
+        Object.keys(this.reporters).forEach((key) => {
+            if (seenKeys.has(key)) return;
+            removedReporterKeys.push(key);
+            const reporterId = Number(this.reporters[key]?.data?.id);
+            if (Number.isFinite(reporterId)) {
+                removedReporterIds.add(reporterId);
+            }
+        });
+
+        let routesChanged = false;
+        for (let i = 0; i < removedReporterKeys.length; i++) {
+            if (this._removeReporterByKey(removedReporterKeys[i])) {
+                routesChanged = true;
+            }
+        }
+
+        if (this._pruneRouteDescsByReporterIds(removedReporterIds)) {
+            routesChanged = true;
+        }
+
+        if (routesChanged) {
+            this.updatePaths();
+        }
+
+        this.__init_reporters();
+        return true;
+    }
+
+    syncLiveMapEntities(onDone = null) {
+        const query = { count: 5000 };
+        let pending = 2;
+
+        const finish = () => {
+            pending -= 1;
+            if (pending > 0) return;
+
+            this._renderActiveRouteTrail();
+
+            if (typeof onDone === 'function') {
+                onDone();
+            }
+        };
+
+        this.__fetchJson('api/v1/contacts', query, (data) => {
+            this._syncLiveContacts(data);
+            finish();
+        }, () => finish());
+
+        this.__fetchJson('api/v1/reporters', query, (data) => {
+            this._syncLiveReporters(data);
+            finish();
+        }, () => finish());
+    }
+
     loadNew(onload=null) {
         let params = { 
             "after_ms": this.latest
@@ -5933,6 +6195,8 @@ class MeshLog {
                 document.getElementById('favicon').setAttribute('href','assets/favicon/faviconr.ico');
                 document.title = `(${count}) MeshCore Log (forked)`; 
             }
+
+            self.syncLiveMapEntities();
         });
         this.setAutorefresh(this.interval);
     }
