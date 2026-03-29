@@ -426,12 +426,43 @@ class MeshLog {
         );
 
         if ($existing) {
+            $existingLat = is_null($existing->lat) ? null : floatval($existing->lat);
+            $existingLon = is_null($existing->lon) ? null : floatval($existing->lon);
+            $incomingLat = is_null($adv->lat) ? null : floatval($adv->lat);
+            $incomingLon = is_null($adv->lon) ? null : floatval($adv->lon);
+
+            $existingHasCoords = $existingLat !== null && $existingLon !== null && !($existingLat == 0.0 && $existingLon == 0.0);
+            $incomingHasCoords = $incomingLat !== null && $incomingLon !== null && !($incomingLat == 0.0 && $incomingLon == 0.0);
+
+            if ($incomingHasCoords && !$existingHasCoords) {
+                $existing->lat = $adv->lat;
+                $existing->lon = $adv->lon;
+            }
+            if (!empty($adv->name) && $adv->name !== $existing->name) {
+                $existing->name = $adv->name;
+            }
+            if (!is_null($adv->type) && intval($adv->type) !== intval($existing->type)) {
+                $existing->type = $adv->type;
+            }
+            if (!is_null($adv->flags) && intval($adv->flags) !== intval($existing->flags)) {
+                $existing->flags = $adv->flags;
+            }
+            if (!is_null($adv->hash_size) && intval($adv->hash_size) !== intval($existing->hash_size)) {
+                $existing->hash_size = $adv->hash_size;
+            }
+            if (!empty($adv->sent_at) && $adv->sent_at !== $existing->sent_at) {
+                $existing->sent_at = $adv->sent_at;
+            }
+
+            if (!$existing->save($this)) return $this->repError('failed to refresh advertisement');
+
             $adv = $existing;
             $saved = true;
         } else {
             $saved = $adv->save($this);
-            $contact->updateHeardAt($this);
         }
+
+        $contact->updateHeardAt($this);
 
         if ($saved) {
             // add report
