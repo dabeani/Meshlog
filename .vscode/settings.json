@@ -11,6 +11,7 @@
         "/^php -l admin/api/stats/index\\.php$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "xcodebuild": true
     }
 }

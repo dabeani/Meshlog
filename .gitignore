@@ -4,3 +4,7 @@ node_modules/
 .github/
 .vscode/
 .vscode/settings.json
+ios-app/
+Package.swift
+iOS-APP-GUIDE.md
+.vscode/settings.json
