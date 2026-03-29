@@ -21,7 +21,7 @@ if ($err) {
 }
 
 $since_ms = intval(getParam('since_ms', 0));
-$types = explode(',', getParam('types', 'ADV,MSG,PUB,RAW'));
+$types = explode(',', getParam('types', 'ADV,MSG,PUB,RAW,TEL,SYS'));
 $types = array_filter(array_map('trim', $types));
 $limit = min(intval(getParam('limit', 50)), 200);
 
@@ -70,10 +70,24 @@ $raw_packets = $meshlog->getRawPackets([
     'count' => $limit,
 ]);
 
+// Get telemetry
+$telemetry = $meshlog->getTelemetry([
+    'after_ms' => $since_ms,
+    'count' => $limit,
+]);
+
+// Get system reports
+$system_reports = $meshlog->getSystemReports([
+    'after_ms' => $since_ms,
+    'count' => $limit,
+]);
+
 $advertisementRows = extractList($advertisements, 'advertisements');
 $messageRows = extractList($messages, 'direct_messages');
 $channelMessageRows = extractList($channel_messages, 'channel_messages');
 $rawPacketRows = extractList($raw_packets, 'raw_packets');
+$telemetryRows = extractList($telemetry, 'telemetry');
+$systemReportRows = extractList($system_reports, 'system_reports');
 
 // Combine and sort by timestamp
 $combined = [];
@@ -106,6 +120,22 @@ if (in_array('RAW', $types)) {
     foreach ($rawPacketRows as $raw) {
         $packet = $raw;
         $packet['type'] = 'RAW';
+        $combined[] = $packet;
+    }
+}
+
+if (in_array('TEL', $types)) {
+    foreach ($telemetryRows as $tel) {
+        $packet = $tel;
+        $packet['type'] = 'TEL';
+        $combined[] = $packet;
+    }
+}
+
+if (in_array('SYS', $types)) {
+    foreach ($systemReportRows as $sys) {
+        $packet = $sys;
+        $packet['type'] = 'SYS';
         $combined[] = $packet;
     }
 }
