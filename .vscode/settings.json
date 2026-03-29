@@ -12,6 +12,10 @@
             "approve": true,
             "matchCommandLine": true
         },
-        "xcodebuild": true
+        "xcodebuild": true,
+        "/^php -l api/v1/auth/index\\.php$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }
