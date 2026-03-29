@@ -59,7 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // GET - Verify token
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $token = getallheaders()['Authorization'] ?? null;
+    $headers = meshlog_get_all_headers();
+    $token = $headers['Authorization'] ?? null;
     
     if (!$token) {
         http_response_code(401);
@@ -75,17 +76,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 http_response_code(405);
 echo json_encode(['error' => 'Method not allowed']);
 
-function getallheaders() {
-    if (!function_exists('getallheaders')) {
-        $headers = [];
-        foreach ($_SERVER as $name => $value) {
-            if (substr($name, 0, 5) == 'HTTP_') {
-                $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
-            }
-        }
-        return $headers;
+function meshlog_get_all_headers() {
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        return is_array($headers) ? $headers : [];
     }
-    return getallheaders();
+
+    $headers = [];
+    foreach ($_SERVER as $name => $value) {
+        if (substr($name, 0, 5) === 'HTTP_') {
+            $key = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))));
+            $headers[$key] = $value;
+        }
+    }
+    return $headers;
 }
 
 ?>
