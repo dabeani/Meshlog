@@ -1511,7 +1511,7 @@ class MeshLog {
                     )
                     FROM advertisements a
                     WHERE a.contact_id = t.id
-                    ORDER BY a.created_at DESC
+                    ORDER BY a.created_at DESC, a.id DESC
                     LIMIT 1
                 ) AS advertisement,
 

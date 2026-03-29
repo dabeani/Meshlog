@@ -5248,12 +5248,21 @@ class MeshLog {
                 existing.adv = incoming.adv;
                 existing.last = incoming.last;
             }
-        } else {
-            existing.adv = null;
-            if (existing.last instanceof MeshLogAdvertisement) {
-                existing.last = null;
-            }
         }
+    }
+
+    _shouldReplaceContactAdvertisement(existingAdvertisement, incomingAdvertisement) {
+        if (!(incomingAdvertisement instanceof MeshLogAdvertisement)) return false;
+        if (!(existingAdvertisement instanceof MeshLogAdvertisement)) return true;
+
+        const incomingTime = Number(incomingAdvertisement.time ?? 0);
+        const existingTime = Number(existingAdvertisement.time ?? 0);
+        if (incomingTime > existingTime) return true;
+        if (incomingTime < existingTime) return false;
+
+        const incomingId = Number(incomingAdvertisement.data?.id ?? 0);
+        const existingId = Number(existingAdvertisement.data?.id ?? 0);
+        return incomingId >= existingId;
     }
 
     _syncLiveContacts(data) {
@@ -5572,10 +5581,10 @@ class MeshLog {
                 let contact = this.contacts[msg.data.contact_id];
                 if (!contact.last || msg.time > contact.last.time) {
                     contact.last = msg;
-                    if (msg instanceof MeshLogAdvertisement) {
-                        contact.adv = msg;
-                        contact.update(); // refresh sidebar badge + marker when a new ADV arrives
-                    }
+                }
+                if (msg instanceof MeshLogAdvertisement && this._shouldReplaceContactAdvertisement(contact.adv, msg)) {
+                    contact.adv = msg;
+                    contact.update(); // refresh sidebar badge + marker when a new ADV arrives
                 }
             }
             this.onNewMessage(msg);
