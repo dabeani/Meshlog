@@ -25,53 +25,79 @@ $types = explode(',', getParam('types', 'ADV,MSG,PUB,RAW'));
 $types = array_filter(array_map('trim', $types));
 $limit = min(intval(getParam('limit', 50)), 200);
 
+function extractList($result, $legacyKey) {
+    if (!is_array($result)) {
+        return array();
+    }
+
+    if (isset($result['objects']) && is_array($result['objects'])) {
+        return $result['objects'];
+    }
+
+    if (isset($result[$legacyKey]) && is_array($result[$legacyKey])) {
+        return $result[$legacyKey];
+    }
+
+    // Some endpoints may return plain indexed arrays.
+    if (array_keys($result) === range(0, count($result) - 1)) {
+        return $result;
+    }
+
+    return array();
+}
+
 // Get advertisements since timestamp
 $advertisements = $meshlog->getAdvertisementsQuick([
     'after_ms' => $since_ms,
     'count' => $limit,
-], true);
+]);
 
 // Get direct messages
 $messages = $meshlog->getDirectMessagesQuick([
     'after_ms' => $since_ms,
     'count' => $limit,
-], true);
+]);
 
 // Get channel messages
 $channel_messages = $meshlog->getChannelMessagesQuick([
     'after_ms' => $since_ms,
     'count' => $limit,
-], true);
+]);
 
 // Get raw packets
-$raw_packets = $meshlog->getRawPacketsQuick([
+$raw_packets = $meshlog->getRawPackets([
     'after_ms' => $since_ms,
     'count' => $limit,
-], true);
+]);
+
+$advertisementRows = extractList($advertisements, 'advertisements');
+$messageRows = extractList($messages, 'direct_messages');
+$channelMessageRows = extractList($channel_messages, 'channel_messages');
+$rawPacketRows = extractList($raw_packets, 'raw_packets');
 
 // Combine and sort by timestamp
 $combined = [];
 
-if (in_array('ADV', $types) && isset($advertisements['advertisements'])) {
-    foreach ($advertisements['advertisements'] as $adv) {
+if (in_array('ADV', $types)) {
+    foreach ($advertisementRows as $adv) {
         $combined[] = array_merge(['type' => 'ADV'], $adv);
     }
 }
 
-if (in_array('MSG', $types) && isset($messages['direct_messages'])) {
-    foreach ($messages['direct_messages'] as $msg) {
+if (in_array('MSG', $types)) {
+    foreach ($messageRows as $msg) {
         $combined[] = array_merge(['type' => 'MSG'], $msg);
     }
 }
 
-if (in_array('PUB', $types) && isset($channel_messages['channel_messages'])) {
-    foreach ($channel_messages['channel_messages'] as $cmsg) {
+if (in_array('PUB', $types)) {
+    foreach ($channelMessageRows as $cmsg) {
         $combined[] = array_merge(['type' => 'PUB'], $cmsg);
     }
 }
 
-if (in_array('RAW', $types) && isset($raw_packets['raw_packets'])) {
-    foreach ($raw_packets['raw_packets'] as $raw) {
+if (in_array('RAW', $types)) {
+    foreach ($rawPacketRows as $raw) {
         $combined[] = array_merge(['type' => 'RAW'], $raw);
     }
 }
