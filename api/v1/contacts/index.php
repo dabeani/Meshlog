@@ -10,8 +10,8 @@ if ($err) {
     $results = array('error' => $err);  
 } else {
     $results = $meshlog->getContactsQuick(array(
-        'offset' => 0, 
-        'count' => DEFAULT_COUNT,
+        'offset' => (int) getParam('offset', 0),
+        'count' => (int) getParam('count', DEFAULT_COUNT),
         'after_ms' => getParam('after_ms', 0),
         'before_ms' => getParam('before_ms', 0),
     ));

@@ -1541,7 +1541,7 @@ class MeshLog {
 
             FROM contacts t
             $extra
-            ORDER BY t.id DESC
+            ORDER BY t.last_heard_at DESC, t.id DESC
             LIMIT :offset,:limit
         ";
 
