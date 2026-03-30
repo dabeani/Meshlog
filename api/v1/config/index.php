@@ -21,7 +21,7 @@ if ($err) {
 $mapConfig = $config['map'] ?? array();
 
 echo json_encode([
-    'app_version' => '1.0.0',
+    'app_version' => '1.1.0',
     'api_version' => 'v1',
     'map' => [
         'default_lat' => floatval($mapConfig['lat'] ?? 51.5074),

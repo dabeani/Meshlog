@@ -1,15 +1,20 @@
 /// Live Feed View - Real-time packet stream
 import SwiftUI
 import UIKit
+import UserNotifications
 
 struct LiveFeedView: View {
     @EnvironmentObject var apiClient: APIClient
     @EnvironmentObject var authManager: AuthenticationManager
+    @EnvironmentObject var navigationState: AppNavigationState
     
     @State private var packets: [Packet] = []
+    @State private var packetBuffer: [Packet] = []
     @State private var isLoading = false
     @State private var lastFetchTimeMs: Int = 0
     @State private var updateTask: Task<Void, Never>?
+    @State private var restartTask: Task<Void, Never>?
+    @State private var lastStreamConfigKey: String = ""
 
     @AppStorage("live_type_adv") private var showADV = true
     @AppStorage("live_type_msg") private var showMSG = true
@@ -18,6 +23,13 @@ struct LiveFeedView: View {
     @AppStorage("live_type_tel") private var showTEL = true
     @AppStorage("live_type_sys") private var showSYS = true
     @AppStorage("collector_filter_selected_ids") private var collectorFilterRaw = ""
+    @AppStorage("notify_new_device") private var notifyNewDevice = false
+    @AppStorage("notify_new_message") private var notifyNewMessage = false
+
+    @State private var knownContactIds: Set<Int> = []
+    @State private var knownContactKeys: Set<String> = []
+    @State private var knownMessagePacketKeys: Set<String> = []
+    @State private var notificationsPrimed = false
     
     let reconnectDelay: TimeInterval = 1.0
     let fallbackPollingDelay: TimeInterval = 3.0
@@ -142,7 +154,12 @@ struct LiveFeedView: View {
                     } else {
                         List {
                             ForEach(packets) { packet in
-                                PacketRowView(packet: packet)
+                                PacketRowView(packet: packet) {
+                                    navigationState.focusOnMap(
+                                        contactId: packet.contactId,
+                                        publicKey: packet.contactPublicKey
+                                    )
+                                }
                                     .listRowBackground(Color.clear)
                                     .listRowSeparator(.hidden)
                                     .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
@@ -159,27 +176,67 @@ struct LiveFeedView: View {
             .navigationTitle("Live Feed")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                startLiveStream()
+                Task { await primeKnownDevices() }
+                requestLiveStreamRestart(force: true)
             }
             .onDisappear {
                 updateTask?.cancel()
+                restartTask?.cancel()
             }
-            .onChange(of: showADV) { _, _ in startLiveStream() }
-            .onChange(of: showMSG) { _, _ in startLiveStream() }
-            .onChange(of: showPUB) { _, _ in startLiveStream() }
-            .onChange(of: showRAW) { _, _ in startLiveStream() }
-            .onChange(of: showTEL) { _, _ in startLiveStream() }
-            .onChange(of: showSYS) { _, _ in startLiveStream() }
-            .onChange(of: collectorFilterRaw) { _, _ in startLiveStream() }
+            .onChange(of: showADV) { _, _ in handleFilterChange() }
+            .onChange(of: showMSG) { _, _ in handleFilterChange() }
+            .onChange(of: showPUB) { _, _ in handleFilterChange() }
+            .onChange(of: showRAW) { _, _ in handleFilterChange() }
+            .onChange(of: showTEL) { _, _ in handleFilterChange() }
+            .onChange(of: showSYS) { _, _ in handleFilterChange() }
+            .onChange(of: collectorFilterRaw) { _, _ in handleFilterChange() }
+        }
+    }
+
+    private func handleFilterChange() {
+        applyVisibleFilters()
+        requestLiveStreamRestart()
+    }
+
+    private func streamConfigKey() -> String {
+        selectedTypes.joined(separator: ",") + "|" + collectorFilterRaw
+    }
+
+    private func requestLiveStreamRestart(force: Bool = false) {
+        let key = streamConfigKey()
+        if !force && key == lastStreamConfigKey {
+            return
+        }
+        lastStreamConfigKey = key
+
+        restartTask?.cancel()
+        restartTask = Task {
+            // Debounce startup and rapid toggle changes to avoid churn.
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                startLiveStream()
+            }
         }
     }
 
     private func startLiveStream() {
         updateTask?.cancel()
         updateTask = Task {
+            // If user disables all packet types, stop loading immediately.
+            if selectedTypes.isEmpty {
+                await MainActor.run {
+                    isLoading = false
+                    packets = []
+                }
+                return
+            }
+
             while !Task.isCancelled {
                 do {
-                    isLoading = true
+                    await MainActor.run {
+                        isLoading = true
+                    }
 
                     let stream = apiClient.streamLiveFeed(
                         sinceMs: lastFetchTimeMs,
@@ -187,14 +244,26 @@ struct LiveFeedView: View {
                         limit: maxVisiblePackets
                     )
 
+                    // Stream is connected; hide spinner even if no packet arrives yet.
+                    await MainActor.run {
+                        isLoading = false
+                    }
+
                     for try await response in stream {
                         applyIncoming(response)
                         isLoading = false
                     }
                 } catch let urlError as URLError where urlError.code == .cancelled {
+                    await MainActor.run {
+                        isLoading = false
+                    }
                     return
                 } catch {
                     print("Live stream error: \(error)")
+
+                    await MainActor.run {
+                        isLoading = false
+                    }
 
                     // Fallback path for servers that do not yet expose SSE endpoint.
                     await refreshFeed()
@@ -220,6 +289,14 @@ struct LiveFeedView: View {
     private func refreshFeed() async {
         defer { isLoading = false }
 
+        if selectedTypes.isEmpty {
+            await MainActor.run {
+                applyVisibleFilters()
+                isLoading = false
+            }
+            return
+        }
+
         do {
             isLoading = true
             let response = try await apiClient.fetchLiveFeed(
@@ -240,28 +317,181 @@ struct LiveFeedView: View {
     private func applyIncoming(_ response: LiveFeedResponse) {
         var merged: [Packet] = []
         var seen = Set<String>()
-        let collectorIds = selectedCollectorIds
+        let existingPacketKeys = Set(packetBuffer.map { "\($0.type)-\($0.id)" })
+        var freshPackets: [Packet] = []
 
-        for packet in response.packets + packets {
-            if !collectorIds.isEmpty,
-               let rid = packet.reporterId,
-               !collectorIds.contains(rid) {
-                continue
-            }
-
+        for packet in response.packets + packetBuffer {
             let key = "\(packet.type)-\(packet.id)"
             if seen.insert(key).inserted {
                 merged.append(packet)
+
+                if !existingPacketKeys.contains(key) {
+                    freshPackets.append(packet)
+                }
             }
         }
 
-        packets = Array(merged.prefix(maxVisiblePackets))
+        packetBuffer = Array(merged.prefix(maxVisiblePackets))
+        applyVisibleFilters()
         lastFetchTimeMs = response.timestampMs
+
+        handleNotifications(for: freshPackets)
+    }
+
+    @MainActor
+    private func applyVisibleFilters() {
+        let enabledTypes = Set(selectedTypes)
+        let collectorIds = selectedCollectorIds
+
+        let visible = packetBuffer.filter { packet in
+            guard enabledTypes.contains(packet.type) else { return false }
+
+            if collectorIds.isEmpty {
+                return true
+            }
+
+            guard let rid = packet.reporterId else { return false }
+            return collectorIds.contains(rid)
+        }
+
+        packets = Array(visible.prefix(maxVisiblePackets))
+    }
+
+    private func primeKnownDevices() async {
+        do {
+            let response = try await apiClient.fetchContacts()
+            await MainActor.run {
+                knownContactIds.formUnion(response.contacts.map { $0.id })
+                let keys = response.contacts
+                    .map { $0.publicKey.uppercased() }
+                    .filter { !$0.isEmpty }
+                knownContactKeys.formUnion(keys)
+            }
+        } catch {
+            // Keep silent: notification baseline can also be established from feed packets.
+        }
+    }
+
+    @MainActor
+    private func handleNotifications(for freshPackets: [Packet]) {
+        guard !freshPackets.isEmpty else { return }
+
+        if !notificationsPrimed {
+            notificationsPrimed = true
+
+            for packet in packets {
+                let key = "\(packet.type)-\(packet.id)"
+                if packet.type == "MSG" || packet.type == "PUB" {
+                    knownMessagePacketKeys.insert(key)
+                }
+                if let cid = packet.contactId {
+                    knownContactIds.insert(cid)
+                }
+                if let pubKey = packet.contactPublicKey, !pubKey.isEmpty {
+                    knownContactKeys.insert(pubKey.uppercased())
+                }
+            }
+            return
+        }
+
+        for packet in freshPackets {
+            if packet.type == "MSG" || packet.type == "PUB" {
+                let key = "\(packet.type)-\(packet.id)"
+                if !knownMessagePacketKeys.contains(key) {
+                    if notifyNewMessage {
+                        let sender = packet.contactName ?? String(packet.contactPublicKey?.prefix(10) ?? "Unknown")
+                        let text = packet.message ?? "(no text)"
+                        postLocalNotification(
+                            id: "msg-\(key)",
+                            title: "New Message",
+                            body: "\(sender): \(text)"
+                        )
+                    }
+                    knownMessagePacketKeys.insert(key)
+                }
+            }
+
+            var isUnknownDevice = false
+            if let cid = packet.contactId {
+                if !knownContactIds.contains(cid) {
+                    isUnknownDevice = true
+                    knownContactIds.insert(cid)
+                }
+            } else if let pubKey = packet.contactPublicKey, !pubKey.isEmpty {
+                let normalized = pubKey.uppercased()
+                if !knownContactKeys.contains(normalized) {
+                    isUnknownDevice = true
+                    knownContactKeys.insert(normalized)
+                }
+            }
+
+            if isUnknownDevice && notifyNewDevice {
+                let name = packet.contactName ?? "Unknown Device"
+                let key = packet.contactPublicKey.map { String($0.prefix(12)) } ?? "no-key"
+                postLocalNotification(
+                    id: "dev-\(packet.id)-\(key)",
+                    title: "New Device Detected",
+                    body: "\(name) [\(key)]"
+                )
+            }
+        }
+    }
+
+    private func postLocalNotification(id: String, title: String, body: String) {
+        let center = UNUserNotificationCenter.current()
+
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized ||
+                    settings.authorizationStatus == .provisional ||
+                    settings.authorizationStatus == .ephemeral else {
+                return
+            }
+
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.2, repeats: false)
+            let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+            center.add(request)
+        }
     }
 }
 
 struct PacketRowView: View {
     let packet: Packet
+    let onOpenMap: (() -> Void)?
+
+    private var resolvedScope: Int? {
+        if let value = packet.scope { return value }
+        return packet.reports.compactMap { $0.scope }.first
+    }
+
+    private var resolvedRouteType: Int? {
+        if let value = packet.routeType { return value }
+        return packet.reports.compactMap { $0.routeType }.first
+    }
+
+    private var resolvedSenderAt: String {
+        if let sender = packet.senderAt, !sender.isEmpty { return sender }
+        if let sender = packet.reports.compactMap({ $0.senderAt }).first, !sender.isEmpty { return sender }
+        return packet.sentAt
+    }
+
+    private var hopCountText: String? {
+        guard let path = packet.path, !path.isEmpty else { return "dir" }
+        let hops = path.components(separatedBy: ",").filter { !$0.isEmpty }.count
+        if hops == 0 { return "dir" }
+        return "\(hops)h"
+    }
+
+    private var byteHashText: String? {
+        guard let hash = packet.messageHash, !hash.isEmpty else { return nil }
+        let size = max(1, min(packet.hashSize ?? 1, 3))
+        let chars = min(hash.count, size * 2)
+        return String(hash.prefix(chars))
+    }
     
     var packetColor: Color {
         switch packet.type {
@@ -293,22 +523,49 @@ struct PacketRowView: View {
 
                 Spacer(minLength: 8)
 
-                Text(formatTime(packet.receivedAt))
+                Text(formatDateTime(packet.receivedAt))
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(.gray)
             }
 
             HStack(spacing: 6) {
-                if let hash = packet.messageHash, !hash.isEmpty {
-                    InlineMetaBadge(text: "#\(hash)")
+                if let byteHash = byteHashText {
+                    InlineMetaBadge(text: "BH \(byteHash)", style: .hashSize)
+                }
+
+                if let hashSize = packet.hashSize {
+                    InlineMetaBadge(text: "\(hashSize)b", style: .hashSize)
                 }
 
                 if let reporter = packet.reporterName, !reporter.isEmpty {
-                    InlineMetaBadge(text: "via \(reporter)")
+                    InlineMetaBadge(text: "via \(reporter)", style: .default)
+                }
+
+                if let scope = resolvedScope {
+                    InlineMetaBadge(text: "SCP \(scope <= 0 ? "*" : String(scope))", style: .scope)
+                }
+
+                if let routeType = resolvedRouteType {
+                    InlineMetaBadge(text: "RT \(routeType)", style: .metric)
+                }
+
+                if let hops = hopCountText {
+                    InlineMetaBadge(text: hops, style: .metric)
+                }
+
+                if !packet.reports.isEmpty {
+                    InlineMetaBadge(text: "\(packet.reports.count)rx", style: .metric)
                 }
 
                 if let snr = packet.snr {
-                    InlineMetaBadge(text: "SNR \(String(format: "%.1f", snr))")
+                    InlineMetaBadge(text: "SNR \(String(format: "%.1f", snr))", style: .metric)
+                }
+            }
+
+            HStack(spacing: 6) {
+                InlineMetaBadge(text: "TX \(formatDateTime(resolvedSenderAt))", style: .metric)
+                if !packet.receivedAt.isEmpty {
+                    InlineMetaBadge(text: "RX \(formatDateTime(packet.receivedAt))", style: .metric)
                 }
             }
 
@@ -351,16 +608,41 @@ struct PacketRowView: View {
                         .stroke(Color.white.opacity(0.09), lineWidth: 0.8)
                 )
         )
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onTapGesture {
+            guard let onOpenMap,
+                  (packet.latitude != nil && packet.longitude != nil) ||
+                  packet.contactId != nil ||
+                  (packet.contactPublicKey?.isEmpty == false) else {
+                return
+            }
+            onOpenMap()
+        }
     }
     
-    private func formatTime(_ dateString: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        if let date = formatter.date(from: dateString) {
-            let timeFormatter = DateFormatter()
-            timeFormatter.timeStyle = .medium
-            return timeFormatter.string(from: date)
+    private func formatDateTime(_ dateString: String) -> String {
+        if dateString.isEmpty { return "-" }
+
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+
+        let formats = [
+            "yyyy-MM-dd HH:mm:ss.SSS",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX",
+            "yyyy-MM-dd'T'HH:mm:ssXXXXX"
+        ]
+
+        for format in formats {
+            parser.dateFormat = format
+            if let date = parser.date(from: dateString) {
+                let display = DateFormatter()
+                display.locale = Locale.current
+                display.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                return display.string(from: date)
+            }
         }
+
         return dateString
     }
 }
@@ -385,18 +667,55 @@ private struct PacketTypeBadge: View {
 }
 
 private struct InlineMetaBadge: View {
+    enum Style {
+        case `default`
+        case hashSize
+        case scope
+        case metric
+    }
+
     let text: String
+    let style: Style
+
+    private var colors: (text: Color, background: Color, border: Color) {
+        switch style {
+        case .hashSize:
+            return (
+                Color(red: 0.79, green: 0.80, blue: 0.82),
+                Color(red: 0.29, green: 0.31, blue: 0.35),
+                Color(red: 0.40, green: 0.43, blue: 0.47)
+            )
+        case .scope:
+            return (
+                Color(red: 0.86, green: 0.94, blue: 0.90),
+                Color(red: 0.21, green: 0.32, blue: 0.29),
+                Color(red: 0.31, green: 0.48, blue: 0.42)
+            )
+        case .metric:
+            return (
+                Color(red: 0.89, green: 0.91, blue: 0.94),
+                Color(red: 0.27, green: 0.29, blue: 0.33),
+                Color(red: 0.38, green: 0.41, blue: 0.45)
+            )
+        case .default:
+            return (
+                Color(red: 0.82, green: 0.86, blue: 0.91),
+                Color.white.opacity(0.06),
+                Color.white.opacity(0.12)
+            )
+        }
+    }
 
     var body: some View {
         Text(text)
             .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundColor(Color(red: 0.82, green: 0.86, blue: 0.91))
+            .foregroundColor(colors.text)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color.white.opacity(0.06))
+            .background(colors.background)
             .overlay(
                 RoundedRectangle(cornerRadius: 999)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 0.7)
+                    .stroke(colors.border, lineWidth: 0.7)
             )
             .clipShape(Capsule())
     }
@@ -493,4 +812,5 @@ private struct BrandLogoMark: View {
     LiveFeedView()
         .environmentObject(APIClient())
         .environmentObject(AuthenticationManager())
+    .environmentObject(AppNavigationState())
 }

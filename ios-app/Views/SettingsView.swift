@@ -1,6 +1,7 @@
 /// Settings & Admin View
 import SwiftUI
 import UIKit
+import UserNotifications
 
 struct SettingsView: View {
     @EnvironmentObject var authManager: AuthenticationManager
@@ -63,6 +64,8 @@ struct GeneralSettingsView: View {
     
     @State private var showingLogoutAlert = false
     @State private var reporters: [Reporter] = []
+    @State private var isLoadingCollectors = false
+    @State private var collectorLoadError = ""
 
     @AppStorage("live_type_adv") private var showADV = true
     @AppStorage("live_type_msg") private var showMSG = true
@@ -71,6 +74,11 @@ struct GeneralSettingsView: View {
     @AppStorage("live_type_tel") private var showTEL = true
     @AppStorage("live_type_sys") private var showSYS = true
     @AppStorage("collector_filter_selected_ids") private var collectorFilterRaw = ""
+    @AppStorage("notify_new_device") private var notifyNewDevice = false
+    @AppStorage("notify_new_message") private var notifyNewMessage = false
+
+    @State private var showNotificationPermissionHint = false
+    @State private var suppressNotificationToggleHandler = false
 
     private var selectedCollectorIds: Set<Int> {
         Set(
@@ -192,8 +200,26 @@ struct GeneralSettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        if reporters.isEmpty {
+                        if isLoadingCollectors {
                             Text("Loading collectors...")
+                                .font(.system(size: 11))
+                                .foregroundColor(.gray)
+                        } else if !collectorLoadError.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Collectors unavailable")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(.orange)
+                                Text(collectorLoadError)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.gray)
+                                Button("Retry") {
+                                    Task { await loadCollectors() }
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.cyan)
+                            }
+                        } else if reporters.isEmpty {
+                            Text("No collectors found")
                                 .font(.system(size: 11))
                                 .foregroundColor(.gray)
                         } else {
@@ -222,6 +248,32 @@ struct GeneralSettingsView: View {
                             }
                         }
                     }
+                    .padding(12)
+                    .background(Color(red: 0.12, green: 0.17, blue: 0.27))
+                    .cornerRadius(8)
+                }
+
+                // Notification section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Notifications")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("New Device", isOn: $notifyNewDevice)
+                            .tint(.cyan)
+                        Toggle("New Message", isOn: $notifyNewMessage)
+                            .tint(.cyan)
+
+                        if showNotificationPermissionHint {
+                            Text("Notifications are disabled in iOS settings for this app. Enable them in Settings > Notifications > MeshLog.")
+                                .font(.system(size: 10))
+                                .foregroundColor(.orange)
+                                .padding(.top, 4)
+                        }
+                    }
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white)
                     .padding(12)
                     .background(Color(red: 0.12, green: 0.17, blue: 0.27))
                     .cornerRadius(8)
@@ -308,11 +360,100 @@ struct GeneralSettingsView: View {
             .padding(16)
             .onAppear {
                 Task {
-                    if reporters.isEmpty {
-                        reporters = (try? await apiClient.fetchReporters()) ?? []
-                    }
+                    if reporters.isEmpty { await loadCollectors() }
                 }
             }
+            .onChange(of: notifyNewDevice) { _, enabled in
+                guard !suppressNotificationToggleHandler else { return }
+                if enabled {
+                    Task { await ensureNotificationPermission(for: "device") }
+                }
+            }
+            .onChange(of: notifyNewMessage) { _, enabled in
+                guard !suppressNotificationToggleHandler else { return }
+                if enabled {
+                    Task { await ensureNotificationPermission(for: "message") }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func loadCollectors() async {
+        isLoadingCollectors = true
+        collectorLoadError = ""
+
+        do {
+            let fetched = try await apiClient.fetchReporters()
+            if !fetched.isEmpty {
+                reporters = fetched
+                isLoadingCollectors = false
+                return
+            }
+
+            // Fallback: derive collector IDs from contacts if reporters endpoint is empty.
+            let contacts = try await apiClient.fetchContacts(offset: 0, count: 300)
+            let ids = Array(Set(contacts.contacts.flatMap { $0.reporterIds })).sorted()
+            reporters = ids.map {
+                Reporter(id: $0, publicKey: "Collector \($0)", authorized: true, lastHeardAt: nil)
+            }
+
+            if reporters.isEmpty {
+                collectorLoadError = "The server returned no collector records."
+            }
+            isLoadingCollectors = false
+        } catch {
+            reporters = []
+            collectorLoadError = error.localizedDescription
+            isLoadingCollectors = false
+        }
+    }
+
+    @MainActor
+    private func revertNotificationToggle(_ key: String) {
+        suppressNotificationToggleHandler = true
+        if key == "device" {
+            notifyNewDevice = false
+        } else {
+            notifyNewMessage = false
+        }
+        suppressNotificationToggleHandler = false
+    }
+
+    private func ensureNotificationPermission(for key: String) async {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            await MainActor.run {
+                showNotificationPermissionHint = false
+            }
+        case .notDetermined:
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+                await MainActor.run {
+                    showNotificationPermissionHint = !granted
+                }
+                if !granted {
+                    revertNotificationToggle(key)
+                }
+            } catch {
+                await MainActor.run {
+                    showNotificationPermissionHint = true
+                }
+                revertNotificationToggle(key)
+            }
+        case .denied:
+            await MainActor.run {
+                showNotificationPermissionHint = true
+            }
+            revertNotificationToggle(key)
+        @unknown default:
+            await MainActor.run {
+                showNotificationPermissionHint = true
+            }
+            revertNotificationToggle(key)
         }
     }
 }
