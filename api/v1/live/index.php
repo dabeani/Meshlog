@@ -7,6 +7,7 @@
 require_once "../../../lib/meshlog.class.php";
 require_once "../../../config.php";
 include "../utils.php";
+include "helpers.php";
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-cache, must-revalidate');
@@ -24,27 +25,6 @@ $since_ms = intval(getParam('since_ms', 0));
 $types = explode(',', getParam('types', 'ADV,MSG,PUB,RAW,TEL,SYS'));
 $types = array_filter(array_map('trim', $types));
 $limit = min(intval(getParam('limit', 50)), 200);
-
-function extractList($result, $legacyKey) {
-    if (!is_array($result)) {
-        return array();
-    }
-
-    if (isset($result['objects']) && is_array($result['objects'])) {
-        return $result['objects'];
-    }
-
-    if (isset($result[$legacyKey]) && is_array($result[$legacyKey])) {
-        return $result[$legacyKey];
-    }
-
-    // Some endpoints may return plain indexed arrays.
-    if (array_keys($result) === range(0, count($result) - 1)) {
-        return $result;
-    }
-
-    return array();
-}
 
 // Get advertisements since timestamp
 $advertisements = $meshlog->getAdvertisementsQuick([
@@ -95,6 +75,7 @@ $combined = [];
 if (in_array('ADV', $types)) {
     foreach ($advertisementRows as $adv) {
         $packet = $adv;
+        $packet['node_type'] = (string)$packet['type'];  // preserve integer node type
         $packet['type'] = 'ADV';
         $combined[] = $packet;
     }
@@ -139,6 +120,9 @@ if (in_array('SYS', $types)) {
         $combined[] = $packet;
     }
 }
+
+// Enrich: add reporter_name, contact_public_key, channel_name, lift report fields to root.
+$combined = enrichPackets($combined, $meshlog->pdo);
 
 // Sort by received_at descending (newest first)
 usort($combined, function($a, $b) {

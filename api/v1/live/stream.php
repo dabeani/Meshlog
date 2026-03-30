@@ -11,6 +11,7 @@
 require_once "../../../lib/meshlog.class.php";
 require_once "../../../config.php";
 include "../utils.php";
+include "helpers.php";
 
 header('Content-Type: text/event-stream; charset=utf-8');
 header('Cache-Control: no-cache, no-transform');
@@ -42,26 +43,6 @@ $types = array_filter(array_map('trim', $types));
 $limit = min(intval(getParam('limit', 50)), 200);
 $maxDurationSec = max(5, min(intval(getParam('max_duration_sec', 25)), 55));
 $sleepMicros = 1000000; // 1s
-
-function extractList($result, $legacyKey) {
-    if (!is_array($result)) {
-        return array();
-    }
-
-    if (isset($result['objects']) && is_array($result['objects'])) {
-        return $result['objects'];
-    }
-
-    if (isset($result[$legacyKey]) && is_array($result[$legacyKey])) {
-        return $result[$legacyKey];
-    }
-
-    if (array_keys($result) === range(0, count($result) - 1)) {
-        return $result;
-    }
-
-    return array();
-}
 
 function buildCombinedPackets($meshlog, $sinceMs, $types, $limit) {
     $advertisements = $meshlog->getAdvertisementsQuick(array(
@@ -106,6 +87,7 @@ function buildCombinedPackets($meshlog, $sinceMs, $types, $limit) {
     if (in_array('ADV', $types)) {
         foreach ($advertisementRows as $adv) {
             $packet = $adv;
+            $packet['node_type'] = (string)$packet['type'];  // preserve integer node type
             $packet['type'] = 'ADV';
             $combined[] = $packet;
         }
@@ -150,6 +132,9 @@ function buildCombinedPackets($meshlog, $sinceMs, $types, $limit) {
             $combined[] = $packet;
         }
     }
+
+    // Enrich: add reporter_name, contact_public_key, channel_name, lift report fields to root.
+    $combined = enrichPackets($combined, $meshlog->pdo);
 
     usort($combined, function($a, $b) {
         $timeA = strtotime($a['received_at'] ?? ($a['sent_at'] ?? 0));
