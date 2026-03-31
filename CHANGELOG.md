@@ -26,6 +26,17 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 - **Stats clarity add-ons** — added a last-updated timestamp and inline route-metrics legend for quick interpretation of direct/flood/relayed/no-hop/unknown counters.
 - **Channel label formatting parity** — Live Feed and Live → Channels now normalize channel names so `Public` is shown without a `#`, and non-public channels always render with exactly one leading `#` (no double-prefix `##`).
 - **Persistent channel read state** — Live → Channels now persists per-channel last-read packet positions so unread counters survive app restarts and reopening a channel resumes from the last-read point.
+- **Configurable SNR thresholds (WebUI colors)** — SNR badge colors now keep fixed WebUI color mapping while the dB threshold cutoffs are editable in Settings (Excellent/Good/Fair/Weak).
+- **Channel message hyperlinks** — URLs in Live → Channels message bodies are now link-styled and directly tappable to open in the browser.
+- **Stronger live map packet animation** — path flashes are now rendered with brighter/thicker foreground lines and larger traveling-dot emphasis for clearer packet-route visibility.
+- **Affected-node flash highlighting** — devices on the active packet route are now temporarily highlighted (halo + ring) while the map animation is running.
+- **Background notification continuity improvements** — Live monitoring no longer always tears down on scene deactivation when notification toggles are enabled; limited background execution now keeps packet processing alive longer for local alerts.
+- **Dynamic app version in Settings** — the About section now reads app version/build from the bundled Info.plist instead of using a hardcoded value.
+- **SNR settings simplified** — removed the SNR color mode switch; WebUI colors are now the default/fixed behavior and users can directly tune only the SNR threshold values.
+- **Live Feed channel badge colors** — PUB channel badges in Live → Feed now use per-channel deterministic colors (matching the visual style used in Live → Channels).
+- **Map flash foreground pass** — live packet flash rendering was boosted again (thicker/brighter line + larger traveling marker) and pinned to top overlay priority for stronger foreground visibility.
+- **Affected-node name reveal during flashes** — devices on an active packet path now force-show their names during highlight windows, even when global map labels are turned off.
+- **Highlighted-node render guarantee** — active path nodes are now excluded from map downsampling so affected devices remain visible while the animation runs.
 
 - **Live hop-by-hop path animation** — when any packet (ADV, MSG, PUB) arrives via the live stream, the full relay chain (source → repeater hops → reporter) is animated on the map with a bright cyan traveling dot, a glow line and a fading outer envelope, matching the WebUI's packet-arrival animation behavior.
 - **Expanding ring at destination** — the animation ends with a pulsing ring at the reporter position to mark packet arrival visually.
