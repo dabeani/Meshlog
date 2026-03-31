@@ -41,6 +41,7 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 - **Live Feed full-history scrolling** — reaching the bottom of Live → Feed now requests older packets from the database and keeps extending history until the oldest available packet is reached.
 - **Settings-capped history chunking** — each backward history request is capped by the Live Feed Items setting (max 500), so older packets are loaded incrementally instead of in one large burst.
 - **SSE history compatibility update** — `api/v1/live/stream.php` now uses the same load-more limit rules (up to 500, invalid values normalized) as the polling endpoint so history pagination behaves consistently across both transport modes.
+- **Live Feed scroll stability during load-more** — packet rows now use a stable per-type/per-id identity key when extending the list, preventing SwiftUI row reuse collisions that could cause sudden jumps to the tail while older chunks are appended.
 
 - **Live hop-by-hop path animation** — when any packet (ADV, MSG, PUB) arrives via the live stream, the full relay chain (source → repeater hops → reporter) is animated on the map with a bright cyan traveling dot, a glow line and a fading outer envelope, matching the WebUI's packet-arrival animation behavior.
 - **Expanding ring at destination** — the animation ends with a pulsing ring at the reporter position to mark packet arrival visually.
