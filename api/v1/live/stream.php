@@ -44,7 +44,9 @@ $mode = strtolower(trim(strval(getParam('mode', 'live'))));
 $historyMode = ($mode === 'history') || $beforeMs > 0;
 $types = explode(',', getParam('types', 'ADV,MSG,PUB,RAW,TEL,SYS'));
 $types = array_filter(array_map('trim', $types));
-$limit = min(intval(getParam('limit', 50)), 200);
+$requestedLimit = intval(getParam('limit', 50));
+if ($requestedLimit <= 0) $requestedLimit = 50;
+$limit = min($requestedLimit, 500);
 $maxDurationSec = max(5, min(intval(getParam('max_duration_sec', 25)), 55));
 $sleepMicros = 1000000; // 1s
 

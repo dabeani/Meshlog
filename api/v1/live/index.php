@@ -22,45 +22,46 @@ if ($err) {
 }
 
 $since_ms = intval(getParam('since_ms', 0));
+$before_ms = intval(getParam('before_ms', 0));
 $types = explode(',', getParam('types', 'ADV,MSG,PUB,RAW,TEL,SYS'));
 $types = array_filter(array_map('trim', $types));
-$limit = min(intval(getParam('limit', 50)), 200);
+
+$requestedLimit = intval(getParam('limit', 50));
+if ($requestedLimit <= 0) $requestedLimit = 50;
+$limit = min($requestedLimit, 500);
+
+// Fetch one extra item per packet class so we can expose has_more.
+$fetchCount = $limit + 1;
+
+$queryWindow = [
+    'count' => $fetchCount,
+    'after_ms' => 0,
+    'before_ms' => 0,
+];
+
+if ($before_ms > 0) {
+    $queryWindow['before_ms'] = $before_ms;
+} else if ($since_ms > 0) {
+    $queryWindow['after_ms'] = $since_ms;
+}
 
 // Get advertisements since timestamp
-$advertisements = $meshlog->getAdvertisementsQuick([
-    'after_ms' => $since_ms,
-    'count' => $limit,
-]);
+$advertisements = $meshlog->getAdvertisementsQuick($queryWindow);
 
 // Get direct messages
-$messages = $meshlog->getDirectMessagesQuick([
-    'after_ms' => $since_ms,
-    'count' => $limit,
-]);
+$messages = $meshlog->getDirectMessagesQuick($queryWindow);
 
 // Get channel messages
-$channel_messages = $meshlog->getChannelMessagesQuick([
-    'after_ms' => $since_ms,
-    'count' => $limit,
-]);
+$channel_messages = $meshlog->getChannelMessagesQuick($queryWindow);
 
 // Get raw packets
-$raw_packets = $meshlog->getRawPackets([
-    'after_ms' => $since_ms,
-    'count' => $limit,
-]);
+$raw_packets = $meshlog->getRawPackets($queryWindow);
 
 // Get telemetry
-$telemetry = $meshlog->getTelemetry([
-    'after_ms' => $since_ms,
-    'count' => $limit,
-]);
+$telemetry = $meshlog->getTelemetry($queryWindow);
 
 // Get system reports
-$system_reports = $meshlog->getSystemReports([
-    'after_ms' => $since_ms,
-    'count' => $limit,
-]);
+$system_reports = $meshlog->getSystemReports($queryWindow);
 
 $advertisementRows = extractList($advertisements, 'advertisements');
 $messageRows = extractList($messages, 'direct_messages');
@@ -131,10 +132,24 @@ usort($combined, function($a, $b) {
     return $timeB <=> $timeA;
 });
 
+$hasMore = count($combined) > $limit;
+$packets = array_slice($combined, 0, $limit);
+
+$oldestTimestampMs = null;
+if (!empty($packets)) {
+    $last = $packets[count($packets) - 1];
+    $oldestUnix = strtotime($last['received_at'] ?? ($last['sent_at'] ?? 0));
+    if ($oldestUnix !== false && $oldestUnix > 0) {
+        $oldestTimestampMs = intval($oldestUnix * 1000);
+    }
+}
+
 echo json_encode([
-    'packets' => array_slice($combined, 0, $limit),
+    'packets' => $packets,
     'timestamp_ms' => intval(microtime(true) * 1000),
-    'count' => count($combined)
+    'count' => count($packets),
+    'has_more' => $hasMore,
+    'oldest_timestamp_ms' => $oldestTimestampMs,
 ]);
 
 ?>

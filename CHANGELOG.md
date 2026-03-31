@@ -37,6 +37,10 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 - **Map flash foreground pass** — live packet flash rendering was boosted again (thicker/brighter line + larger traveling marker) and pinned to top overlay priority for stronger foreground visibility.
 - **Affected-node name reveal during flashes** — devices on an active packet path now force-show their names during highlight windows, even when global map labels are turned off.
 - **Highlighted-node render guarantee** — active path nodes are now excluded from map downsampling so affected devices remain visible while the animation runs.
+- **Highlighted-name top-layer rendering** — names for actively highlighted path devices are now rendered in a dedicated top overlay layer so they can no longer be hidden behind other device markers.
+- **Live Feed full-history scrolling** — reaching the bottom of Live → Feed now requests older packets from the database and keeps extending history until the oldest available packet is reached.
+- **Settings-capped history chunking** — each backward history request is capped by the Live Feed Items setting (max 500), so older packets are loaded incrementally instead of in one large burst.
+- **SSE history compatibility update** — `api/v1/live/stream.php` now uses the same load-more limit rules (up to 500, invalid values normalized) as the polling endpoint so history pagination behaves consistently across both transport modes.
 
 - **Live hop-by-hop path animation** — when any packet (ADV, MSG, PUB) arrives via the live stream, the full relay chain (source → repeater hops → reporter) is animated on the map with a bright cyan traveling dot, a glow line and a fading outer envelope, matching the WebUI's packet-arrival animation behavior.
 - **Expanding ring at destination** — the animation ends with a pulsing ring at the reporter position to mark packet arrival visually.
