@@ -5,13 +5,7 @@ node_modules/
 .vscode/
 .vscode/settings.json
 ios-app/
-ios-app/Views/
-ios-app/Models/
-ios-app/Managers/
 iOS-APP-GUIDE.md
-.vscode/settings.json
 Package.swift
-ios-app/MeshLog.xcodeproj/
 test.txt
-Package.swift
 package.json
