@@ -4,26 +4,31 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 
 ---
 
-## [v1.1.0] — WebUI Parity Map Update (2026-03-30)
-
-### iOS App — Fixes & Improvements
-
-- **Marker type parity with WebUI** — iOS now normalizes both numeric and string node types, so chat nodes, repeaters, rooms, sensors, and reporter-backed collectors no longer collapse to the same marker icon.
-- **Map detail card parity** — selected-device cards now show WebUI-matching identity and status context: type, live/stale state, public key, first seen, coordinates, reporter flag, hash metadata, repeater clock warning, and the latest route summary.
-- **Explicit repeater neighbor activation** — selecting a repeater no longer draws neighbor lines automatically; neighbor overlays now appear only after pressing `Show Neighbors` in the device card.
-- **Stronger neighbor visibility** — neighbor links use a brighter dual-stroke dashed style so they remain readable on both light and dark map themes.
-- **Live route overlay parity** — the iOS map now consumes the same live packet stream as the Live Feed and reconstructs per-report source → relay → reporter chains, so packet paths appear on the map as packets arrive.
-- **Animated route rendering** — live route lines, selected trail reporter links, and neighbor overlays now use animated dashed strokes for clearer movement and better route readability.
-- **Release metadata alignment** — app release numbers were synchronized to `1.1.0 (build 4)` across iOS project settings and API config output.
-
----
-
-## [Unreleased] — iOS App (2026-03-29 – 2026-03-30)
-
-Changes made during the active iOS development session that have not yet been tagged.
+## [v1.0.2] — Live Map Animation & Code Cleanup (2026-03-31)
 
 ### iOS App — New Features
 
+- **Channels drill-down mode in Live tab** — the Channels view now opens as a compact channel list by default; tapping a channel switches into that channel-only message stream instead of expanding all channels at once.
+- **Unread channel badges** — channel rows now show a red unread counter for new PUB messages until that channel is opened.
+- **Map opens on device location** — initial map focus now prefers the Apple device's current location (with permission), avoiding unrelated default regions.
+
+### iOS App — Fixes & Improvements
+
+- **Admin login placeholder visibility** — username/password placeholder text now uses explicit high-contrast color on dark input backgrounds.
+- **Global UI colour pass** — app section titles, segmented controls, and selected bottom-tab state were normalized to white-focused styling for better readability and consistency.
+- **Collector naming in Settings** — the Collectors list now resolves and displays contact/device names instead of showing only reporter public keys.
+- **Unified textbox styling** — all text inputs (Login, Settings admin fields, Devices search, Map search) now share one consistent dark style and prompt contrast.
+- **Devices tab map jump** — tapping a device row now jumps directly to the Map tab and focuses that device when coordinates are available.
+- **Live Feed channel/scope parity** — PUB rows now include both channel label and transport scope badges to align with WebUI packet metadata visibility.
+- **Live Feed distance badge** — packets with coordinates now show computed distance from the phone, with user-selectable `km`/`mi` units in Settings.
+- **Stats correctness alignment** — removed unsupported `6h` client option (backend supports `1h`, `24h`, `36h`) to prevent misleading values from server-side fallback.
+- **Stats page redesign** — replaced generic key rendering with validated rollup metrics: report totals, device/collector counts, route breakdown, collector ranking, and timeline charts.
+- **Stats clarity add-ons** — added a last-updated timestamp and inline route-metrics legend for quick interpretation of direct/flood/relayed/no-hop/unknown counters.
+- **Channel label formatting parity** — Live Feed and Live → Channels now normalize channel names so `Public` is shown without a `#`, and non-public channels always render with exactly one leading `#` (no double-prefix `##`).
+- **Persistent channel read state** — Live → Channels now persists per-channel last-read packet positions so unread counters survive app restarts and reopening a channel resumes from the last-read point.
+
+- **Live hop-by-hop path animation** — when any packet (ADV, MSG, PUB) arrives via the live stream, the full relay chain (source → repeater hops → reporter) is animated on the map with a bright cyan traveling dot, a glow line and a fading outer envelope, matching the WebUI's packet-arrival animation behavior.
+- **Expanding ring at destination** — the animation ends with a pulsing ring at the reporter position to mark packet arrival visually.
 - **Local notifications** — push alerts for new device first-seen and new direct/channel message events; toggleable per-type in Settings with iOS permission flow.
 - **Per-device trail on main map** — each device in the popup can independently show/hide its GPS advertisement trail as a dashed red polyline; persisted across sessions via AppStorage.
 - **Trail point inspector** — tapping a red trail dot shows a top-overlay panel with device name, GPS coordinates, and a list of every collector that heard that position (name, distance in km, SNR).
@@ -37,6 +42,40 @@ Changes made during the active iOS development session that have not yet been ta
 
 ### iOS App — Fixes & Improvements
 
+- **Live stream extended to ADV + MSG + PUB** — the map route-overlay stream was ADV-only; it now also receives MSG and PUB packets so path animations trigger for all packet types with a resolvable relay chain.
+- **25 fps animation loop** — a dedicated `animationFrameTask` drives smooth dot interpolation at ~25 fps and stops itself automatically when no animations are active.
+- **Max 5 concurrent flashes** — caps simultaneous path animations to keep the map readable; oldest flash is evicted when a new one arrives.
+- **Packet buffer raised to 60** — `maxStoredRecentPackets` raised from 24 to 60 to retain more recent packets for route and neighbour overlay rebuilds.
+- **Replaced `DispatchQueue.main.async` with `await MainActor.run`** — `loadAll()` and `loadConfig()` now use structured Swift Concurrency, removing potential reentrancy and data-race risks.
+- **Removed trivial computed-property wrappers** — `pathPolylines`, `neighborPolylines`, and `mainTrailPoints` were single-line pass-throughs to `rendered*` state; eliminated in favour of direct references.
+- **Simplified `formattedAbsoluteTime()`** — the function was re-parsing and re-serialising a date string through the same formatter (a no-op); now returns the raw string directly or `"-"` for empty input.
+- **Animations cleared on tab/scene deactivation** — `livePacketFlashes` is purged and `animationFrameTask` is cancelled whenever the map tab is hidden or the app backgrounds, preventing stale dots on re-entry.
+
+---
+
+## [v1.0.1] — WebUI Parity Map Update (2026-03-30)
+
+### iOS App — Fixes & Improvements
+
+- **Marker type parity with WebUI** — iOS now normalizes both numeric and string node types, so chat nodes, repeaters, rooms, sensors, and reporter-backed collectors no longer collapse to the same marker icon.
+- **Map detail card parity** — selected-device cards now show WebUI-matching identity and status context: type, live/stale state, public key, first seen, coordinates, reporter flag, hash metadata, repeater clock warning, and the latest route summary.
+- **Explicit repeater neighbor activation** — selecting a repeater no longer draws neighbor lines automatically; neighbor overlays now appear only after pressing `Show Neighbors` in the device card.
+- **Stronger neighbor visibility** — neighbor links use a brighter dual-stroke dashed style so they remain readable on both light and dark map themes.
+- **Live route overlay parity** — the iOS map now consumes the same live packet stream as the Live Feed and reconstructs per-report source → relay → reporter chains, so packet paths appear on the map as packets arrive.
+- **Animated route rendering** — live route lines, selected trail reporter links, and neighbor overlays now use animated dashed strokes for clearer movement and better route readability.
+- **Release metadata alignment** — app release numbers were synchronized to `1.1.0 (build 4)` across iOS project settings and API config output.
+
+---
+
+### iOS App — Fixes & Improvements
+
+- **Map panning/render performance pass** — route and neighbor overlays are now cached and refreshed with debounce instead of rebuilding continuously during redraw; visible node annotations are adaptively downsampled at wider zoom levels to keep movement smooth.
+- **Manual route visibility only** — removed implicit global route rendering; route lines now appear only for devices explicitly toggled via each device card's Show/Hide Routes control (multi-select supported, persisted in AppStorage).
+- **Map toolbar toggle feedback** — top map controls now show a short-lived status banner (enabled/disabled) so state changes are visible immediately.
+- **Map search keyboard/session stabilisation** — added explicit focus-state management and delayed open/close for the search overlay to prevent invalid RTI keyboard session operations and reduce keyboard layout warnings.
+- **Map lifecycle gating during tab switches** — map surface and route streaming now activate only when the Map tab is active and the app scene is foregrounded, with delayed mount to avoid zero-size CAMetal layer churn.
+- **Lazy tab instantiation at app startup** — non-selected tabs (including Map) are no longer eagerly created on launch, reducing startup MapKit/network noise and improving cold-start responsiveness.
+- **Networking startup hardening** — API networking moved off URLSession.shared to a dedicated session configured with waitsForConnectivity to reduce unconnected nw_connection churn during startup and reconnect phases.
 - **Neighbour links rewritten** — now correctly iterates per-report paths, appends the reporter contact as the final endpoint, and loads reporter records on startup to resolve `reporterId → Contact` via public key.
 - **Immediate packet type filtering** — toggling a packet type on/off instantly shows/hides matching rows from the buffer without waiting for a network round-trip; stream is restarted with 250 ms debounce.
 - **Live Feed labels all showed "Unknown"** — fixed by falling back to legacy `name` / `public_key` field names in addition to `contact_name` / `contact_public_key` when decoding packets.

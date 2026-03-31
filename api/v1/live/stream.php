@@ -3,10 +3,11 @@
  * Live feed Server-Sent Events stream endpoint.
  *
  * GET /api/v1/live/stream.php?since_ms=0&types=ADV,MSG,PUB,RAW&limit=50
+ * GET /api/v1/live/stream.php?mode=history&before_ms=1711900000000&types=ADV,MSG,PUB,RAW&limit=50
  *
  * Streams newline-delimited SSE events with JSON payload:
  *   event: packets
- *   data: {"packets": [...], "timestamp_ms": 123, "count": 4}
+ *   data: {"packets": [...], "timestamp_ms": 123, "count": 4, "has_more": true}
  */
 require_once "../../../lib/meshlog.class.php";
 require_once "../../../config.php";
@@ -38,41 +39,58 @@ if ($err) {
 }
 
 $sinceMs = intval(getParam('since_ms', 0));
+$beforeMs = intval(getParam('before_ms', 0));
+$mode = strtolower(trim(strval(getParam('mode', 'live'))));
+$historyMode = ($mode === 'history') || $beforeMs > 0;
 $types = explode(',', getParam('types', 'ADV,MSG,PUB,RAW,TEL,SYS'));
 $types = array_filter(array_map('trim', $types));
 $limit = min(intval(getParam('limit', 50)), 200);
 $maxDurationSec = max(5, min(intval(getParam('max_duration_sec', 25)), 55));
 $sleepMicros = 1000000; // 1s
 
-function buildCombinedPackets($meshlog, $sinceMs, $types, $limit) {
+function buildCombinedPackets($meshlog, $sinceMs, $beforeMs, $types, $limit, $historyMode = false) {
+    // Fetch one extra row so callers can know if older/newer rows remain.
+    $fetchCount = max(1, $limit + 1);
+    $queryWindow = array(
+        'after_ms' => $historyMode ? 0 : $sinceMs,
+        'before_ms' => $historyMode ? $beforeMs : 0,
+        'count' => $fetchCount,
+    );
+
     $advertisements = $meshlog->getAdvertisementsQuick(array(
-        'after_ms' => $sinceMs,
-        'count' => $limit,
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
     ));
 
     $messages = $meshlog->getDirectMessagesQuick(array(
-        'after_ms' => $sinceMs,
-        'count' => $limit,
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
     ));
 
     $channelMessages = $meshlog->getChannelMessagesQuick(array(
-        'after_ms' => $sinceMs,
-        'count' => $limit,
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
     ));
 
     $rawPackets = $meshlog->getRawPackets(array(
-        'after_ms' => $sinceMs,
-        'count' => $limit,
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
     ));
 
     $telemetry = $meshlog->getTelemetry(array(
-        'after_ms' => $sinceMs,
-        'count' => $limit,
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
     ));
 
     $systemReports = $meshlog->getSystemReports(array(
-        'after_ms' => $sinceMs,
-        'count' => $limit,
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
     ));
 
     $advertisementRows = extractList($advertisements, 'advertisements');
@@ -142,17 +160,52 @@ function buildCombinedPackets($meshlog, $sinceMs, $types, $limit) {
         return $timeB <=> $timeA;
     });
 
-    return array_slice($combined, 0, $limit);
+    $hasMore = count($combined) > $limit;
+    $packets = array_slice($combined, 0, $limit);
+
+    $oldestTimestampMs = null;
+    if (!empty($packets)) {
+        $last = $packets[count($packets) - 1];
+        $oldestUnix = strtotime($last['received_at'] ?? ($last['sent_at'] ?? 0));
+        if ($oldestUnix !== false && $oldestUnix > 0) {
+            $oldestTimestampMs = intval($oldestUnix * 1000);
+        }
+    }
+
+    return array(
+        'packets' => $packets,
+        'has_more' => $hasMore,
+        'oldest_timestamp_ms' => $oldestTimestampMs,
+    );
 }
 
 $startedAt = time();
+
+if ($historyMode) {
+    $result = buildCombinedPackets($meshlog, $sinceMs, $beforeMs, $types, $limit, true);
+    $payload = array(
+        'packets' => $result['packets'],
+        'timestamp_ms' => intval(microtime(true) * 1000),
+        'count' => count($result['packets']),
+        'has_more' => $result['has_more'],
+        'oldest_timestamp_ms' => $result['oldest_timestamp_ms'],
+    );
+
+    echo "event: packets\n";
+    echo "data: " . json_encode($payload, JSON_UNESCAPED_UNICODE) . "\n\n";
+    echo "event: end\n";
+    echo "data: {}\n\n";
+    flush();
+    exit;
+}
 
 while (true) {
     if (connection_aborted()) {
         break;
     }
 
-    $packets = buildCombinedPackets($meshlog, $sinceMs, $types, $limit);
+    $result = buildCombinedPackets($meshlog, $sinceMs, 0, $types, $limit, false);
+    $packets = $result['packets'];
     $nowMs = intval(microtime(true) * 1000);
 
     if (!empty($packets)) {
@@ -160,6 +213,8 @@ while (true) {
             'packets' => $packets,
             'timestamp_ms' => $nowMs,
             'count' => count($packets),
+            'has_more' => $result['has_more'],
+            'oldest_timestamp_ms' => $result['oldest_timestamp_ms'],
         );
 
         echo "event: packets\n";

@@ -518,6 +518,26 @@ struct StatisticsResponse: Decodable {
     let stats: [String: Int]
     let window: String
     let timestamp: String
+    let windowHours: Int
+    let bucketCount: Int
+    let bucketSeconds: Int
+    let totalPackets: Int
+    let totalReports: Int
+    let totalAdvertisements: Int
+    let uniqueDevices: Int
+    let uniqueCollectors: Int
+    let last1h: Int
+    let last24h: Int
+    let last36h: Int
+    let directReports: Int
+    let floodReports: Int
+    let unknownRouteReports: Int
+    let noHopReports: Int
+    let relayedReports: Int
+    let chartBuckets: [Int]
+    let uniqueDeviceBuckets: [Int]
+    let collectorTotals: [CollectorStatsTotal]
+    let note: String?
 
     enum CodingKeys: String, CodingKey {
         case stats
@@ -538,16 +558,63 @@ struct StatisticsResponse: Decodable {
         case unknownRouteReports = "unknown_route_reports"
         case noHopReports = "no_hop_reports"
         case relayedReports = "relayed_reports"
+        case bucketCount = "bucket_count"
+        case bucketSeconds = "bucket_seconds"
+        case chartBuckets = "chart_buckets"
+        case uniqueDeviceBuckets = "unique_device_buckets"
+        case collectorTotals = "collector_totals"
+        case note
     }
 
     init(stats: [String: Int], window: String, timestamp: String) {
         self.stats = stats
         self.window = window
         self.timestamp = timestamp
+        self.windowHours = 24
+        self.bucketCount = 0
+        self.bucketSeconds = 0
+        self.totalPackets = 0
+        self.totalReports = 0
+        self.totalAdvertisements = 0
+        self.uniqueDevices = 0
+        self.uniqueCollectors = 0
+        self.last1h = 0
+        self.last24h = 0
+        self.last36h = 0
+        self.directReports = 0
+        self.floodReports = 0
+        self.unknownRouteReports = 0
+        self.noHopReports = 0
+        self.relayedReports = 0
+        self.chartBuckets = []
+        self.uniqueDeviceBuckets = []
+        self.collectorTotals = []
+        self.note = nil
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        totalPackets = (try? container.decode(Int.self, forKey: .totalPackets)) ?? 0
+        totalReports = (try? container.decode(Int.self, forKey: .totalReports)) ?? 0
+        totalAdvertisements = (try? container.decode(Int.self, forKey: .totalAdvertisements)) ?? 0
+        uniqueDevices = (try? container.decode(Int.self, forKey: .uniqueDevices)) ?? 0
+        uniqueCollectors = (try? container.decode(Int.self, forKey: .uniqueCollectors)) ?? 0
+        last1h = (try? container.decode(Int.self, forKey: .last1h)) ?? 0
+        last24h = (try? container.decode(Int.self, forKey: .last24h)) ?? 0
+        last36h = (try? container.decode(Int.self, forKey: .last36h)) ?? 0
+        directReports = (try? container.decode(Int.self, forKey: .directReports)) ?? 0
+        floodReports = (try? container.decode(Int.self, forKey: .floodReports)) ?? 0
+        unknownRouteReports = (try? container.decode(Int.self, forKey: .unknownRouteReports)) ?? 0
+        noHopReports = (try? container.decode(Int.self, forKey: .noHopReports)) ?? 0
+        relayedReports = (try? container.decode(Int.self, forKey: .relayedReports)) ?? 0
+
+        bucketCount = (try? container.decode(Int.self, forKey: .bucketCount)) ?? 0
+        bucketSeconds = (try? container.decode(Int.self, forKey: .bucketSeconds)) ?? 0
+        chartBuckets = (try? container.decode([Int].self, forKey: .chartBuckets)) ?? []
+        uniqueDeviceBuckets = (try? container.decode([Int].self, forKey: .uniqueDeviceBuckets)) ?? []
+        collectorTotals = (try? container.decode([CollectorStatsTotal].self, forKey: .collectorTotals)) ?? []
+        note = try? container.decodeIfPresent(String.self, forKey: .note)
 
         if let nested = try? container.decode([String: Int].self, forKey: .stats) {
             stats = nested
@@ -582,6 +649,21 @@ struct StatisticsResponse: Decodable {
                 }
             }
 
+            // Backward and forward compatibility: always expose the validated totals map.
+            aggregated["total_packets"] = totalPackets
+            aggregated["total_reports"] = totalReports
+            aggregated["total_advertisements"] = totalAdvertisements
+            aggregated["unique_devices"] = uniqueDevices
+            aggregated["unique_collectors"] = uniqueCollectors
+            aggregated["last_1h"] = last1h
+            aggregated["last_24h"] = last24h
+            aggregated["last_36h"] = last36h
+            aggregated["direct_reports"] = directReports
+            aggregated["flood_reports"] = floodReports
+            aggregated["unknown_route_reports"] = unknownRouteReports
+            aggregated["no_hop_reports"] = noHopReports
+            aggregated["relayed_reports"] = relayedReports
+
             stats = aggregated
         }
 
@@ -593,7 +675,43 @@ struct StatisticsResponse: Decodable {
             window = "24h"
         }
 
+        if let decodedWindowHours = try? container.decode(Int.self, forKey: .windowHours) {
+            windowHours = decodedWindowHours
+        } else if let parsed = Int(window.replacingOccurrences(of: "h", with: "")) {
+            windowHours = parsed
+        } else {
+            windowHours = 24
+        }
+
         timestamp = (try? container.decode(String.self, forKey: .timestamp)) ?? ""
+    }
+}
+
+struct CollectorStatsTotal: Decodable, Identifiable {
+    let reporterId: Int
+    let reporterName: String
+    let publicKey: String
+    let totalPackets: Int
+    let advPackets: Int
+    let dirPackets: Int
+    let pubPackets: Int
+    let telPackets: Int
+    let sysPackets: Int
+    let rawPackets: Int
+
+    var id: Int { reporterId }
+
+    enum CodingKeys: String, CodingKey {
+        case reporterId = "reporter_id"
+        case reporterName = "reporter_name"
+        case publicKey = "public_key"
+        case totalPackets = "total_packets"
+        case advPackets = "adv_packets"
+        case dirPackets = "dir_packets"
+        case pubPackets = "pub_packets"
+        case telPackets = "tel_packets"
+        case sysPackets = "sys_packets"
+        case rawPackets = "raw_packets"
     }
 }
 

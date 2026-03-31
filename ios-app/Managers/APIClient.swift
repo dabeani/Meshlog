@@ -14,6 +14,7 @@ class APIClient: ObservableObject {
     private var authToken: String?
     private let userDefaults = UserDefaults.standard
     private let baseURLKey = "meshlog_base_url"
+    private let session: URLSession
 
     private struct EmptyResponse: Decodable {}
 
@@ -22,6 +23,11 @@ class APIClient: ObservableObject {
     }
 
     init() {
+        let config = URLSessionConfiguration.default
+        config.waitsForConnectivity = true
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 120
+        session = URLSession(configuration: config)
         baseURL = userDefaults.string(forKey: baseURLKey) ?? "https://meshlog.1tld.net"
     }
 
@@ -78,7 +84,7 @@ class APIClient: ObservableObject {
                         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                     }
 
-                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    let (bytes, response) = try await session.bytes(for: request)
                     guard let httpResponse = response as? HTTPURLResponse,
                           (200...299).contains(httpResponse.statusCode) else {
                         throw URLError(.badServerResponse)
@@ -250,7 +256,7 @@ class APIClient: ObservableObject {
             request.httpBody = body
         }
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {

@@ -1,1 +1,21 @@
-lalala
+adaptions:
+- Fix; Text Color of the APP Headlines Like "Live Feed", "Devices", "Statistics", "Settings" should have a different coloring - e.g White?
+- Fix; Text Color of the "not selected" switches like in Settings -> "General" / "Admin" should have a different coloring - e.g White?
+- Fix; The Menu BAR, when a Switch is selected, the Color should be not "light Blue?" it should be White!
+- Improvement; In the "Live" Page, when i go to "Channels", default the Channels should be not able to be expanded as it is now - it should be pressable and switch into this Channel without seeing the other ones, and when there are unread messages there should be a red bubble with the number of unread messages on the right side until we open it.
+- Fix; The MAP should open to our actual location of the device (Apple). Actually it opens the MAP at sicily - needs to be adapted!
+- Improvement; in the "Settings" Page -> "Admin" the color of the placeholder text from the Textboxes are not visible due to coloring!
+- Improvement; in the "Live Feed" Page the elements e.g Channel-Messages does not e.g contain the channel-scope which is in the WebUI available - go through this again and implement the same fields as in the WebUI!
+- Improvement; in the "Devices" Page when click on a device, it should be able to jump to the MAP and focus on the Device in the middle of the screen.
+- Improvement; in the "Live" Page, when a packet comes with coordinates, we want to have in a small badge the Distance in km/miles (switchable in the "Settings" page) automatically calculated and printed.
+- Improvement; in the "Settings" Page, write instead of the PublicKey from the Collectors the DeviceName!
+All Textboxes should be the same style, dont mix up any of the elements with different styles!
+- Improvement; redefine the "Stats" page and check if the values will be correct (i assume actually they are not that correct).
+- in the Page "Live" -> "Feed" i want to see the Region Scope next to each TXT Message (as you can investigate in the WebUI) in a Badge with "*" for no region-scope set, and the region when its setup!
+- i want to see in the colors for the Signal dBs everywhere (e.g page "Live" -> "Feed"), where they are printed - you can take for this coloring the definition of the WebUI as a default, and additional i want to be able to set it in the APP under settings!
+- when i scoll down the Live-Feed list, i want to have the possibility to load more data while scolling down, AND additionally, i want to be able to set in the page "Settings" how much "Items" will be loaded. And check what is the maximum what the WebUI API can provide (should be added as an "?" information to the Field)
+- in the page "Live" -> "Channels" AND in the "Live" the "Public" Channel does not have a "#" in front (you should see this already in the live WebUI https://meshlog.1tld.net) and therefore the other Channels usually have only one "#" in front, not two!
+- Looks liek we have a bug in the page "Live" -> "Channels", when i open a Channel it should start at that point where i read the last message, then it should recognize when i already read messages from channels and mark them as read - so the counter of the Channel will then adapt to the unread messages and this should be saved (including the messages)!
+
+- When seeing in the Channel-Messages a Hyperlink, it should be marked as hyperlink and should be pressable to open in new Browser tab
+- MAP-Animation; i want 

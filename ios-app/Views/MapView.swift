@@ -2,6 +2,7 @@
 import SwiftUI
 import MapKit
 import Combine
+import CoreLocation
 
 // MARK: - Helpers
 
@@ -55,22 +56,47 @@ private func repeaterClockWarning(for contact: Contact) -> String? {
     return "Repeater clock is ~\(formatDrift(driftMs)) \(direction) server reception time. Time sync likely needed."
 }
 
-// MARK: - Pulse Ring
+private final class DeviceLocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published var currentCoordinate: CLLocationCoordinate2D?
 
-private struct PulseRing: View {
-    let color: Color
-    @State private var animating = false
+    private let manager = CLLocationManager()
+    private var didRequest = false
 
-    var body: some View {
-        Circle()
-            .stroke(color.opacity(0.75), lineWidth: 1.5)
-            .scaleEffect(animating ? 2.7 : 1.0)
-            .opacity(animating ? 0.0 : 0.9)
-            .animation(
-                .easeOut(duration: 1.9).repeatForever(autoreverses: false),
-                value: animating
-            )
-            .onAppear { animating = true }
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+    }
+
+    func requestCurrentLocation() {
+        guard !didRequest else { return }
+        didRequest = true
+
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        default:
+            break
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        currentCoordinate = locations.last?.coordinate
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // Ignore transient location errors; map falls back to contact-fit logic.
     }
 }
 
@@ -105,14 +131,15 @@ private struct NodeAnnotationView: View {
         return Color(red: 0.42, green: 0.42, blue: 0.52)
     }
 
-    private var isPulsing: Bool { secondsSince(contact.lastHeardAt) < 300 }
+    private var showsLiveHalo: Bool { secondsSince(contact.lastHeardAt) < 300 }
     private var shouldShowLabel: Bool { showLabels }
 
     var body: some View {
         VStack(spacing: 3) {
             ZStack {
-                if isPulsing {
-                    PulseRing(color: nodeColor)
+                if showsLiveHalo {
+                    Circle()
+                        .fill(nodeColor.opacity(0.14))
                         .frame(width: 38, height: 38)
                 }
 
@@ -166,17 +193,18 @@ private struct NodeAnnotationView: View {
 struct MapView: View {
     @EnvironmentObject var apiClient: APIClient
     @EnvironmentObject var navigationState: AppNavigationState
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var contacts: [Contact] = []
     @State private var recentPackets: [Packet] = []
     @State private var cameraPosition: MapCameraPosition = .automatic
+    @StateObject private var deviceLocationManager = DeviceLocationManager()
     @State private var isLoading = false
     @State private var selectedContact: Contact?
     @State private var selectedContactStats: StatisticsResponse?
     @State private var selectedContactTrail: [Packet] = []
     @State private var selectedContactTab: String = "general"
     @State private var selectedTrailGpxUrl: URL?
-    @State private var routeFocusContactId: Int?
     @State private var neighborFocusContactId: Int?
     @State private var config: AppConfiguration?
 
@@ -184,6 +212,7 @@ struct MapView: View {
     @AppStorage("map_dark_theme") private var isDarkMapTheme = true
     @AppStorage("map_show_routes") private var showRoutes = true
     @AppStorage("map_show_neighbors") private var showNeighbors = false
+    @AppStorage("map_visible_route_contact_ids") private var routeVisibleContactIdsRaw = ""
     @AppStorage("map_visible_trail_contact_ids") private var trailVisibleContactIdsRaw = ""
     @AppStorage("collector_filter_selected_ids") private var collectorFilterRaw = ""
     @State private var knownContactIds: Set<Int> = []
@@ -196,16 +225,42 @@ struct MapView: View {
     @State private var selectedTrailReporterLinks: [TrailReporterLink] = []
     @State private var showSearch = false
     @State private var searchText = ""
+    @FocusState private var isSearchFieldFocused: Bool
+    @State private var searchOverlayTask: Task<Void, Never>?
     @State private var mapLatitudeDelta: Double = 5.0
     @State private var reporters: [Reporter] = []
     @State private var routeOverlayTask: Task<Void, Never>?
+    @State private var mapRenderTask: Task<Void, Never>?
+    @State private var trailRenderRefreshTask: Task<Void, Never>?
+    @State private var routeRenderRefreshTask: Task<Void, Never>?
+    @State private var topToggleFeedback: TopToggleFeedback?
+    @State private var topToggleFeedbackTask: Task<Void, Never>?
     @State private var routeOverlaySinceMs: Int = 0
     @State private var animatedDashPhase: CGFloat = 18
+    @State private var renderedMainTrailPoints: [TrailPointData] = []
+    @State private var renderedPathPolylines: [PolylineData] = []
+    @State private var renderedNeighborPolylines: [PolylineData] = []
+    @State private var shouldRenderMainMap = false
+    @State private var livePacketFlashes: [LivePacketFlash] = []
+
+    private let maxStoredRecentPackets = 60
+    private let maxRenderedFocusedRoutePolylines = 24
+    private let maxAnimatedRoutePolylines = 8
+    private let maxRenderedTrailDots = 700
 
     private var mapBackgroundColor: Color {
         isDarkMapTheme
             ? Color(red: 0.08, green: 0.08, blue: 0.12)
             : Color(red: 0.95, green: 0.96, blue: 0.98)
+    }
+
+    private var mainMapStyle: MapStyle {
+#if targetEnvironment(simulator)
+        // Simulator often emits sandbox warnings for Maps telemetry with realistic elevation.
+        return .standard(elevation: .flat)
+#else
+        return .standard(elevation: .realistic)
+#endif
     }
 
     private var detailCardBackground: Color {
@@ -244,15 +299,18 @@ struct MapView: View {
         )
     }
 
+    private var visibleRouteContactIds: Set<Int> {
+        Set(
+            routeVisibleContactIdsRaw
+                .split(separator: ",")
+                .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        )
+    }
+
     private var visibleContacts: [Contact] {
         let selected = selectedCollectorIds
         guard !selected.isEmpty else { return contacts }
         return contacts.filter { !Set($0.reporterIds).isDisjoint(with: selected) }
-    }
-
-    private var routeFocusContact: Contact? {
-        guard let id = routeFocusContactId else { return nil }
-        return contacts.first(where: { $0.id == id })
     }
 
     private var neighborFocusContact: Contact? {
@@ -297,6 +355,10 @@ struct MapView: View {
             .sorted { $0.id < $1.id }
     }
 
+    private var shouldAnimateRoutePolylines: Bool {
+        renderedPathPolylines.count <= maxAnimatedRoutePolylines
+    }
+
     private struct TrailPointData: Identifiable {
         let id: String
         let contactId: Int
@@ -314,29 +376,31 @@ struct MapView: View {
         let snr: Double?
     }
 
-    private var mainTrailPoints: [TrailPointData] {
-        let visibleIds = Set(visibleContacts.map { $0.id })
-        var points: [TrailPointData] = []
+    private struct TopToggleFeedback: Identifiable {
+        let id = UUID()
+        let symbol: String
+        let text: String
+    }
 
-        for (contactId, packets) in trailPacketsByContactId {
-            guard visibleTrailContactIds.contains(contactId), visibleIds.contains(contactId) else { continue }
-            let contactName = contacts.first(where: { $0.id == contactId })?.name ?? "Device \(contactId)"
-
-            for packet in packets {
-                guard let lat = packet.latitude, let lon = packet.longitude else { continue }
-                points.append(
-                    TrailPointData(
-                        id: "tp-\(contactId)-\(packet.id)",
-                        contactId: contactId,
-                        contactName: contactName,
-                        packet: packet,
-                        coord: CLLocationCoordinate2D(latitude: lat, longitude: lon)
-                    )
-                )
-            }
+    private var displayedContacts: [Contact] {
+        let source = visibleContacts
+        let maxCount: Int
+        switch mapLatitudeDelta {
+        case ..<1.5:
+            maxCount = 800
+        case ..<5.0:
+            maxCount = 500
+        case ..<15.0:
+            maxCount = 300
+        default:
+            maxCount = 180
         }
 
-        return points.sorted { parseDate($0.packet.sentAt) < parseDate($1.packet.sentAt) }
+        guard source.count > maxCount else { return source }
+        let stride = max(1, Int(ceil(Double(source.count) / Double(maxCount))))
+        return source.enumerated().compactMap { index, item in
+            (index % stride == 0) ? item : nil
+        }
     }
 
 
@@ -372,14 +436,19 @@ struct MapView: View {
         }
     }
 
+    private var isMapTabActive: Bool {
+        navigationState.selectedTab == 1 && scenePhase == .active
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
                 GeometryReader { proxy in
-                    if proxy.size.width > 1 && proxy.size.height > 1 {
+                    if shouldRenderMainMap && proxy.size.width > 1 && proxy.size.height > 1 {
+                        MapReader { mapProxy in
                         Map(position: $cameraPosition) {
                             if showRoutes {
-                                ForEach(pathPolylines) { poly in
+                                ForEach(renderedPathPolylines) { poly in
                                     MapPolyline(coordinates: poly.coords)
                                         .stroke(
                                             Color.white.opacity(0.10),
@@ -394,7 +463,7 @@ struct MapView: View {
                                                 lineCap: .round,
                                                 lineJoin: .round,
                                                 dash: [10, 7],
-                                                dashPhase: animatedDashPhase
+                                                dashPhase: shouldAnimateRoutePolylines ? animatedDashPhase : 0
                                             )
                                         )
                                 }
@@ -407,7 +476,7 @@ struct MapView: View {
                                         )
                                 }
 
-                                ForEach(mainTrailPoints) { point in
+                                ForEach(renderedMainTrailPoints) { point in
                                     Annotation("", coordinate: point.coord) {
                                         ZStack {
                                             Circle()
@@ -419,7 +488,6 @@ struct MapView: View {
                                                         lineWidth: max(1.0, trailDotDiameter * 0.12)
                                                     )
                                                 )
-                                                .shadow(color: Color.black.opacity(0.25), radius: 2)
 
                                             Circle()
                                                 .fill(Color.white.opacity(0.001))
@@ -449,14 +517,17 @@ struct MapView: View {
                                                 lineCap: .round,
                                                 lineJoin: .round,
                                                 dash: [5, 4],
-                                                dashPhase: animatedDashPhase * 0.7
+                                                dashPhase: 0
                                             )
                                         )
                                 }
+
+                                // Live packet flash animations are rendered as a Canvas overlay
+                                // via TimelineView below — no MapKit annotations needed.
                             }
 
                             if showNeighbors {
-                                ForEach(neighborPolylines) { poly in
+                                ForEach(renderedNeighborPolylines) { poly in
                                     MapPolyline(coordinates: poly.coords)
                                         .stroke(
                                             Color.white.opacity(0.11),
@@ -471,13 +542,13 @@ struct MapView: View {
                                                 lineCap: .round,
                                                 lineJoin: .round,
                                                 dash: [7, 5],
-                                                dashPhase: animatedDashPhase * 0.5
+                                                dashPhase: 0
                                             )
                                         )
                                 }
                             }
 
-                            ForEach(visibleContacts) { contact in
+                            ForEach(displayedContacts) { contact in
                                 if let lat = contact.latitude, let lon = contact.longitude {
                                     Annotation(
                                         "",
@@ -493,14 +564,63 @@ struct MapView: View {
                                 }
                             }
                         }
-                        .mapStyle(.standard(elevation: .realistic))
+                        .mapStyle(mainMapStyle)
                         .environment(\.colorScheme, isDarkMapTheme ? .dark : .light)
-                        .onMapCameraChange(frequency: .continuous) { context in
+                        .onMapCameraChange(frequency: .onEnd) { context in
                             mapLatitudeDelta = context.region.span.latitudeDelta
                         }
+                        .overlay(alignment: .topLeading) {
+                            // Canvas-based flash animation: driven by TimelineView so only this
+                            // overlay re-renders at 30 fps — the Map content is never touched.
+                            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeCtx in
+                                Canvas { canvasCtx, _ in
+                                    let now = timeCtx.date
+                                    for flash in livePacketFlashes where !flash.isExpired(at: now) {
+                                        let opacity = flash.opacity(at: now)
+                                        let pts = flash.waypoints.compactMap {
+                                            mapProxy.convert($0, to: .local)
+                                        }
+                                        guard pts.count >= 2 else { continue }
+                                        var linePath = Path()
+                                        linePath.move(to: pts[0])
+                                        pts.dropFirst().forEach { linePath.addLine(to: $0) }
+                                        // Outer glow
+                                        canvasCtx.stroke(
+                                            linePath,
+                                            with: .color(.white.opacity(0.15 * opacity)),
+                                            style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
+                                        )
+                                        // Inner bright line
+                                        canvasCtx.stroke(
+                                            linePath,
+                                            with: .color(Color(red: 0.35, green: 0.92, blue: 1.0).opacity(0.9 * opacity)),
+                                            style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
+                                        )
+                                        // Traveling dot
+                                        let dotCoord = flash.dotPosition(at: now)
+                                        if let dotPt = mapProxy.convert(dotCoord, to: .local) {
+                                            let r: CGFloat = 7
+                                            let rect = CGRect(x: dotPt.x - r, y: dotPt.y - r, width: r * 2, height: r * 2)
+                                            canvasCtx.fill(Path(ellipseIn: rect),
+                                                           with: .color(Color(red: 0.35, green: 0.92, blue: 1.0).opacity(opacity)))
+                                            canvasCtx.stroke(Path(ellipseIn: CGRect(x: dotPt.x - r - 1,
+                                                                                     y: dotPt.y - r - 1,
+                                                                                     width: (r + 1) * 2,
+                                                                                     height: (r + 1) * 2)),
+                                                             with: .color(.white.opacity(0.85 * opacity)),
+                                                             lineWidth: 2)
+                                        }
+                                    }
+                                }
+                            }
+                            .allowsHitTesting(false)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } // MapReader
                     } else {
                         Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
 
@@ -527,6 +647,13 @@ struct MapView: View {
             }
             .overlay(alignment: .top) {
                 VStack(spacing: 0) {
+                    if let feedback = topToggleFeedback {
+                        topToggleFeedbackBanner(feedback)
+                            .padding(.horizontal, 14)
+                            .padding(.top, 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
                     if showSearch {
                         searchOverlay()
                     }
@@ -541,8 +668,12 @@ struct MapView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { showSearch.toggle() }
-                        if !showSearch { searchText = "" }
+                        let willEnableSearch = !showSearch
+                        toggleSearchOverlay()
+                        presentTopToggleFeedback(
+                            symbol: willEnableSearch ? "magnifyingglass.circle.fill" : "magnifyingglass",
+                            text: willEnableSearch ? "Search Enabled" : "Search Hidden"
+                        )
                     } label: {
                         Image(systemName: showSearch ? "magnifyingglass.circle.fill" : "magnifyingglass")
                             .foregroundColor(showSearch ? .cyan : .secondary)
@@ -550,6 +681,10 @@ struct MapView: View {
 
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { showRepeaterNames.toggle() }
+                        presentTopToggleFeedback(
+                            symbol: showRepeaterNames ? "tag.fill" : "tag.slash.fill",
+                            text: showRepeaterNames ? "Labels On" : "Labels Off"
+                        )
                     } label: {
                         Image(systemName: showRepeaterNames ? "tag.fill" : "tag.slash.fill")
                             .foregroundColor(showRepeaterNames ? .cyan : .secondary)
@@ -557,6 +692,10 @@ struct MapView: View {
 
                     Button {
                         withAnimation(.easeInOut(duration: 0.3)) { isDarkMapTheme.toggle() }
+                        presentTopToggleFeedback(
+                            symbol: isDarkMapTheme ? "moon.fill" : "sun.max.fill",
+                            text: isDarkMapTheme ? "Dark Map" : "Light Map"
+                        )
                     } label: {
                         Image(systemName: isDarkMapTheme ? "moon.fill" : "sun.max.fill")
                             .foregroundColor(isDarkMapTheme ? .cyan : .yellow)
@@ -564,6 +703,10 @@ struct MapView: View {
 
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { showRoutes.toggle() }
+                        presentTopToggleFeedback(
+                            symbol: "point.topleft.down.curvedto.point.bottomright.up",
+                            text: showRoutes ? "Routes On" : "Routes Off"
+                        )
                     } label: {
                         Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
                             .foregroundColor(showRoutes ? .cyan : .secondary)
@@ -571,6 +714,10 @@ struct MapView: View {
 
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { showNeighbors.toggle() }
+                        presentTopToggleFeedback(
+                            symbol: "network",
+                            text: showNeighbors ? "Neighbors On" : "Neighbors Off"
+                        )
                     } label: {
                         Image(systemName: "network")
                             .foregroundColor(showNeighbors ? .cyan : .secondary)
@@ -584,22 +731,57 @@ struct MapView: View {
                 }
             }
             .onAppear {
-                Task { await loadAll(fitCamera: true) }
+                setMapActiveState(isMapTabActive)
+                deviceLocationManager.requestCurrentLocation()
+                Task { @MainActor in
+                    // Prefer centering on the user's location on first map open.
+                    for _ in 0..<20 {
+                        if hasFitCamera { return }
+                        if let coordinate = deviceLocationManager.currentCoordinate {
+                            hasFitCamera = true
+                            cameraPosition = .region(MKCoordinateRegion(
+                                center: coordinate,
+                                span: .init(latitudeDelta: 0.08, longitudeDelta: 0.08)
+                            ))
+                            return
+                        }
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                    }
+                }
+                Task {
+                    if isMapTabActive {
+                        await loadAll(fitCamera: true)
+                        await MainActor.run {
+                            scheduleRouteOverlayRefresh()
+                        }
+                    }
+                }
                 Task { await loadConfig() }
                 Task { await ensureVisibleTrailsLoaded() }
                 Task { await processNavigationFocusRequest() }
-                startRouteOverlayAnimation()
-                startRouteOverlayStream()
+                scheduleTrailPointRefresh()
             }
             .onDisappear {
                 routeOverlayTask?.cancel()
+                mapRenderTask?.cancel()
+                trailRenderRefreshTask?.cancel()
+                routeRenderRefreshTask?.cancel()
+                topToggleFeedbackTask?.cancel()
+                searchOverlayTask?.cancel()
+                shouldRenderMainMap = false
+                livePacketFlashes.removeAll()
+            }
+            .onChange(of: scenePhase) { _, _ in
+                setMapActiveState(isMapTabActive)
+            }
+            .onChange(of: navigationState.selectedTab) { _, _ in
+                setMapActiveState(isMapTabActive)
             }
             .onChange(of: selectedContact?.id) { _, _ in
                 guard selectedContact != nil else {
                     selectedContactStats = nil
                     selectedContactTrail = []
                     selectedTrailGpxUrl = nil
-                    routeFocusContactId = nil
                     neighborFocusContactId = nil
                     return
                 }
@@ -614,18 +796,48 @@ struct MapView: View {
             }
             .onChange(of: contacts.map { $0.id }) { _, _ in
                 Task {
+                    syncVisibleRouteIdsWithCurrentContacts()
                     syncVisibleTrailIdsWithCurrentContacts()
                     await ensureVisibleTrailsLoaded()
+                    await MainActor.run {
+                        scheduleTrailPointRefresh()
+                        scheduleRouteOverlayRefresh()
+                    }
                 }
             }
             .onChange(of: trailVisibleContactIdsRaw) { _, _ in
-                Task { await ensureVisibleTrailsLoaded() }
+                Task {
+                    await ensureVisibleTrailsLoaded()
+                    await MainActor.run {
+                        scheduleTrailPointRefresh()
+                    }
+                }
+            }
+            .onChange(of: collectorFilterRaw) { _, _ in
+                scheduleTrailPointRefresh()
+                scheduleRouteOverlayRefresh()
+            }
+            .onChange(of: mapLatitudeDelta) { _, _ in
+                scheduleTrailPointRefresh()
             }
             .onChange(of: showRoutes) { _, enabled in
                 if !enabled {
                     selectedTrailPoint = nil
                     selectedTrailReporterLinks = []
                 }
+                scheduleRouteOverlayRefresh()
+            }
+            .onChange(of: showNeighbors) { _, enabled in
+                if !enabled {
+                    neighborFocusContactId = nil
+                }
+                scheduleRouteOverlayRefresh()
+            }
+            .onChange(of: neighborFocusContactId) { _, _ in
+                scheduleRouteOverlayRefresh()
+            }
+            .onChange(of: routeVisibleContactIdsRaw) { _, _ in
+                scheduleRouteOverlayRefresh()
             }
             .onChange(of: navigationState.mapFocusNonce) { _, _ in
                 Task { await processNavigationFocusRequest() }
@@ -642,32 +854,134 @@ struct MapView: View {
 
     // MARK: - Path Polylines
 
+    @MainActor
+    private func setMapActiveState(_ isActive: Bool) {
+        mapRenderTask?.cancel()
+
+        if isActive {
+            mapRenderTask = Task {
+                // Delay map mount slightly to avoid zero-sized CAMetal surface during tab transition.
+                try? await Task.sleep(nanoseconds: 160_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    shouldRenderMainMap = true
+                    startRouteOverlayAnimation()
+                    startRouteOverlayStream()
+                }
+            }
+        } else {
+            shouldRenderMainMap = false
+            routeOverlayTask?.cancel()
+            livePacketFlashes.removeAll()
+        }
+    }
+
     private struct PolylineData: Identifiable {
         let id: String
         let coords: [CLLocationCoordinate2D]
     }
 
+    // MARK: - Live Packet Flash Animation
+
+    private struct LivePacketFlash: Identifiable {
+        let id = UUID()
+        let waypoints: [CLLocationCoordinate2D]
+        let startedAt: Date = Date()
+        let duration: TimeInterval = 3.0
+
+        func opacity(at tick: Date) -> Double {
+            let elapsed = tick.timeIntervalSince(startedAt)
+            guard elapsed >= 0 else { return 0 }
+            if elapsed < 0.25 { return 1.0 }
+            return max(0, 1.0 - (elapsed - 0.25) / max(0.001, duration - 0.25))
+        }
+
+        func dotPosition(at tick: Date) -> CLLocationCoordinate2D {
+            let elapsed = tick.timeIntervalSince(startedAt)
+            let travelDuration = duration * 0.75
+            let rawT = elapsed < 0 ? 0.0 : min(1.0, elapsed / travelDuration)
+            // Ease in-out cubic
+            let eased = rawT < 0.5 ? 2 * rawT * rawT : -1 + (4 - 2 * rawT) * rawT
+            return interpolatedPosition(eased)
+        }
+
+        func isExpired(at tick: Date) -> Bool {
+            tick.timeIntervalSince(startedAt) >= duration
+        }
+
+        private func interpolatedPosition(_ t: Double) -> CLLocationCoordinate2D {
+            guard waypoints.count >= 2 else { return waypoints.first ?? CLLocationCoordinate2D() }
+            var segLengths: [Double] = []
+            for i in 1..<waypoints.count {
+                let dlat = waypoints[i].latitude - waypoints[i-1].latitude
+                let dlon = waypoints[i].longitude - waypoints[i-1].longitude
+                segLengths.append(sqrt(dlat * dlat + dlon * dlon))
+            }
+            let total = segLengths.reduce(0, +)
+            guard total > 0 else { return waypoints.last! }
+            let target = t * total
+            var dist = 0.0
+            for i in 0..<segLengths.count {
+                if dist + segLengths[i] >= target || i == segLengths.count - 1 {
+                    let segT = segLengths[i] > 0 ? min(1, (target - dist) / segLengths[i]) : 0
+                    let a = waypoints[i]
+                    let b = waypoints[min(i + 1, waypoints.count - 1)]
+                    return CLLocationCoordinate2D(
+                        latitude: a.latitude + (b.latitude - a.latitude) * segT,
+                        longitude: a.longitude + (b.longitude - a.longitude) * segT
+                    )
+                }
+                dist += segLengths[i]
+            }
+            return waypoints.last!
+        }
+    }
+
     /// Build relay-path polylines from live-feed packet paths.
     /// Path strings look like "ab12->cd34->ef56" where each segment is a
     /// short (1–3 byte) hex prefix of a relay node's public key.
-    private var pathPolylines: [PolylineData] {
+    private func buildPathPolylines() -> [PolylineData] {
+        guard !visibleRouteContactIds.isEmpty else { return [] }
+
         var lines: [PolylineData] = []
         var dedupe = Set<String>()
         let selected = selectedCollectorIds
-        let focusContact = routeFocusContact
+        let routeLimit = maxRenderedFocusedRoutePolylines
+
+        let selectedRoutePublicKeys: Set<String> = Set(
+            contacts
+                .filter { visibleRouteContactIds.contains($0.id) }
+                .map { $0.publicKey.uppercased() }
+        )
 
         for packet in recentPackets {
-            if let focusContact {
-                let sameContactId = packet.contactId == focusContact.id
-                let samePublicKey = packet.contactPublicKey?.uppercased() == focusContact.publicKey.uppercased()
-                if !sameContactId && !samePublicKey {
-                    continue
+            if lines.count >= routeLimit { break }
+
+            let packetContactKey = packet.contactPublicKey?.uppercased()
+            let packetMatchesSelection = {
+                if let contactId = packet.contactId, visibleRouteContactIds.contains(contactId) {
+                    return true
                 }
+                if let packetContactKey, selectedRoutePublicKeys.contains(packetContactKey) {
+                    return true
+                }
+                return false
+            }()
+
+            if !packetMatchesSelection {
+                continue
             }
 
-            let reports: [(reporterId: Int?, path: String?)] = packet.reports.isEmpty
-                ? [(packet.reporterId, packet.path)]
-                : packet.reports.map { ($0.reporterId ?? packet.reporterId, $0.path ?? packet.path) }
+            let reports: [(reporterId: Int?, path: String?)] = {
+                if packet.reports.isEmpty {
+                    return [(packet.reporterId, packet.path)]
+                }
+
+                let best = packet.reports.max {
+                    parseDate($0.receivedAt ?? "") < parseDate($1.receivedAt ?? "")
+                }
+                return [(best?.reporterId ?? packet.reporterId, best?.path ?? packet.path)]
+            }()
 
             for report in reports {
                 if !selected.isEmpty,
@@ -685,12 +999,16 @@ struct MapView: View {
                     .joined(separator: "|")
                 guard dedupe.insert(key).inserted else { continue }
                 lines.append(PolylineData(id: key, coords: coords))
+
+                if lines.count >= routeLimit {
+                    break
+                }
             }
         }
         return lines
     }
 
-    private var neighborPolylines: [PolylineData] {
+    private func buildNeighborPolylines() -> [PolylineData] {
         guard let selectedContact = neighborFocusContact,
               let srcLat = selectedContact.latitude,
               let srcLon = selectedContact.longitude else {
@@ -842,24 +1160,20 @@ struct MapView: View {
 
                     HStack(spacing: 8) {
                         Button {
-                            if routeFocusContactId == contact.id {
-                                routeFocusContactId = nil
-                            } else {
-                                routeFocusContactId = contact.id
-                                showRoutes = true
-                            }
+                            toggleDeviceRoute(contact)
                         } label: {
-                            Text(routeFocusContactId == contact.id ? "Hide Routes" : "Show Routes")
+                            Text(visibleRouteContactIds.contains(contact.id) ? "Hide Routes" : "Show Routes")
                                 .font(.system(size: 11, weight: .semibold))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(Color.cyan.opacity(routeFocusContactId == contact.id ? 0.3 : 0.18))
+                                .background(Color.cyan.opacity(visibleRouteContactIds.contains(contact.id) ? 0.3 : 0.18))
                                 .clipShape(Capsule())
                         }
 
                         Button {
                             if neighborFocusContactId == contact.id {
                                 neighborFocusContactId = nil
+                                showNeighbors = false
                             } else {
                                 neighborFocusContactId = contact.id
                                 showNeighbors = true
@@ -1025,52 +1339,54 @@ struct MapView: View {
     // MARK: - Logic
 
     private func loadAll(fitCamera: Bool) async {
-        DispatchQueue.main.async {
-            if self.contacts.isEmpty { self.isLoading = true }
+        await MainActor.run {
+            if contacts.isEmpty { isLoading = true }
         }
 
         do {
             async let contactsFetch = apiClient.fetchContacts()
-            // ADV only — path polylines need advertisement positions only.
-            // All 6 types caused excessive memory use and OOM crashes on device.
+            // ADV only for initial static route overlay; stream handles incremental updates.
             async let feedFetch = apiClient.fetchLiveFeed(sinceMs: 0, types: ["ADV"], limit: 50)
             async let reportersFetch = apiClient.fetchReporters()
             let (cr, fr, rr) = try await (contactsFetch, feedFetch, reportersFetch)
 
-            DispatchQueue.main.async {
-                self.isLoading = false
-                self.reporters = rr
-                self.routeOverlaySinceMs = max(self.routeOverlaySinceMs, fr.timestampMs)
+            await MainActor.run {
+                isLoading = false
+                reporters = rr
+                routeOverlaySinceMs = max(routeOverlaySinceMs, fr.timestampMs)
 
                 // Detect newly arrived contacts (not seen in previous refresh)
                 let incoming = Set(cr.contacts.map { $0.id })
-                let nowNew: Set<Int> = self.knownContactIds.isEmpty
+                let nowNew: Set<Int> = knownContactIds.isEmpty
                     ? []
-                    : incoming.subtracting(self.knownContactIds)
-                self.knownContactIds = incoming
+                    : incoming.subtracting(knownContactIds)
+                knownContactIds = incoming
 
                 withAnimation(.easeInOut(duration: 0.35)) {
-                    self.contacts = cr.contacts
-                    self.recentPackets = self.mergePackets(fr.packets, into: self.recentPackets)
+                    contacts = cr.contacts
+                    recentPackets = mergePackets(fr.packets, into: recentPackets)
                 }
+                scheduleTrailPointRefresh()
+                scheduleRouteOverlayRefresh()
 
                 if !nowNew.isEmpty {
-                    self.newContactIds = nowNew
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-                        withAnimation { self.newContactIds.removeAll() }
+                    newContactIds = nowNew
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 6_000_000_000)
+                        withAnimation { newContactIds.removeAll() }
                     }
                 }
 
                 // Auto-fit camera on first load only
-                if fitCamera && !self.hasFitCamera {
-                    self.hasFitCamera = true
-                    let located = self.visibleContacts.filter { $0.latitude != nil && $0.longitude != nil }
+                if fitCamera && !hasFitCamera {
+                    hasFitCamera = true
+                    let located = visibleContacts.filter { $0.latitude != nil && $0.longitude != nil }
                     if !located.isEmpty {
                         let lats = located.compactMap { $0.latitude }
                         let lons = located.compactMap { $0.longitude }
                         let avgLat = lats.reduce(0, +) / Double(lats.count)
                         let avgLon = lons.reduce(0, +) / Double(lons.count)
-                        self.cameraPosition = .region(MKCoordinateRegion(
+                        cameraPosition = .region(MKCoordinateRegion(
                             center: .init(latitude: avgLat, longitude: avgLon),
                             span: .init(latitudeDelta: 5, longitudeDelta: 5)
                         ))
@@ -1079,7 +1395,7 @@ struct MapView: View {
             }
         } catch {
             print("Map load error: \(error)")
-            DispatchQueue.main.async { self.isLoading = false }
+            await MainActor.run { isLoading = false }
         }
     }
 
@@ -1095,19 +1411,28 @@ struct MapView: View {
         routeOverlayTask = Task {
             while !Task.isCancelled {
                 do {
-                    // Only stream ADV packets — path polylines on the map only need advertisement positions.
-                    // Streaming all 6 types caused excessive memory use and OOM crashes.
+                    // Stream ADV, MSG, PUB: ADV packets feed static route overlays;
+                    // all types trigger live path flash animations (matching WebUI behavior).
                     let stream = apiClient.streamLiveFeed(
                         sinceMs: routeOverlaySinceMs,
-                        types: ["ADV"],
-                        limit: 50
+                        types: ["ADV", "MSG", "PUB"],
+                        limit: 30
                     )
 
                     for try await response in stream {
                         if Task.isCancelled { return }
                         await MainActor.run {
-                            recentPackets = mergePackets(response.packets, into: recentPackets)
+                            // Only ADV packets update static route polylines (need GPS source coord).
+                            let advPackets = response.packets.filter { $0.type == "ADV" }
+                            if !advPackets.isEmpty {
+                                recentPackets = mergePackets(advPackets, into: recentPackets)
+                            }
                             routeOverlaySinceMs = max(routeOverlaySinceMs, response.timestampMs)
+                            scheduleRouteOverlayRefresh()
+                            // Flash-animate every incoming packet that has a resolvable route chain.
+                            for packet in response.packets {
+                                triggerPacketFlash(for: packet)
+                            }
                         }
                     }
                 } catch {
@@ -1116,12 +1441,16 @@ struct MapView: View {
                     do {
                         let response = try await apiClient.fetchLiveFeed(
                             sinceMs: routeOverlaySinceMs,
-                            types: ["ADV"],
-                            limit: 50
+                            types: ["ADV", "MSG", "PUB"],
+                            limit: 30
                         )
                         await MainActor.run {
-                            recentPackets = mergePackets(response.packets, into: recentPackets)
+                            let advPackets = response.packets.filter { $0.type == "ADV" }
+                            if !advPackets.isEmpty {
+                                recentPackets = mergePackets(advPackets, into: recentPackets)
+                            }
                             routeOverlaySinceMs = max(routeOverlaySinceMs, response.timestampMs)
+                            scheduleRouteOverlayRefresh()
                         }
                     } catch {
                         if Task.isCancelled { return }
@@ -1133,10 +1462,44 @@ struct MapView: View {
         }
     }
 
+    @MainActor
+    private func triggerPacketFlash(for packet: Packet) {
+        // Use the most-recent report's path for the most accurate relay chain.
+        let report = packet.reports.max { parseDate($0.receivedAt ?? "") < parseDate($1.receivedAt ?? "") }
+        let reporterId = report?.reporterId ?? packet.reporterId
+        let path = report?.path ?? packet.path
+        let chain = buildRouteChain(for: packet, reporterId: reporterId, path: path)
+        var coords = coordinates(for: chain)
+
+        // Fallback: if contact lookup produced < 2 points, use the packet's own
+        // GPS coordinates (ADV packets embed the sender's lat/lon).
+        if coords.count < 2, let srcLat = packet.latitude, let srcLon = packet.longitude {
+            let srcCoord = CLLocationCoordinate2D(latitude: srcLat, longitude: srcLon)
+            if let destContact = reporterId.flatMap({ reporterIdToContact[$0] }),
+               let dLat = destContact.latitude, let dLon = destContact.longitude {
+                coords = [srcCoord, CLLocationCoordinate2D(latitude: dLat, longitude: dLon)]
+            } else if coords.count == 1 {
+                coords = [srcCoord, coords[0]]
+            }
+        }
+        guard coords.count >= 2 else { return }
+        // Prune expired flashes and cap concurrent count.
+        let now = Date()
+        livePacketFlashes.removeAll { $0.isExpired(at: now) }
+        if livePacketFlashes.count >= 5 { livePacketFlashes.removeFirst() }
+        livePacketFlashes.append(LivePacketFlash(waypoints: coords))
+        // Schedule deferred cleanup so stale entries don't linger if no new packets arrive.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000) // > flash duration (3 s)
+            let pruneTime = Date()
+            livePacketFlashes.removeAll { $0.isExpired(at: pruneTime) }
+        }
+    }
+
     private func loadConfig() async {
         do {
             let appConfig = try await apiClient.fetchConfiguration()
-            DispatchQueue.main.async { self.config = appConfig }
+            await MainActor.run { config = appConfig }
         } catch {
             print("Map config error: \(error)")
         }
@@ -1215,7 +1578,9 @@ struct MapView: View {
         if ids.contains(contact.id) {
             ids.remove(contact.id)
             trailPolylinesByContactId.removeValue(forKey: contact.id)
+            trailPacketsByContactId.removeValue(forKey: contact.id)
             setVisibleTrailContactIds(ids)
+            scheduleTrailPointRefresh()
             return
         }
 
@@ -1227,6 +1592,34 @@ struct MapView: View {
     @MainActor
     private func setVisibleTrailContactIds(_ ids: Set<Int>) {
         trailVisibleContactIdsRaw = ids.sorted().map(String.init).joined(separator: ",")
+    }
+
+    @MainActor
+    private func setVisibleRouteContactIds(_ ids: Set<Int>) {
+        routeVisibleContactIdsRaw = ids.sorted().map(String.init).joined(separator: ",")
+    }
+
+    @MainActor
+    private func toggleDeviceRoute(_ contact: Contact) {
+        var ids = visibleRouteContactIds
+        if ids.contains(contact.id) {
+            ids.remove(contact.id)
+        } else {
+            ids.insert(contact.id)
+            showRoutes = true
+        }
+        setVisibleRouteContactIds(ids)
+        scheduleRouteOverlayRefresh()
+    }
+
+    @MainActor
+    private func syncVisibleRouteIdsWithCurrentContacts() {
+        let currentIds = Set(contacts.map { $0.id })
+        let valid = visibleRouteContactIds.intersection(currentIds)
+        if valid != visibleRouteContactIds {
+            setVisibleRouteContactIds(valid)
+        }
+        scheduleRouteOverlayRefresh()
     }
 
     @MainActor
@@ -1244,6 +1637,8 @@ struct MapView: View {
         for key in trailPacketsByContactId.keys where !currentIds.contains(key) || !valid.contains(key) {
             trailPacketsByContactId.removeValue(forKey: key)
         }
+
+        scheduleTrailPointRefresh()
     }
 
     private func ensureVisibleTrailsLoaded() async {
@@ -1280,6 +1675,7 @@ struct MapView: View {
                 trailPolylinesByContactId[contactId] = coords
                 trailPacketsByContactId[contactId] = capped
                 _ = trailLoadingContactIds.remove(contactId)
+                scheduleTrailPointRefresh()
             }
         } catch {
             await MainActor.run {
@@ -1287,6 +1683,115 @@ struct MapView: View {
             }
             print("Trail load error for contact \(contactId): \(error)")
         }
+    }
+
+    @MainActor
+    private func scheduleTrailPointRefresh() {
+        trailRenderRefreshTask?.cancel()
+        trailRenderRefreshTask = Task {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            refreshRenderedTrailPoints()
+        }
+    }
+
+    @MainActor
+    private func scheduleRouteOverlayRefresh() {
+        routeRenderRefreshTask?.cancel()
+        routeRenderRefreshTask = Task {
+            try? await Task.sleep(nanoseconds: 90_000_000)
+            guard !Task.isCancelled else { return }
+            refreshRenderedRouteOverlays()
+        }
+    }
+
+    @MainActor
+    private func refreshRenderedRouteOverlays() {
+        renderedPathPolylines = buildPathPolylines()
+        renderedNeighborPolylines = buildNeighborPolylines()
+    }
+
+    @MainActor
+    private func refreshRenderedTrailPoints() {
+        let visibleIds = Set(visibleContacts.map { $0.id })
+        let contactNames = Dictionary(uniqueKeysWithValues: contacts.map { ($0.id, $0.name) })
+
+        let trailSources: [(Int, [Packet])] = trailPacketsByContactId
+            .filter { visibleTrailContactIds.contains($0.key) && visibleIds.contains($0.key) }
+            .sorted { $0.key < $1.key }
+
+        var allPoints: [TrailPointData] = []
+        var latestPerContact: [TrailPointData] = []
+
+        for (contactId, packets) in trailSources {
+            let contactName = contactNames[contactId] ?? "Device \(contactId)"
+
+            let pointsForContact: [TrailPointData] = packets.compactMap { packet in
+                guard let lat = packet.latitude, let lon = packet.longitude else { return nil }
+                return TrailPointData(
+                    id: "tp-\(contactId)-\(packet.id)",
+                    contactId: contactId,
+                    contactName: contactName,
+                    packet: packet,
+                    coord: CLLocationCoordinate2D(latitude: lat, longitude: lon)
+                )
+            }
+
+            allPoints.append(contentsOf: pointsForContact)
+            if let latest = pointsForContact.last {
+                latestPerContact.append(latest)
+            }
+        }
+
+        guard !allPoints.isEmpty else {
+            renderedMainTrailPoints = []
+            return
+        }
+
+        let stride = trailPointSamplingStride(totalCount: allPoints.count)
+        var sampled: [TrailPointData] = []
+        sampled.reserveCapacity(min(maxRenderedTrailDots, allPoints.count))
+
+        if stride <= 1 {
+            sampled = Array(allPoints.prefix(maxRenderedTrailDots))
+        } else {
+            for (index, point) in allPoints.enumerated() {
+                if index % stride == 0 {
+                    sampled.append(point)
+                }
+                if sampled.count >= maxRenderedTrailDots {
+                    break
+                }
+            }
+        }
+
+        var seenIds = Set(sampled.map { $0.id })
+        for latest in latestPerContact where sampled.count < maxRenderedTrailDots {
+            if seenIds.insert(latest.id).inserted {
+                sampled.append(latest)
+            }
+        }
+
+        renderedMainTrailPoints = sampled
+    }
+
+    private func trailPointSamplingStride(totalCount: Int) -> Int {
+        let zoomStride: Int
+        switch mapLatitudeDelta {
+        case ..<1.5:
+            zoomStride = 1
+        case ..<4.0:
+            zoomStride = 2
+        case ..<10.0:
+            zoomStride = 4
+        case ..<25.0:
+            zoomStride = 8
+        default:
+            zoomStride = 12
+        }
+
+        let pressureStride = max(1, Int(ceil(Double(totalCount) / Double(maxRenderedTrailDots))))
+        return max(zoomStride, pressureStride)
     }
 
     private func mergePackets(_ incoming: [Packet], into existing: [Packet]) -> [Packet] {
@@ -1300,8 +1805,8 @@ struct MapView: View {
             }
         }
 
-        // Cap at 60 — map polylines only need recent ADV packets; larger sizes cause OOM.
-        return Array(merged.prefix(60))
+        // Cap at maxStoredRecentPackets — map polylines only need recent ADV packets; larger buffers increase memory.
+        return Array(merged.prefix(maxStoredRecentPackets))
     }
 
     private func splitHops(_ path: String) -> [String] {
@@ -1503,6 +2008,48 @@ struct MapView: View {
 
     // MARK: - Device Search Overlay (mirrors WebUI top-right search control)
 
+    @MainActor
+    private func toggleSearchOverlay() {
+        showSearch ? closeSearchOverlay(clearText: true) : openSearchOverlay()
+    }
+
+    @MainActor
+    private func openSearchOverlay() {
+        searchOverlayTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showSearch = true
+        }
+
+        searchOverlayTask = Task {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if showSearch {
+                    isSearchFieldFocused = true
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func closeSearchOverlay(clearText: Bool) {
+        searchOverlayTask?.cancel()
+        isSearchFieldFocused = false
+
+        searchOverlayTask = Task {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSearch = false
+                }
+                if clearText {
+                    searchText = ""
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private func searchOverlay() -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1510,12 +2057,17 @@ struct MapView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
                     .font(.system(size: 13))
-                TextField("Search devices…", text: $searchText)
+                TextField(
+                    "",
+                    text: $searchText,
+                    prompt: Text("Search devices...").foregroundColor(Color.white.opacity(0.65))
+                )
                     .font(.system(size: 13))
-                    .foregroundColor(.white)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .focused($isSearchFieldFocused)
                     .submitLabel(.search)
+                    .meshTextInputStyle()
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
@@ -1549,8 +2101,7 @@ struct MapView: View {
                     ForEach(results) { contact in
                         Button {
                             jumpToContact(contact)
-                            withAnimation { showSearch = false }
-                            searchText = ""
+                            closeSearchOverlay(clearText: true)
                         } label: {
                             HStack(spacing: 8) {
                                 Text(contact.name)
@@ -1592,6 +2143,26 @@ struct MapView: View {
     }
 
     // MARK: - Trail Point Inspector
+
+    @ViewBuilder
+    private func topToggleFeedbackBanner(_ feedback: TopToggleFeedback) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: feedback.symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.cyan)
+            Text(feedback.text)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.black.opacity(0.72))
+        .overlay(
+            Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1)
+        )
+        .clipShape(Capsule())
+        .shadow(color: Color.black.opacity(0.30), radius: 3)
+    }
 
     @ViewBuilder
     private func trailPointInspector(_ point: TrailPointData) -> some View {
@@ -1659,14 +2230,31 @@ struct MapView: View {
         }
     }
 
+    @MainActor
+    private func presentTopToggleFeedback(symbol: String, text: String) {
+        topToggleFeedbackTask?.cancel()
+
+        withAnimation(.easeInOut(duration: 0.18)) {
+            topToggleFeedback = TopToggleFeedback(symbol: symbol, text: text)
+        }
+
+        topToggleFeedbackTask = Task {
+            try? await Task.sleep(nanoseconds: 1_250_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.20)) {
+                    topToggleFeedback = nil
+                }
+            }
+        }
+    }
+
     private func parseDate(_ value: String) -> Date {
         lastHeardFormatter.date(from: value) ?? .distantPast
     }
 
     private func formattedAbsoluteTime(_ value: String) -> String {
-        guard !value.isEmpty else { return "-" }
-        guard let date = lastHeardFormatter.date(from: value) else { return value }
-        return lastHeardFormatter.string(from: date)
+        value.isEmpty ? "-" : value
     }
 
     private func focusCameraOnTrail() {
