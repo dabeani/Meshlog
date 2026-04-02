@@ -515,34 +515,12 @@ class MeshLogContact extends MeshLogObject {
             return this._meshlog.contacts[reporterContactId] ?? null;
         };
 
-        const getReporterAnchor = (reporter) => {
-            if (!reporter) return null;
-
-            const reporterLat = Number(reporter?.data?.lat);
-            const reporterLon = Number(reporter?.data?.lon);
-            if (Number.isFinite(reporterLat) && Number.isFinite(reporterLon) && (reporterLat !== 0 || reporterLon !== 0)) {
-                return {
-                    lat: reporterLat,
-                    lon: reporterLon,
-                    contact_id: reporter.getContactId()
-                };
-            }
-
-            const reporterContactId = reporter.getContactId();
-            const reporterContact = this._meshlog.contacts[reporterContactId] ?? null;
-            if (reporterContact?.adv) {
-                const contactLat = Number(reporterContact.adv.data.lat);
-                const contactLon = Number(reporterContact.adv.data.lon);
-                if (Number.isFinite(contactLat) && Number.isFinite(contactLon) && (contactLat !== 0 || contactLon !== 0)) {
-                    return {
-                        lat: contactLat,
-                        lon: contactLon,
-                        contact_id: reporterContactId
-                    };
-                }
-            }
-
-            return null;
+        const resolveUniqueHopContact = (hashPrefix, nearLat, nearLon) => {
+            if (!hashPrefix) return null;
+            const nearest = this._meshlog.findNearestContact(nearLat, nearLon, hashPrefix, true);
+            if (!nearest?.result) return null;
+            if (Number(nearest.matches) !== 1) return null;
+            return nearest.result;
         };
 
         let contactPairs = {
@@ -598,72 +576,34 @@ class MeshLogContact extends MeshLogObject {
 
                         contactPairs.addPair(src, this._meshlog.contacts[reporter.getContactId()]);
                     } else {
-                        // Use the selected contact's advertisement coordinates.
-                        let nearest = this._meshlog.findNearestContact(this.adv.data.lat, this.adv.data.lon, hashes[0], true);
-                        if (nearest?.result) {
-                            contactPairs.addPair(src, nearest.result);
-                        } else {
-                            // Fallback: if the next hop cannot be resolved, still show
-                            // the selected node's relation to the receiving reporter.
-                            const reporterContact = getReporterContact(reporter);
-                            if (reporterContact) {
-                                contactPairs.addPair(src, reporterContact);
-                            }
+                        const nextHop = resolveUniqueHopContact(
+                            hashes[0],
+                            Number(this.adv.data.lat),
+                            Number(this.adv.data.lon)
+                        );
+                        if (nextHop) {
+                            contactPairs.addPair(src, nextHop);
                         }
                     }
                 } else {
-                    // decode hashes
                     if (hashes.length == 0) return;
                     let idx = hashes.indexOf(this.hash);
                     if (idx < 0) return;
-                    idx += 1;
 
                     const reporterContact = getReporterContact(reporter);
-                    if (reporterContact) {
-                        // Always keep a direct fallback edge to the reporter when
-                        // this node appears in the relay path but hop reconstruction
-                        // is ambiguous or missing telemetry.
-                        contactPairs.addPair(this, reporterContact);
-                    }
+                    const thisLat = Number(this.adv?.data?.lat);
+                    const thisLon = Number(this.adv?.data?.lon);
+                    if (!Number.isFinite(thisLat) || !Number.isFinite(thisLon)) return;
 
-                    // Link contains contact hash
-                    // Simulate link up to contact and check if might be possible
+                    const prevContact = idx === 0
+                        ? src
+                        : resolveUniqueHopContact(hashes[idx - 1], thisLat, thisLon);
+                    const nextContact = idx === hashes.length - 1
+                        ? reporterContact
+                        : resolveUniqueHopContact(hashes[idx + 1], thisLat, thisLon);
 
-                    let prev = getReporterAnchor(reporter);
-                    if (!prev) return;
-
-                    let end = hashes.length + 1;
-                    let contacts = {0: src, [end]: reporterContact}
-
-                    for (let i=hashes.length-1;i>=0;i--) {
-                        let hash = hashes[i];
-                        let nearest = this._meshlog.findNearestContact(prev.lat, prev.lon, hash, true);
-                        if (nearest) {
-                            if (nearest.matches > 1) {
-                                // desc.warnings.push(`Multiple paths (${nearest.matches}) detected to ${hash}. Showing shortest.`);
-                            }
-
-                            let current = {
-                                lat: nearest.result.adv.data.lat,
-                                lon: nearest.result.adv.data.lon,
-                                contact_id: nearest.result.data.id
-                            };
-
-                            contacts[i+1] = nearest.result;
-                            prev = current;
-                        } else {
-                            contacts[i+1] = null;
-                            console.log(`no nearest for hash ${hash}`);
-                        }
-                    }
-
-                    let cThis = contacts[idx];
-                    let cPrev = contacts[idx-1];
-                    let cNext = contacts[idx+1];
-
-                    if (!cThis || cThis != this) return;
-                    if (cNext) { contactPairs.addPair(cThis, cNext); }
-                    if (cPrev) { contactPairs.addPair(cPrev, cThis); }
+                    if (prevContact) { contactPairs.addPair(prevContact, this); }
+                    if (nextContact) { contactPairs.addPair(this, nextContact); }
                 }
             });
         });
