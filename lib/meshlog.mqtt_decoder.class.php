@@ -36,17 +36,34 @@ class MeshLogMqttDecoder {
     // Minimum Unix timestamp (2020-01-01) used to detect invalid/unset device clocks.
     const MIN_VALID_UNIX_TIMESTAMP = 1577836800;
 
-    public static function decode($topic, $payload, $channels = array()) {
+    public static function decode($topic, $payload, $channels = array(), $options = array()) {
         $data = json_decode($payload, true);
         if (!is_array($data)) return null;
 
         $typeRaw = isset($data['type']) ? trim(strval($data['type'])) : '';
         $type = ($typeRaw === '') ? null : strtoupper($typeRaw);
 
-        $mqttMeta = static::extractMetadata($topic, $data);
-        $reporter = $mqttMeta['attempted_reporter'];
+        $mqttMeta = (isset($options['mqtt_meta']) && is_array($options['mqtt_meta']))
+            ? $options['mqtt_meta']
+            : static::extractMetadata($topic, $data);
+        $forcedReporter = static::normalizeReporterKey($options['forced_reporter'] ?? '');
+        $reporter = $forcedReporter !== '' ? $forcedReporter : ($mqttMeta['attempted_reporter'] ?? '');
+        $format = MeshLogReporter::normalizeFormat($options['format'] ?? MeshLogReporter::FORMAT_MESHLOG);
+        $topicType = static::extractTopicType($topic);
 
         if (!$reporter) return null;
+
+        // Dedicated reporter status topic.
+        // Both MeshLog and LetsMesh collectors publish to .../<pubkey>/status.
+        if ($topicType === 'status') {
+            $decodedStatus = static::decodeStatusTopicPayload($data, $reporter, $mqttMeta);
+            if ($decodedStatus !== null) return $decodedStatus;
+        }
+
+        if ($format === MeshLogReporter::FORMAT_LETSMESH) {
+            $decodedLetsMesh = static::decodeLetsMeshPayload($data, $reporter, $mqttMeta);
+            if ($decodedLetsMesh !== null) return $decodedLetsMesh;
+        }
 
         // Binary PACKET from meshcoretomqtt: attempt structured decode first,
         // then fall back to storing as a RAW packet.
@@ -210,6 +227,16 @@ class MeshLogMqttDecoder {
         return null;
     }
 
+    private static function extractTopicType($topic) {
+        if (!is_string($topic) || $topic === '') return '';
+
+        $parts = explode('/', trim(trim($topic), '/'));
+        if (count($parts) < 1) return '';
+
+        $last = strtolower(trim($parts[count($parts) - 1]));
+        return in_array($last, static::TOPIC_TYPES, true) ? $last : '';
+    }
+
     public static function extractReporterFromTopic($topic) {
         if (!is_string($topic) || $topic === '') return '';
 
@@ -229,15 +256,58 @@ class MeshLogMqttDecoder {
         $data = is_array($payload) ? $payload : json_decode($payload, true);
         $topicReporter = static::extractReporterFromTopic($topic);
         $payloadReporter = static::extractReporterFromPayload($data);
+        $topicIata = static::extractIataFromTopic($topic);
+        $payloadIata = static::extractIataFromPayload($data);
 
         return array(
             "topic" => is_string($topic) ? $topic : '',
             "topic_reporter" => $topicReporter,
             "payload_reporter" => $payloadReporter,
+            "topic_iata" => $topicIata,
+            "payload_iata" => $payloadIata,
             "reporter_source" => $topicReporter ? 'topic' : ($payloadReporter ? 'payload' : 'unknown'),
             "topic_payload_mismatch" => boolval($topicReporter && $payloadReporter && $topicReporter !== $payloadReporter),
             "attempted_reporter" => $topicReporter ?: $payloadReporter,
         );
+    }
+
+    private static function extractIataFromTopic($topic) {
+        if (!is_string($topic) || $topic === '') return '';
+
+        $parts = explode('/', trim(trim($topic), '/'));
+        if (count($parts) < 3) return '';
+        if (!in_array(strtolower(trim($parts[count($parts) - 1])), static::TOPIC_TYPES)) return '';
+
+        for ($i = count($parts) - 2; $i >= 1; $i--) {
+            $candidateReporter = static::normalizeReporterKey($parts[$i]);
+            if ($candidateReporter === '') continue;
+            return static::normalizeIataCode($parts[$i - 1]);
+        }
+
+        return '';
+    }
+
+    private static function extractIataFromPayload($data) {
+        if (!is_array($data)) return '';
+
+        foreach (array('iata', 'airport', 'region') as $key) {
+            $candidate = static::normalizeIataCode($data[$key] ?? '');
+            if ($candidate !== '') return $candidate;
+        }
+
+        return '';
+    }
+
+    private static function normalizeIataCode($value) {
+        if (!is_scalar($value)) return '';
+
+        $iata = strtoupper(trim(strval($value)));
+        if ($iata === '') return '';
+
+        $iata = preg_replace('/[^A-Z0-9]/', '', $iata);
+        if ($iata === '' || strlen($iata) < 2) return '';
+
+        return substr($iata, 0, 8);
     }
 
     private static function extractReporterFromPayload($data) {
@@ -263,6 +333,11 @@ class MeshLogMqttDecoder {
     }
 
     private static function decodePath($rawPath) {
+        if (is_array($rawPath)) {
+            $rawPath = implode('->', array_map(function($segment) {
+                return is_scalar($segment) ? strval($segment) : '';
+            }, $rawPath));
+        }
         if (!$rawPath || !is_string($rawPath)) return "";
 
         $parts = preg_split('/\s*->\s*/', trim($rawPath));
@@ -316,6 +391,284 @@ class MeshLogMqttDecoder {
         }
 
         return $fallback;
+    }
+
+    private static function decodeStatusTopicPayload($data, $reporter, $mqttMeta) {
+        if (!is_array($data)) return null;
+
+        $serverNow = intval(floor(microtime(true) * 1000));
+        $senderTime = static::normalizeTimestampMs(
+            $data['timestamp'] ?? ($data['ts'] ?? null),
+            $serverNow
+        );
+        $localTime = static::normalizeTimestampMs(
+            $data['received_at'] ?? null,
+            $serverNow
+        );
+        $serverTime = static::normalizeTimestampMs(
+            $data['time']['server'] ?? null,
+            $serverNow
+        );
+
+        $statusValue = strtolower(trim(strval($data['status'] ?? 'unknown')));
+        if ($statusValue === '') $statusValue = 'unknown';
+
+        $contactName = trim(strval($data['origin'] ?? ($data['name'] ?? '')));
+        if ($contactName === '') {
+            $contactName = trim(strval($reporter));
+        }
+
+        $originId = static::normalizeReporterKey($data['origin_id'] ?? '');
+        if ($originId !== '' && $originId !== $reporter) {
+            $mqttMeta['origin_reporter_mismatch'] = true;
+            $mqttMeta['origin_reporter'] = $originId;
+        }
+
+        $uptimeRaw = $data['uptime'] ?? ($data['uptime_secs'] ?? ($data['stats']['uptime_secs'] ?? null));
+        $uptime = is_numeric($uptimeRaw) ? intval($uptimeRaw) : null;
+
+        $heapTotalRaw = $data['heap_total'] ?? ($data['stats']['heap_total'] ?? null);
+        $heapFreeRaw = $data['heap_free'] ?? ($data['stats']['heap_free'] ?? null);
+        $rssiRaw = $data['rssi'] ?? ($data['stats']['last_rssi'] ?? null);
+
+        $sys = array(
+            'status' => $statusValue,
+            'version' => strval($data['firmware_version'] ?? ($data['version'] ?? '')),
+            'heap_total' => is_numeric($heapTotalRaw) ? intval($heapTotalRaw) : null,
+            'heap_free' => is_numeric($heapFreeRaw) ? intval($heapFreeRaw) : null,
+            'rssi' => is_numeric($rssiRaw) ? intval($rssiRaw) : null,
+            'uptime' => $uptime,
+            'model' => strval($data['model'] ?? ''),
+            'radio' => strval($data['radio'] ?? ''),
+            'client_version' => strval($data['client_version'] ?? ''),
+        );
+
+        if (is_array($data['stats'] ?? null)) {
+            $sys['stats'] = $data['stats'];
+        }
+
+        $statusSnapshot = array(
+            'status' => $statusValue,
+            'timestamp_ms' => $senderTime,
+            'origin' => strval($data['origin'] ?? ''),
+            'origin_id' => $originId !== '' ? $originId : $reporter,
+            'firmware_version' => strval($data['firmware_version'] ?? ($data['version'] ?? '')),
+            'model' => strval($data['model'] ?? ''),
+            'radio' => strval($data['radio'] ?? ''),
+            'client_version' => strval($data['client_version'] ?? ''),
+            'heap_total' => $sys['heap_total'],
+            'heap_free' => $sys['heap_free'],
+            'rssi' => $sys['rssi'],
+            'uptime' => $sys['uptime'],
+            'stats' => is_array($data['stats'] ?? null) ? $data['stats'] : array(),
+            'iata' => static::normalizeIataCode($mqttMeta['topic_iata'] ?? ($mqttMeta['payload_iata'] ?? '')),
+            'topic' => strval($mqttMeta['topic'] ?? ''),
+        );
+
+        return array(
+            'type' => 'SYS',
+            'reporter' => $reporter,
+            'contact' => array(
+                'pubkey' => $reporter,
+                'name' => $contactName,
+                'lat' => $data['lat'] ?? ($data['contact']['lat'] ?? null),
+                'lon' => $data['lon'] ?? ($data['contact']['lon'] ?? null),
+            ),
+            'sys' => $sys,
+            'time' => array(
+                'sender' => $senderTime,
+                'local' => $localTime,
+                'server' => $serverTime,
+            ),
+            '_mqtt' => $mqttMeta,
+            '_reporter_status' => $statusSnapshot,
+        );
+    }
+
+    private static function decodeLetsMeshPayload($data, $reporter, $mqttMeta) {
+        if (!is_array($data)) return null;
+
+        $typeCandidates = array(
+            $data['type'] ?? null,
+            $data['packet_type'] ?? null,
+            $data['msg_type'] ?? null,
+            $data['kind'] ?? null,
+            $data['event'] ?? null,
+            (is_array($data['packet'] ?? null) ? ($data['packet']['type'] ?? null) : null),
+        );
+        $type = '';
+        foreach ($typeCandidates as $candidateType) {
+            $type = static::normalizeLetsMeshType($candidateType);
+            if ($type !== '') break;
+        }
+
+        $serverNow = intval(floor(microtime(true) * 1000));
+        $senderTime = static::normalizeTimestampMs(
+            $data['time']['sender'] ?? ($data['sender_at'] ?? ($data['timestamp'] ?? ($data['ts'] ?? null))),
+            $serverNow
+        );
+        $localTime = static::normalizeTimestampMs(
+            $data['time']['local'] ?? ($data['received_at'] ?? null),
+            $serverNow
+        );
+        $serverTime = static::normalizeTimestampMs(
+            $data['time']['server'] ?? null,
+            $serverNow
+        );
+
+        $contactKey = static::normalizeReporterKey(
+            $data['contact']['pubkey'] ??
+            ($data['contact']['public_key'] ??
+            ($data['sender'] ??
+            ($data['from'] ??
+            ($data['origin_id'] ??
+            ($data['source'] ?? '')))))
+        );
+
+        $contactName = strval(
+            $data['contact']['name'] ??
+            ($data['sender_name'] ??
+            ($data['name'] ?? ''))
+        );
+
+        $hash = strtolower(strval(
+            $data['hash'] ??
+            ($data['message_hash'] ??
+            ($data['id'] ?? ''))
+        ));
+
+        $path = static::decodePath($data['path'] ?? ($data['route'] ?? ($data['relay_path'] ?? '')));
+        $hashSize = intval($data['hash_size'] ?? static::decodeHashSize($path));
+        if ($hashSize < 1) $hashSize = 1;
+        if ($hashSize > 3) $hashSize = 3;
+
+        $base = array(
+            'reporter' => $reporter,
+            'hash' => $hash,
+            'hash_size' => $hashSize,
+            'route_type' => static::normalizeRouteType($data['route_type'] ?? null),
+            'time' => array(
+                'sender' => $senderTime,
+                'local' => $localTime,
+                'server' => $serverTime,
+            ),
+            '_mqtt' => $mqttMeta,
+        );
+
+        if ($type === 'ADV') {
+            return array_merge($base, array(
+                'type' => 'ADV',
+                'contact' => array(
+                    'pubkey' => $contactKey,
+                    'name' => $contactName,
+                    'lat' => $data['contact']['lat'] ?? ($data['lat'] ?? null),
+                    'lon' => $data['contact']['lon'] ?? ($data['lon'] ?? null),
+                    'type' => intval($data['contact']['type'] ?? ($data['node_type'] ?? 1)),
+                    'flags' => intval($data['contact']['flags'] ?? ($data['flags'] ?? 0)),
+                ),
+                'message' => array(
+                    'path' => $path,
+                ),
+            ));
+        }
+
+        if ($type === 'MSG') {
+            return array_merge($base, array(
+                'type' => 'MSG',
+                'contact' => array(
+                    'pubkey' => $contactKey,
+                    'name' => $contactName,
+                ),
+                'message' => array(
+                    'text' => strval($data['message']['text'] ?? ($data['message'] ?? ($data['text'] ?? ($data['body'] ?? '')))),
+                    'path' => $path,
+                ),
+            ));
+        }
+
+        if ($type === 'PUB') {
+            $channelHash = strtolower(trim(strval(
+                $data['channel']['hash'] ?? ($data['channel_hash'] ?? ($data['channel'] ?? '11'))
+            )));
+            if ($channelHash === '') $channelHash = '11';
+
+            return array_merge($base, array(
+                'type' => 'PUB',
+                'contact' => array(
+                    'pubkey' => $contactKey,
+                    'name' => $contactName,
+                ),
+                'channel' => array(
+                    'hash' => $channelHash,
+                    'name' => strval($data['channel']['name'] ?? ($data['channel_name'] ?? ('#' . $channelHash))),
+                ),
+                'message' => array(
+                    'text' => strval($data['message']['text'] ?? ($data['message'] ?? ($data['text'] ?? ($data['body'] ?? '')))),
+                    'path' => $path,
+                ),
+            ));
+        }
+
+        if ($type === 'TEL') {
+            return array_merge($base, array(
+                'type' => 'TEL',
+                'contact' => array(
+                    'pubkey' => $contactKey,
+                    'name' => $contactName,
+                ),
+                'telemetry' => is_array($data['telemetry'] ?? null)
+                    ? $data['telemetry']
+                    : (is_array($data['data'] ?? null) ? $data['data'] : array()),
+            ));
+        }
+
+        if ($type === 'SYS') {
+            return array_merge($base, array(
+                'type' => 'SYS',
+                'contact' => array(
+                    'pubkey' => $contactKey,
+                    'name' => $contactName,
+                    'lat' => $data['contact']['lat'] ?? ($data['lat'] ?? null),
+                    'lon' => $data['contact']['lon'] ?? ($data['lon'] ?? null),
+                ),
+                'sys' => is_array($data['sys'] ?? null)
+                    ? $data['sys']
+                    : (is_array($data['status'] ?? null) ? $data['status'] : array()),
+            ));
+        }
+
+        // Fallback to RAW mapping for unknown/packet-first LetsMesh payloads.
+        $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper(strval($data['raw'] ?? ($data['packet']['raw'] ?? ''))));
+        if ($raw === '') return null;
+
+        return array_merge($base, array(
+            'type' => 'RAW',
+            'packet' => array(
+                'header' => intval($data['header'] ?? 0),
+                'path' => $path,
+                'payload' => $raw,
+                'snr' => intval($data['snr'] ?? ($data['SNR'] ?? 0)),
+                'decoded' => false,
+                'hash_size' => $hashSize,
+                'route_type' => static::normalizeRouteType($data['route_type'] ?? null),
+            ),
+        ));
+    }
+
+    private static function normalizeLetsMeshType($type) {
+        if (!is_scalar($type)) return '';
+
+        $value = strtoupper(trim(strval($type)));
+        if ($value === '') return '';
+
+        if (in_array($value, array('ADV', 'ADVERT', 'ADVERTISEMENT'))) return 'ADV';
+        if (in_array($value, array('MSG', 'DM', 'DIRECT', 'DIRECT_MESSAGE'))) return 'MSG';
+        if (in_array($value, array('PUB', 'GROUP', 'CHANNEL', 'GROUP_MESSAGE'))) return 'PUB';
+        if (in_array($value, array('TEL', 'TELEMETRY'))) return 'TEL';
+        if (in_array($value, array('SYS', 'STATUS', 'SYSTEM'))) return 'SYS';
+        if (in_array($value, array('RAW', 'PACKET'))) return 'RAW';
+
+        return '';
     }
 
     private static function extractPacket($bytes) {

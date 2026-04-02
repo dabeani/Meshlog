@@ -4,6 +4,26 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 
 ---
 
+## [v1.0.4] — Reporter Format, Status, and Channel Filtering (2026-04-02)
+
+### WebUI / Backend — New Features
+
+- **Per-reporter MQTT format selection** — Admin → Reporter Devices now includes a format selector per reporter (`meshlog` default, `letsmesh`) and persists it in the database.
+- **Per-reporter optional IATA binding** — Admin now supports an optional IATA code per reporter; MQTT ingest validates topic/payload IATA against the configured value when present.
+- **Reporter format + IATA migration** — `migration 018` adds `report_format` and `iata_code` columns to `reporters`, and setup/admin update flow now applies it as part of schema upgrades.
+- **LetsMesh ingest support** — MQTT decoder adds LetsMesh payload normalization for structured packet types plus RAW fallback, with topic/payload metadata capture.
+- **Reporter status snapshot ingestion** — MQTT `.../status` topic payloads (MeshLog and LetsMesh shapes) are normalized and cached in reporter metadata.
+- **Map device detail: Collector Status** — device popup detail now shows collector status information (basic identity and radio/health metrics) for reporter devices.
+- **Collector status presentation cleanup** — status rows with empty/unknown values are suppressed, and fields are grouped into **Basic** and **Radio / Health** blocks.
+
+### iOS App — New Features
+
+- **Collector status in map detail** — reporter status from API is decoded and rendered in the iOS map device detail view with relevant system/radio fields.
+- **Live/Channels all-vs-selected filtering** — users can switch between showing all channels or only selected channels in Live → Channels.
+- **Settings-level live channel filter controls** — simple All/Selected toggle and channel multi-select controls were added in Settings, reusing the same persisted preferences as Live.
+
+---
+
 ## [v1.0.3] — Channels History & Map Legend Clarity (2026-04-02)
 
 ### iOS App — New Features
@@ -14,6 +34,7 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 ### iOS App — Fixes & Improvements
 
 - **Channels detail view no longer truncates** — Live → Channels now keeps all currently loaded channel messages scrollable in the channel detail pane instead of trimming to a short recent subset.
+- **Channel read/unread persistence hardening** — channel read cursors are now stored with stable alias keys and continuously advanced while a channel is open, so unread counters stay consistent across app updates, reconnects, and channel key-shape changes.
 - **Legend line semantics clarified** — the Map legend now explicitly explains blue dashed neighbor links versus red dashed GPS movement trails, so line meaning is clear directly in-app.
 - **Release metadata alignment** — app release numbers were synchronized to `1.0.3 (build 6)` across iOS project settings.
 

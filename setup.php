@@ -20,6 +20,7 @@
     include 'migrations/015_add_raw_packet_contact.php';
     include 'migrations/016_add_route_type.php';
     include 'migrations/017_add_stats_rollups.php';
+    include 'migrations/018_add_reporter_format_and_iata.php';
 
     // Must be in order!
     $migrationClasses = array(
@@ -41,6 +42,7 @@
         'Migration_015',
         'Migration_016',
         'Migration_017',
+        'Migration_018',
     );
 
     session_start();

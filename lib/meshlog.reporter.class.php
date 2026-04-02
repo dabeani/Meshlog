@@ -3,6 +3,9 @@
 class MeshLogReporter extends MeshLogEntity {
     protected static $table = "reporters";
 
+    const FORMAT_MESHLOG = 'meshlog';
+    const FORMAT_LETSMESH = 'letsmesh';
+
     public $name = null;
     public $authorized = null;
     public $public_key = null;
@@ -12,6 +15,24 @@ class MeshLogReporter extends MeshLogEntity {
     public $data = null;
     public $auth = null;
     public $hash_size = 1;
+    public $report_format = self::FORMAT_MESHLOG;
+    public $iata_code = '';
+
+    public static function normalizeFormat($value) {
+        $format = strtolower(trim(strval($value ?? '')));
+        if ($format === static::FORMAT_LETSMESH) return static::FORMAT_LETSMESH;
+        return static::FORMAT_MESHLOG;
+    }
+
+    public static function normalizeIataCode($value) {
+        if (!is_scalar($value)) return '';
+
+        $iata = strtoupper(trim(strval($value)));
+        if ($iata === '') return '';
+        $iata = preg_replace('/[^A-Z0-9]/', '', $iata);
+
+        return substr($iata, 0, 8);
+    }
 
     public static function fromDb($data, $meshlog) {
         if (!$data) return null;
@@ -28,6 +49,8 @@ class MeshLogReporter extends MeshLogEntity {
         $m->data = $data['data'] ?? '{}';
         $m->auth = $data['auth'] ?? '';
         $m->hash_size = intval($data['hash_size'] ?? 1);
+        $m->report_format = static::normalizeFormat($data['report_format'] ?? static::FORMAT_MESHLOG);
+        $m->iata_code = static::normalizeIataCode($data['iata_code'] ?? '');
 
         return $m;
     }
@@ -42,6 +65,8 @@ class MeshLogReporter extends MeshLogEntity {
             'style' => $this->style,
             'data' => $this->data,
             'hash_size' => intval($this->hash_size ?? 1),
+            'report_format' => static::normalizeFormat($this->report_format ?? static::FORMAT_MESHLOG),
+            'iata_code' => static::normalizeIataCode($this->iata_code ?? ''),
         );
 
         if ($secret) {
@@ -73,6 +98,19 @@ class MeshLogReporter extends MeshLogEntity {
             $this->error = "Hash size must be 1, 2, or 3 bytes";
             return false;
         }
+        if (!in_array(
+            static::normalizeFormat($this->report_format ?? static::FORMAT_MESHLOG),
+            array(static::FORMAT_MESHLOG, static::FORMAT_LETSMESH),
+            true
+        )) {
+            $this->error = "Unknown reporter format";
+            return false;
+        }
+        $iata = static::normalizeIataCode($this->iata_code ?? '');
+        if ($iata !== '' && (strlen($iata) < 2 || strlen($iata) > 8)) {
+            $this->error = "IATA code must be 2-8 alphanumeric chars";
+            return false;
+        }
 
         return parent::isValid();
     }
@@ -88,6 +126,8 @@ class MeshLogReporter extends MeshLogEntity {
             "color" => array("", PDO::PARAM_STR),
             "auth" => array($this->auth, PDO::PARAM_STR),
             "hash_size" => array(intval($this->hash_size ?? 1), PDO::PARAM_INT),
+            "report_format" => array(static::normalizeFormat($this->report_format ?? static::FORMAT_MESHLOG), PDO::PARAM_STR),
+            "iata_code" => array(static::normalizeIataCode($this->iata_code ?? ''), PDO::PARAM_STR),
         );
     }
     

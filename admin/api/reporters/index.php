@@ -38,6 +38,8 @@
             'name' => $reporter->name,
             'public_key' => $reporter->public_key,
             'hash_size' => intval($reporter->hash_size ?? 1),
+            'report_format' => MeshLogReporter::normalizeFormat($reporter->report_format ?? MeshLogReporter::FORMAT_MESHLOG),
+            'iata_code' => MeshLogReporter::normalizeIataCode($reporter->iata_code ?? ''),
             'lat' => strval($reporter->lat),
             'lon' => strval($reporter->lon),
             'auth' => $reporter->auth,
@@ -106,6 +108,8 @@
         $reporter->authorized = $_POST['authorized'] ?? true;
         $reporter->style = $_POST['style'] ?? $errors[] = 'Missing style';
         $reporter->hash_size = intval($_POST['hash_size'] ?? 1);
+        $reporter->report_format = MeshLogReporter::normalizeFormat($_POST['report_format'] ?? MeshLogReporter::FORMAT_MESHLOG);
+        $reporter->iata_code = MeshLogReporter::normalizeIataCode($_POST['iata_code'] ?? '');
 
         if (!sizeof($errors)) {
             // save

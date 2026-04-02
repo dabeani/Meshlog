@@ -22,7 +22,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 17;
+    private $version = 18;
     private $ntpConfig = array(
         'enabled' => true,
         'host' => 'pool.ntp.org',
@@ -297,19 +297,19 @@ class MeshLog {
     }
 
     function insertMqtt($topic, $payload) {
-        $channels = MeshLogChannel::getAllWithPsk($this);
-        $data = MeshLogMqttDecoder::decode($topic, $payload, $channels);
-        if (!$data || !isset($data['reporter'])) {
+        $payloadData = json_decode($payload, true) ?? array();
+        $mqttMeta = MeshLogMqttDecoder::extractMetadata($topic, $payloadData);
+        $attemptedReporter = $mqttMeta['attempted_reporter'] ?? '';
+        if (!$attemptedReporter) {
             return $this->repError(
                 "invalid MQTT payload",
-                array("_mqtt" => MeshLogMqttDecoder::extractMetadata($topic, json_decode($payload, true) ?? array()))
+                array("_mqtt" => $mqttMeta)
             );
         }
-        $mqttMeta = $data['_mqtt'] ?? array();
 
         $reporter = MeshLogReporter::findBy(
             "public_key",
-            $data['reporter'],
+            $attemptedReporter,
             $this,
             array("authorized" => array('operator' => '=', 'value' => 1)),
             false,
@@ -317,9 +317,42 @@ class MeshLog {
         );
         if (!$reporter) {
             $error = $this->repError("invalid or unauthorized reporter");
-            $mqttMeta['attempted_reporter'] = $data['reporter'];
+            $mqttMeta['attempted_reporter'] = $attemptedReporter;
             $error['_mqtt'] = $mqttMeta;
             return $error;
+        }
+
+        $reporterIata = MeshLogReporter::normalizeIataCode($reporter->iata_code ?? '');
+        $incomingIata = MeshLogReporter::normalizeIataCode($mqttMeta['topic_iata'] ?? ($mqttMeta['payload_iata'] ?? ''));
+        if ($reporterIata !== '' && $incomingIata !== '' && $reporterIata !== $incomingIata) {
+            $error = $this->repError("invalid iata for reporter");
+            $mqttMeta['expected_iata'] = $reporterIata;
+            $mqttMeta['incoming_iata'] = $incomingIata;
+            $error['_mqtt'] = $mqttMeta;
+            return $error;
+        }
+
+        $channels = MeshLogChannel::getAllWithPsk($this);
+        $data = MeshLogMqttDecoder::decode(
+            $topic,
+            $payload,
+            $channels,
+            array(
+                'mqtt_meta' => $mqttMeta,
+                'forced_reporter' => $reporter->public_key,
+                'format' => MeshLogReporter::normalizeFormat($reporter->report_format ?? MeshLogReporter::FORMAT_MESHLOG),
+            )
+        );
+        if (!$data || !isset($data['reporter'])) {
+            return $this->repError(
+                "invalid MQTT payload",
+                array("_mqtt" => $mqttMeta)
+            );
+        }
+        $mqttMeta = $data['_mqtt'] ?? $mqttMeta;
+
+        if (is_array($data['_reporter_status'] ?? null)) {
+            $this->updateReporterStatusSnapshot($reporter, $data['_reporter_status'], $mqttMeta);
         }
 
         $result = $this->insertForReporter($data, $reporter);
@@ -768,10 +801,35 @@ class MeshLog {
             return $this->repError('failed to save system report');
         }
 
-        $heap_total = $data['sys']['heap_total'];
-        $heap_free = $data['sys']['heap_free'];
-        $rssi = $data['sys']['rssi'];
-        $uptime = $data['sys']['uptime'];
+        $heap_total = isset($data['sys']['heap_total']) && is_numeric($data['sys']['heap_total'])
+            ? intval($data['sys']['heap_total'])
+            : null;
+        $heap_free = isset($data['sys']['heap_free']) && is_numeric($data['sys']['heap_free'])
+            ? intval($data['sys']['heap_free'])
+            : null;
+        $rssi = isset($data['sys']['rssi']) && is_numeric($data['sys']['rssi'])
+            ? intval($data['sys']['rssi'])
+            : null;
+        $uptime = isset($data['sys']['uptime']) && is_numeric($data['sys']['uptime'])
+            ? intval($data['sys']['uptime'])
+            : null;
+
+        $statusSnapshot = array(
+            'status' => strtolower(trim(strval($data['sys']['status'] ?? 'online'))),
+            'timestamp_ms' => intval($data['time']['sender'] ?? intval(floor(microtime(true) * 1000))),
+            'origin' => strval($data['contact']['name'] ?? ($reporter->name ?? '')),
+            'origin_id' => strval($data['contact']['pubkey'] ?? ($reporter->public_key ?? '')),
+            'firmware_version' => strval($data['sys']['version'] ?? ''),
+            'model' => strval($data['sys']['model'] ?? ''),
+            'radio' => strval($data['sys']['radio'] ?? ''),
+            'client_version' => strval($data['sys']['client_version'] ?? ''),
+            'heap_total' => $heap_total,
+            'heap_free' => $heap_free,
+            'rssi' => $rssi,
+            'uptime' => $uptime,
+            'stats' => is_array($data['sys']['stats'] ?? null) ? $data['sys']['stats'] : array(),
+        );
+        $this->updateReporterStatusSnapshot($reporter, $statusSnapshot);
 
         $cname = str_replace(
             " ",
@@ -781,11 +839,13 @@ class MeshLog {
 
         $cname = str_replace("\"", "", $cname);
 
-        $line = "mc_reporter,contact=$pubkey,name=$cname heap_total=$heap_total,heap_free=$heap_free,rssi=$rssi,uptime=$uptime";
-        $error = $this->writeInfluxDb($line);
+        if ($heap_total !== null && $heap_free !== null && $rssi !== null && $uptime !== null) {
+            $line = "mc_reporter,contact=$pubkey,name=$cname heap_total=$heap_total,heap_free=$heap_free,rssi=$rssi,uptime=$uptime";
+            $error = $this->writeInfluxDb($line);
 
-        if (!empty($error)) {
-            return $this->repError($error);
+            if (!empty($error)) {
+                return $this->repError($error);
+            }
         }
 
         $this->rollupCollectorPacketStats($reporter->getId(), 'SYS');
@@ -804,6 +864,32 @@ class MeshLog {
         if (!in_array($hashSize, array(1, 2, 3), true)) return;
 
         $contact->hash_size = $hashSize;
+    }
+
+    private function updateReporterStatusSnapshot($reporter, $statusData, $mqttMeta = array()) {
+        if (!$reporter || !is_array($statusData)) return;
+
+        $existingData = json_decode($reporter->data ?? '{}', true);
+        if (!is_array($existingData)) {
+            $existingData = array();
+        }
+
+        if (!isset($statusData['updated_at']) || !is_string($statusData['updated_at']) || trim($statusData['updated_at']) === '') {
+            $statusData['updated_at'] = Utils::time2str(intval(floor(microtime(true) * 1000)));
+        }
+
+        if (!empty($mqttMeta['topic_iata'])) {
+            $statusData['iata'] = MeshLogReporter::normalizeIataCode($mqttMeta['topic_iata']);
+        } elseif (!empty($mqttMeta['payload_iata'])) {
+            $statusData['iata'] = MeshLogReporter::normalizeIataCode($mqttMeta['payload_iata']);
+        }
+
+        $existingData['reporter_status'] = $statusData;
+        $encoded = json_encode($existingData);
+        if ($encoded === false) return;
+
+        $reporter->data = $encoded;
+        $reporter->save($this);
     }
 
     private function getStatsRollupBucketExpression($columnName) {
@@ -1232,6 +1318,11 @@ class MeshLog {
             if ($c) {
                 $r['contact_id'] = $c->getId();
                 $r['contact'] = $c->asArray();
+            }
+
+            $reporterData = json_decode($r['data'] ?? '{}', true);
+            if (is_array($reporterData) && is_array($reporterData['reporter_status'] ?? null)) {
+                $r['reporter_status'] = $reporterData['reporter_status'];
             }
 
             $timeSync = $timeSyncMap[strtoupper($pk)] ?? null;

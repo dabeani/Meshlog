@@ -607,6 +607,16 @@ if ($user && $meshlog->updateAvailable()) {
             min-width: 96px;
         }
 
+        .admin-devices-table select.report-format-select {
+            min-width: 122px;
+        }
+
+        .admin-devices-table input.reporter-iata {
+            min-width: 74px;
+            max-width: 86px;
+            text-transform: uppercase;
+        }
+
         .style-cell {
             white-space: nowrap;
         }
@@ -790,7 +800,7 @@ if ($user && $meshlog->updateAvailable()) {
             <section class="admin-section">
                 <div class="section-title">
                     <span>Reporter Devices</span>
-                    <span class="section-kicker">Authorization keys, location, style, and hash-byte configuration per device</span>
+                    <span class="section-kicker">Authorization, MQTT format selection, optional IATA binding, location, style, and hash-byte configuration per device</span>
                 </div>
                 <div class="section-body">
                     <table class="admin-table admin-devices-table">
@@ -799,6 +809,8 @@ if ($user && $meshlog->updateAvailable()) {
                                 <th>#</th>
                                 <th><span class="help-inline">Device Name <button type="button" class="help-trigger" data-help-title="Device Name" data-help-body="Human-readable label shown in the UI and admin panel for this reporter.">?</button></span></th>
                                 <th><span class="help-inline">Public Key <button type="button" class="help-trigger" data-help-title="Reporter Public Key" data-help-body="Must match the key used by the logger firmware or the MQTT topic. MeshLog uses it to authorize and associate incoming packets with this device.">?</button></span></th>
+                                <th><span class="help-inline">MQTT Format <button type="button" class="help-trigger" data-help-title="MQTT Format" data-help-body="Select how this reporter publishes MQTT payloads. MeshLog is the default format; LetsMesh enables alternate payload field mapping.">?</button></span></th>
+                                <th><span class="help-inline">IATA <button type="button" class="help-trigger" data-help-title="Reporter IATA" data-help-body="Optional MQTT topic region code binding (2-8 alphanumeric). If set, incoming packets must match this IATA from topic/payload.">?</button></span></th>
                                 <th><span class="help-inline">Hash Bytes <button type="button" class="help-trigger" data-help-title="Reporter Hash Bytes" data-help-body="Routing hash prefix width configured on this node: 1, 2, or 3 bytes. Stored as metadata — used for display and hash-size detection when the packet field is absent.">?</button></span></th>
                                 <th>Lat</th>
                                 <th>Lon</th>
@@ -1227,6 +1239,27 @@ if ($user && $meshlog->updateAvailable()) {
             return select;
         }
 
+        function makeReporterFormatInput(row, value = 'meshlog') {
+            const td = row.insertCell();
+            const select = document.createElement('select');
+            select.classList.add('report-format-select');
+
+            [
+                { value: 'meshlog', label: 'MeshLog' },
+                { value: 'letsmesh', label: 'LetsMesh' }
+            ].forEach(optData => {
+                const opt = document.createElement('option');
+                opt.value = optData.value;
+                opt.innerText = optData.label;
+                select.append(opt);
+            });
+
+            select.value = (value === 'letsmesh') ? 'letsmesh' : 'meshlog';
+            select.onchange = () => { select.style.color = '#1976D2'; };
+            td.append(select);
+            return select;
+        }
+
         /* ── Reporters ───────────────────────────────────────────────── */
         function loadReporters() {
             fetch('api/reporters/', { method: 'GET' })
@@ -1236,6 +1269,7 @@ if ($user && $meshlog->updateAvailable()) {
                 result.objects.forEach(obj => addReporterRow(obj));
                 addReporterRow({
                     id: 'Add', name: 'New Logger', public_key: '',
+                    report_format: 'meshlog', iata_code: '',
                     hash_size: 1, auth: '', lat: '0.00000', lon: '0.00000',
                     authorized: 1, style: '{"color":"#ff0000"}',
                     isAddRow: true
@@ -1259,6 +1293,9 @@ if ($user && $meshlog->updateAvailable()) {
             name.classList.add('reporter-name-input');
             const publicKey = makeInputCell(row, reporter.public_key);
             publicKey.classList.add('reporter-key');
+            const reportFormat = makeReporterFormatInput(row, reporter.report_format ?? 'meshlog');
+            const iataCode  = makeInputCell(row, reporter.iata_code ?? '');
+            iataCode.classList.add('reporter-iata');
             const hashSize  = makeHashSizeInput(row, reporter.hash_size ?? 1);
             hashSize.classList.add('hash-size-select');
             const lat       = makeInputCell(row, reporter.lat);
@@ -1289,6 +1326,8 @@ if ($user && $meshlog->updateAvailable()) {
                 id: reporter.id,
                 name: name.value,
                 public_key: publicKey.value,
+                report_format: reportFormat.value,
+                iata_code: iataCode.value,
                 hash_size: hashSize.value,
                 lat: lat.value,
                 lon: lon.value,
@@ -1326,6 +1365,8 @@ if ($user && $meshlog->updateAvailable()) {
             const body = {
                 name: reporter.name,
                 public_key: reporter.public_key,
+                report_format: reporter.report_format,
+                iata_code: reporter.iata_code,
                 hash_size: reporter.hash_size,
                 lat: reporter.lat,
                 lon: reporter.lon,

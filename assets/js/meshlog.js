@@ -267,6 +267,28 @@ class MeshLogReporter extends MeshLogObject {
         return this.data.time_sync ?? null;
     }
 
+    getParsedReporterData() {
+        const raw = this.data?.data;
+        if (raw && typeof raw === 'object') return raw;
+        if (typeof raw !== 'string' || raw.trim() === '') return {};
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (_error) {
+            return {};
+        }
+    }
+
+    getStatus() {
+        if (this.data?.reporter_status && typeof this.data.reporter_status === 'object') {
+            return this.data.reporter_status;
+        }
+
+        const parsedData = this.getParsedReporterData();
+        const status = parsedData.reporter_status ?? null;
+        return status && typeof status === 'object' ? status : null;
+    }
+
     hasTimeSyncWarning() {
         return !!this.getTimeSync()?.warning;
     }
@@ -964,6 +986,125 @@ class MeshLogContact extends MeshLogObject {
         return new Date(time).toLocaleString();
     }
 
+    formatUptimeSeconds(value) {
+        const seconds = Number(value);
+        if (!Number.isFinite(seconds) || seconds < 0) return '-';
+
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        if (days > 0) return `${days}d ${hours}h`;
+        if (hours > 0) return `${hours}h ${minutes}m`;
+        return `${minutes}m`;
+    }
+
+    getReporterStatusSectionHtml() {
+        const reporter = this.isReporter();
+        if (!reporter?.getStatus) return '';
+
+        const status = reporter.getStatus();
+        if (!status || typeof status !== 'object') return '';
+
+        const stats = (status.stats && typeof status.stats === 'object') ? status.stats : {};
+        const timestampRaw = status.updated_at ?? status.timestamp ?? status.timestamp_ms ?? null;
+        const timestamp = typeof timestampRaw === 'number'
+            ? new Date(timestampRaw).toLocaleString()
+            : this.formatPopupTimestamp(timestampRaw);
+
+        const isMeaningfulValue = (value) => {
+            if (value === null || value === undefined) return false;
+            if (typeof value === 'number') return Number.isFinite(value);
+            if (typeof value !== 'string') return true;
+            const normalized = value.trim().toLowerCase();
+            return normalized !== '' && normalized !== '-' && normalized !== 'unknown';
+        };
+
+        const createRows = () => {
+            const rows = [];
+            const addRow = (key, value) => {
+                if (!isMeaningfulValue(value)) return;
+                rows.push([key, value]);
+            };
+            return { rows, addRow };
+        };
+
+        const basic = createRows();
+        const addBasicRow = (key, value) => {
+            basic.addRow(key, value);
+        };
+
+        addBasicRow('Status', status.status ?? null);
+        addBasicRow('Updated', timestamp);
+        addBasicRow('Origin', status.origin ?? null);
+        addBasicRow('Origin ID', status.origin_id ?? null);
+        addBasicRow('IATA', status.iata ?? null);
+        addBasicRow('Model', status.model ?? null);
+        addBasicRow('Firmware', status.firmware_version ?? null);
+        addBasicRow('Client', status.client_version ?? null);
+
+        const health = createRows();
+        const addHealthRow = (key, value) => {
+            health.addRow(key, value);
+        };
+
+        addHealthRow('Radio', status.radio ?? null);
+
+        const rssiValue = Number.isFinite(Number(status.rssi))
+            ? `${Number(status.rssi)} dBm`
+            : (Number.isFinite(Number(stats.last_rssi)) ? `${Number(stats.last_rssi)} dBm` : null);
+        addHealthRow('RSSI', rssiValue);
+
+        const snrValue = Number.isFinite(Number(stats.last_snr))
+            ? `${Number(stats.last_snr)} dB`
+            : null;
+        addHealthRow('SNR', snrValue);
+
+        const batteryValue = Number.isFinite(Number(stats.battery_mv))
+            ? `${Number(stats.battery_mv)} mV`
+            : null;
+        addHealthRow('Battery', batteryValue);
+
+        const uptimeFormatted = this.formatUptimeSeconds(status.uptime ?? stats.uptime_secs ?? null);
+        addHealthRow('Uptime', uptimeFormatted === '-' ? null : uptimeFormatted);
+
+        const queueValue = Number.isFinite(Number(stats.queue_len))
+            ? String(Number(stats.queue_len))
+            : null;
+        addHealthRow('Queue', queueValue);
+
+        const errorsValue = Number.isFinite(Number(stats.errors))
+            ? String(Number(stats.errors))
+            : null;
+        addHealthRow('Errors', errorsValue);
+
+        const renderRows = (rows) => rows
+            .map(([key, value]) => `<div class="device-popup-row"><span class="device-popup-key">${escapeXml(String(key))}</span><span class="device-popup-value">${escapeXml(String(value ?? '-'))}</span></div>`)
+            .join('');
+
+        const sections = [];
+        if (basic.rows.length > 0) {
+            sections.push(`
+                <div class="device-popup-section-title">Basic</div>
+                ${renderRows(basic.rows)}
+            `);
+        }
+        if (health.rows.length > 0) {
+            sections.push(`
+                <div class="device-popup-section-title">Radio / Health</div>
+                ${renderRows(health.rows)}
+            `);
+        }
+
+        if (sections.length === 0) return '';
+
+        return `
+            <div class="device-popup-section">
+                <div class="device-popup-section-title">Collector Status</div>
+                ${sections.join('')}
+            </div>
+        `;
+    }
+
     getAdvertisementTrailSectionHtml() {
         if (!this.isClient()) return '';
 
@@ -1013,6 +1154,7 @@ class MeshLogContact extends MeshLogObject {
         const reporterHtml = this.isReporter()
             ? `<div class="device-popup-row"><span class="device-popup-key">Reporter</span><span class="device-popup-value">Yes</span></div>`
             : '';
+        const reporterStatusHtml = this.getReporterStatusSectionHtml();
         const routeTrailButtonHtml = this.getRouteTrailButtonHtml();
         const neighborsHtml = !this.isClient()
             ? `<div class="device-popup-section"><button type="button" class="device-popup-neighbors-btn${this.neighbors_visible ? ' device-popup-tab-active' : ''}" data-contact-id="${this.data.id}" data-popup-action="neighbors">${this.neighbors_visible ? 'Hide Neighbors' : 'Show Neighbors'}</button></div>`
@@ -1030,6 +1172,7 @@ class MeshLogContact extends MeshLogObject {
                 <div class="device-popup-key-block">Public Key</div>
                 <div class="device-popup-mono">${escapeXml(this.data?.public_key ?? '-')}</div>
             </div>
+            ${reporterStatusHtml}
             ${routeTrailButtonHtml}
             ${trailHtml}
             ${telemetryHtml}
