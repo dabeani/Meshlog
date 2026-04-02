@@ -838,6 +838,20 @@ h2 {
     word-break: break-word;
 }
 
+.device-popup-reporter-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.device-popup-reporter-row .device-popup-badge {
+    gap: 6px;
+    padding: 2px 7px;
+    font-size: 0.66rem;
+    background: rgba(255,255,255,0.1);
+}
+
 .device-popup-key-block {
     margin-bottom: 4px;
 }

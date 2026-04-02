@@ -998,6 +998,87 @@ class MeshLogContact extends MeshLogObject {
         return `${minutes}m`;
     }
 
+    getReportedBySectionHtml() {
+        const reporterIdsRaw = Array.isArray(this.data?.reporter_ids) ? this.data.reporter_ids : [];
+        const reporterIds = Array.from(new Set(reporterIdsRaw
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id) && id > 0)));
+
+        if (reporterIds.length < 1) {
+            return `
+                <div class="device-popup-section">
+                    <div class="device-popup-section-title">Reported By</div>
+                    <div class="device-popup-note">No collector report data available yet.</div>
+                </div>
+            `;
+        }
+
+        const entries = reporterIds.map((reporterId) => {
+            const reporter = this._meshlog.reporters[reporterId] ?? null;
+            if (!reporter) {
+                return {
+                    label: `Collector #${reporterId}`,
+                    subtitle: '',
+                    badgeColor: '#4ea4c4',
+                    badgeText: `#${reporterId}`,
+                };
+            }
+
+            const reporterName = reporter?.data?.name || '';
+            const reporterContactId = Number(reporter.getContactId());
+            const reporterContact = Number.isFinite(reporterContactId) && reporterContactId > 0
+                ? (this._meshlog.contacts[reporterContactId] ?? null)
+                : null;
+            const contactName = reporterContact?.adv?.data?.name || '';
+            const label = (contactName || reporterName || '').trim() || `Collector #${reporterId}`;
+
+            let subtitle = '';
+            if (reporter?.data?.public_key) {
+                subtitle = String(reporter.data.public_key).slice(0, 16);
+            }
+
+            const style = (reporter?.getStyle && typeof reporter.getStyle === 'function')
+                ? reporter.getStyle()
+                : {};
+            const badgeColor = style?.color ?? '#4ea4c4';
+            const badgeText = reporter?.data?.name
+                ? 'Collector'
+                : `#${reporterId}`;
+
+            return { label, subtitle, badgeColor, badgeText };
+        });
+
+        entries.sort((a, b) => a.label.localeCompare(b.label));
+        const title = reporterIds.length === 1
+            ? 'Reported By (1 collector)'
+            : `Reported By (${reporterIds.length} collectors)`;
+
+        const rowsHtml = entries.map((entry) => {
+            const subtitleHtml = entry.subtitle
+                ? `<div class="device-popup-note">${escapeXml(entry.subtitle)}</div>`
+                : '';
+            return `
+                <div class="device-popup-list-row">
+                    <div class="device-popup-reporter-row">
+                        <span class="device-popup-badge">
+                            <span class="collector-stats-swatch" style="background:${escapeXml(entry.badgeColor)}"></span>
+                            ${escapeXml(entry.badgeText)}
+                        </span>
+                        <span>${escapeXml(entry.label)}</span>
+                    </div>
+                    ${subtitleHtml}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="device-popup-section">
+                <div class="device-popup-section-title">${escapeXml(title)}</div>
+                ${rowsHtml}
+            </div>
+        `;
+    }
+
     getReporterStatusSectionHtml() {
         const reporter = this.isReporter();
         if (!reporter?.getStatus) return '';
@@ -1154,6 +1235,7 @@ class MeshLogContact extends MeshLogObject {
         const reporterHtml = this.isReporter()
             ? `<div class="device-popup-row"><span class="device-popup-key">Reporter</span><span class="device-popup-value">Yes</span></div>`
             : '';
+        const reportedByHtml = this.getReportedBySectionHtml();
         const reporterStatusHtml = this.getReporterStatusSectionHtml();
         const routeTrailButtonHtml = this.getRouteTrailButtonHtml();
         const neighborsHtml = !this.isClient()
@@ -1172,6 +1254,7 @@ class MeshLogContact extends MeshLogObject {
                 <div class="device-popup-key-block">Public Key</div>
                 <div class="device-popup-mono">${escapeXml(this.data?.public_key ?? '-')}</div>
             </div>
+            ${reportedByHtml}
             ${reporterStatusHtml}
             ${routeTrailButtonHtml}
             ${trailHtml}
