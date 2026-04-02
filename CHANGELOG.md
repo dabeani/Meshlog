@@ -4,6 +4,21 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 
 ---
 
+## [v1.0.3] — Channels History & Map Legend Clarity (2026-04-02)
+
+### iOS App — New Features
+
+- **Live Channels backward history paging** — opening a channel and scrolling to the oldest visible message now fetches older PUB packets from the database (`before_ms` paging) until the oldest available channel history is reached.
+- **Openable Map legend** — the Map now includes a toolbar legend toggle that opens a concise in-map reference card explaining bubble colors, active-route highlighting, badges, and node-type icons.
+
+### iOS App — Fixes & Improvements
+
+- **Channels detail view no longer truncates** — Live → Channels now keeps all currently loaded channel messages scrollable in the channel detail pane instead of trimming to a short recent subset.
+- **Legend line semantics clarified** — the Map legend now explicitly explains blue dashed neighbor links versus red dashed GPS movement trails, so line meaning is clear directly in-app.
+- **Release metadata alignment** — app release numbers were synchronized to `1.0.3 (build 6)` across iOS project settings.
+
+---
+
 ## [v1.0.2] — Live Map Animation & Code Cleanup (2026-03-31)
 
 ### iOS App — New Features
@@ -38,10 +53,14 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 - **Affected-node name reveal during flashes** — devices on an active packet path now force-show their names during highlight windows, even when global map labels are turned off.
 - **Highlighted-node render guarantee** — active path nodes are now excluded from map downsampling so affected devices remain visible while the animation runs.
 - **Highlighted-name top-layer rendering** — names for actively highlighted path devices are now rendered in a dedicated top overlay layer so they can no longer be hidden behind other device markers.
+- **Full highlighted-marker foreground overlay** — active route bubbles now render as complete top-layer overlays during packet animations, so the highlighted device icon, its surrounding text, and the animated path presentation stay visually above the normal map marker layer.
+- **Map animation cache pass** — repeater clock warnings and highlighted top-layer route markers are now precomputed when contact/report data changes, reducing repeated filtering and warning recalculation during the 30 fps map animation overlay.
+- **Repeater clock-warning bubble badge** — repeater markers with backend `time_sync` warnings now show a direct `!` badge on the map, and the detail card prefers the same NTP/reference-clock warning text used by the WebUI before falling back to local ADV drift estimation.
 - **Live Feed full-history scrolling** — reaching the bottom of Live → Feed now requests older packets from the database and keeps extending history until the oldest available packet is reached.
 - **Settings-capped history chunking** — each backward history request is capped by the Live Feed Items setting (max 500), so older packets are loaded incrementally instead of in one large burst.
 - **SSE history compatibility update** — `api/v1/live/stream.php` now uses the same load-more limit rules (up to 500, invalid values normalized) as the polling endpoint so history pagination behaves consistently across both transport modes.
 - **Live Feed scroll stability during load-more** — packet rows now use a stable per-type/per-id identity key when extending the list, preventing SwiftUI row reuse collisions that could cause sudden jumps to the tail while older chunks are appended.
+- **Live Feed anchor-preserving pagination** — when the end-trigger loads more history, the current row is now used as a scroll anchor so the viewport stays at the same place and users can manually continue scrolling to the next load point.
 
 - **Live hop-by-hop path animation** — when any packet (ADV, MSG, PUB) arrives via the live stream, the full relay chain (source → repeater hops → reporter) is animated on the map with a bright cyan traveling dot, a glow line and a fading outer envelope, matching the WebUI's packet-arrival animation behavior.
 - **Expanding ring at destination** — the animation ends with a pulsing ring at the reporter position to mark packet arrival visually.
