@@ -2055,6 +2055,36 @@ class MeshLog {
             );
         }
 
+        $channelSql = "
+            SELECT
+                cm.channel_id,
+                COALESCE(c.hash, '') AS channel_hash,
+                COALESCE(NULLIF(c.name, ''), CONCAT('#', COALESCE(c.hash, cm.channel_id))) AS channel_name,
+                COUNT(*) AS total_messages,
+                COUNT(DISTINCT cm.contact_id) AS unique_senders
+            FROM channel_messages cm
+            LEFT JOIN channels c ON c.id = cm.channel_id
+            WHERE cm.created_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+              AND cm.created_at <= NOW()
+            GROUP BY cm.channel_id, channel_hash, channel_name
+            ORDER BY total_messages DESC, channel_name ASC, cm.channel_id ASC
+        ";
+
+        $channelStmt = $this->pdo->prepare($channelSql);
+        $channelStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $channelStmt->execute();
+
+        $channelTotals = array();
+        while ($row = $channelStmt->fetch(PDO::FETCH_ASSOC)) {
+            $channelTotals[] = array(
+                'channel_id' => intval($row['channel_id'] ?? 0),
+                'channel_hash' => $row['channel_hash'] ?? '',
+                'channel_name' => $row['channel_name'] ?? '',
+                'total_messages' => intval($row['total_messages'] ?? 0),
+                'unique_senders' => intval($row['unique_senders'] ?? 0),
+            );
+        }
+
         return array(
             'window_hours' => $windowHours,
             'bucket_count' => $bucketCount,
@@ -2074,6 +2104,7 @@ class MeshLog {
             'chart_buckets' => $chartBuckets,
             'unique_device_buckets' => $deviceChartBuckets,
             'collector_totals' => $collectorTotals,
+            'channel_totals' => $channelTotals,
             'note' => 'Counts are served from persistent 5-minute rollups, so historical stats remain available after old packet rows are auto-purged. Direct and flood values still depend on stored route metadata; legacy rows may remain unclassified.',
         );
     }

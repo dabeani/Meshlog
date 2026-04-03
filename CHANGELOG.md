@@ -4,6 +4,19 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 
 ---
 
+## [v1.0.5] — Topo Map Source & Channel Stats (2026-04-04)
+
+### WebUI / Backend — New Features
+
+- **OpenTopoMap layer option** — the map layer switcher now includes a `Topo` source backed by OpenTopoMap tiles, and popup mini-maps follow the same selected base layer.
+- **Channel statistics in Stats** — the database-backed stats response now includes per-channel message totals and unique sender counts for the selected `1h`, `24h`, or `36h` window.
+- **Stats panel channel activity section** — WebUI Stats now renders channel message totals for the active time window alongside the existing advertisement and collector rollups.
+
+### iOS App — New Features
+
+- **Three-mode map source toggle** — the Map toolbar now cycles between Dark, Light, and Topo sources, with Topo rendered from OpenTopoMap tiles.
+- **Channel activity in Stats** — the iOS Statistics screen now shows per-channel message totals and unique sender counts for the selected `1h`, `24h`, or `36h` window.
+
 ## [v1.0.4] — Reporter Format, Status, and Channel Filtering (2026-04-02)
 
 ### WebUI / Backend — New Features

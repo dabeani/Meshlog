@@ -457,7 +457,7 @@ h2 {
     flex: auto;
 }
 
-/* Map layer toggle — Dark / Light badges */
+/* Map layer toggle — Dark / Light / Topo badges */
 .map-layer-toggle {
     display: flex;
     gap: 4px;

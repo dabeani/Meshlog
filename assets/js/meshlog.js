@@ -3510,7 +3510,8 @@ class MeshLog {
             tap: false,
         });
 
-        const layerName = Settings.get('map.layer', 'dark') === 'light' ? 'light' : 'dark';
+        const requestedLayer = Settings.get('map.layer', 'dark');
+        const layerName = (requestedLayer === 'light' || requestedLayer === 'topo') ? requestedLayer : 'dark';
         const tileLayers = (typeof window !== 'undefined' && window._TILE_LAYERS) ? window._TILE_LAYERS : null;
         const layerConfig = (tileLayers && tileLayers[layerName])
             ? tileLayers[layerName]
@@ -4169,6 +4170,7 @@ class MeshLog {
             chartSvg: this._buildStatsChartSvg(buckets, normalizedWindowHours, 'adv'),
             uniqueDeviceChartSvg: this._buildStatsChartSvg(uniqueDeviceBuckets, normalizedWindowHours, 'dev'),
             collectorTotals: Array.isArray(overrides.collectorTotals) ? overrides.collectorTotals : [],
+            channelTotals: Array.isArray(overrides.channelTotals) ? overrides.channelTotals : [],
             note: overrides.note ?? 'Counts advertisement report receptions in the selected time window.',
             hasData: overrides.hasData ?? false,
             isLoading: overrides.isLoading ?? false,
@@ -4205,6 +4207,15 @@ class MeshLog {
                 rawPackets: Number(row?.raw_packets) || 0,
             }))
             : [];
+        const channelTotals = Array.isArray(response?.channel_totals)
+            ? response.channel_totals.map((row) => ({
+                channelId: Number(row?.channel_id) || 0,
+                channelHash: row?.channel_hash || '',
+                channelName: row?.channel_name || `#${row?.channel_hash ?? row?.channel_id ?? '?'}`,
+                totalMessages: Number(row?.total_messages) || 0,
+                uniqueSenders: Number(row?.unique_senders) || 0,
+            }))
+            : [];
 
         return this._getEmptyGeneralStats(normalizedWindowHours, {
             totalReports,
@@ -4223,6 +4234,7 @@ class MeshLog {
             buckets,
             uniqueDeviceBuckets,
             collectorTotals,
+            channelTotals,
             note: response?.note ?? 'Counts advertisement report receptions in the selected time window.',
             hasData: totalReports > 0,
         });
@@ -4328,6 +4340,12 @@ class MeshLog {
         const normalizedWindowHours = this._normalizeStatsWindowHours(windowHours);
         const renderValue = (value) => (value === null || value === undefined || value === '') ? '-' : value;
         const renderCount = (value) => Number.isFinite(Number(value)) ? `${Number(value)}` : '-';
+        const normalizeChannelName = (rawName) => {
+            const value = String(rawName ?? '').trim();
+            if (!value) return 'Unknown';
+            if (value.toLowerCase() === 'public') return 'Public';
+            return value.startsWith('#') ? value : `#${value}`;
+        };
         const windowButtons = [1, 24, 36].map((hours) => {
             const active = hours === normalizedWindowHours ? ' general-stats-range-active' : '';
             return `<button type="button" class="general-stats-range${active}" data-hours="${hours}">${hours}h</button>`;
@@ -4365,6 +4383,29 @@ class MeshLog {
                 `;
             }).join('')
             : '<div class="general-stats-note">No collector packet activity recorded in this window.</div>';
+        const channelMax = Math.max(1, ...stats.channelTotals.map((row) => Number(row.totalMessages) || 0));
+        const channelRows = stats.channelTotals.length > 0
+            ? stats.channelTotals.map((row) => {
+                const width = Math.max(4, Math.round(((Number(row.totalMessages) || 0) / channelMax) * 100));
+                const theme = getChannelTheme(`${row.channelHash ?? ''}:${row.channelName ?? ''}`);
+                const color = theme.badgeBg ?? theme.ring ?? '#8fb3c9';
+                const keyLabel = row.channelHash ? row.channelHash.slice(0, 10) : `ID ${row.channelId}`;
+                return `
+                    <div class="collector-stats-row">
+                        <div class="collector-stats-head">
+                            <div class="collector-stats-name-wrap">
+                                <span class="collector-stats-swatch" style="background:${escapeXml(color)}"></span>
+                                <span class="collector-stats-name">${escapeXml(normalizeChannelName(row.channelName))}</span>
+                                <span class="collector-stats-key">${escapeXml(keyLabel)}</span>
+                            </div>
+                            <span class="collector-stats-total">${renderValue(row.totalMessages)}</span>
+                        </div>
+                        <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
+                        <div class="collector-stats-breakdown">Unique senders ${renderValue(row.uniqueSenders)}</div>
+                    </div>
+                `;
+            }).join('')
+            : '<div class="general-stats-note">No channel messages recorded in this window.</div>';
 
         const noteClassName = stats.hasError ? 'general-stats-note general-stats-note-error' : 'general-stats-note';
 
@@ -4439,6 +4480,13 @@ class MeshLog {
                     <div class="general-stats-meta">All stored packets in last ${normalizedWindowHours}h</div>
                 </div>
                 <div class="collector-stats-list">${collectorRows}</div>
+            </section>
+            <section class="settings-card general-stats-shell">
+                <div class="general-stats-chart-head">
+                    <div class="settings-card-title">Channel Message Totals</div>
+                    <div class="general-stats-meta">All stored channel messages in last ${normalizedWindowHours}h</div>
+                </div>
+                <div class="collector-stats-list">${channelRows}</div>
             </section>
         `;
     }

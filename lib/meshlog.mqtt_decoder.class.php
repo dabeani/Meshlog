@@ -60,11 +60,13 @@ class MeshLogMqttDecoder {
             if ($decodedStatus !== null) return $decodedStatus;
         }
 
-        // Binary PACKET from meshcoretomqtt: must run BEFORE any format-specific path.
-        // Both MeshLog and LetsMesh collectors transmit MeshCore binary packets with
-        // type="PACKET".  The LetsMesh per-format path uses normalizeLetsMeshType()
-        // which maps "PACKET" → "RAW", so if the LetsMesh block ran first all ADVERT /
-        // GRP_TXT packets would be stored as undecoded blobs and never appear on the map.
+        if ($format === MeshLogReporter::FORMAT_LETSMESH) {
+            $decodedLetsMesh = static::decodeLetsMeshPayload($data, $reporter, $mqttMeta);
+            if ($decodedLetsMesh !== null) return $decodedLetsMesh;
+        }
+
+        // Binary PACKET from meshcoretomqtt: attempt structured decode first,
+        // then fall back to storing as a RAW packet.
         if ($type === 'PACKET') {
             $raw = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper($data['raw'] ?? ''));
             if (strlen($raw) % 2 !== 0 || !$raw) return null;
@@ -180,14 +182,6 @@ class MeshLogMqttDecoder {
                 ),
                 "_mqtt" => $mqttMeta,
             );
-        }
-
-        // LetsMesh pre-decoded JSON payloads (type != "PACKET"). These use different field
-        // names from MeshLog structured JSON, so they need normalisation before being passed
-        // to insertForReporter(). Only runs when binary PACKET processing above did not match.
-        if ($format === MeshLogReporter::FORMAT_LETSMESH) {
-            $decodedLetsMesh = static::decodeLetsMeshPayload($data, $reporter, $mqttMeta);
-            if ($decodedLetsMesh !== null) return $decodedLetsMesh;
         }
 
         // Pre-decoded structured types (ADV, MSG, PUB, SYS, TEL, RAW) arriving over MQTT
@@ -672,9 +666,7 @@ class MeshLogMqttDecoder {
         if (in_array($value, array('PUB', 'GROUP', 'CHANNEL', 'GROUP_MESSAGE'))) return 'PUB';
         if (in_array($value, array('TEL', 'TELEMETRY'))) return 'TEL';
         if (in_array($value, array('SYS', 'STATUS', 'SYSTEM'))) return 'SYS';
-        if (in_array($value, array('RAW'))) return 'RAW';
-        // 'PACKET' intentionally not mapped here — binary PACKET payloads are handled
-        // by the binary decode path before decodeLetsMeshPayload() is ever reached.
+        if (in_array($value, array('RAW', 'PACKET'))) return 'RAW';
 
         return '';
     }

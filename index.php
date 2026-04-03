@@ -354,26 +354,30 @@ var _TILE_LAYERS = {
     dark:  { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
              opts: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>' } },
     light: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-             opts: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' } }
+             opts: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' } },
+    topo:  { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+             opts: { subdomains: 'abc', maxZoom: 17, attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' } }
 };
 var _activeTileLayer = null;
 function _setTileLayer(name) {
     if (_activeTileLayer) map.removeLayer(_activeTileLayer);
-    var cfg = _TILE_LAYERS[name];
+    var cfg = _TILE_LAYERS[name] || _TILE_LAYERS.dark;
     _activeTileLayer = L.tileLayer(cfg.url, cfg.opts).addTo(map);
-    Settings.set('map.layer', name);
+    Settings.set('map.layer', _TILE_LAYERS[name] ? name : 'dark');
     document.querySelectorAll('.map-layer-btn').forEach(function(b) {
-        b.classList.toggle('active', b.dataset.layer === name);
+        b.classList.toggle('active', b.dataset.layer === (_TILE_LAYERS[name] ? name : 'dark'));
     });
 }
 var _LayerToggle = L.Control.extend({
     options: { position: 'bottomleft' },
     onAdd: function() {
         var div = L.DomUtil.create('div', 'map-layer-toggle');
-        div.innerHTML = '<button class="map-layer-btn" data-layer="dark">Dark</button><button class="map-layer-btn" data-layer="light">Light</button>';
+        div.innerHTML = '<button class="map-layer-btn" data-layer="dark">Dark</button><button class="map-layer-btn" data-layer="light">Light</button><button class="map-layer-btn" data-layer="topo">Topo</button>';
         L.DomEvent.disableClickPropagation(div);
         div.querySelectorAll('.map-layer-btn').forEach(function(btn) {
-            btn.title = btn.dataset.layer === 'dark' ? 'Use the dark map tile layer' : 'Use the light map tile layer';
+            btn.title = btn.dataset.layer === 'dark'
+                ? 'Use the dark map tile layer'
+                : (btn.dataset.layer === 'light' ? 'Use the light map tile layer' : 'Use the topographic map tile layer');
             btn.setAttribute('aria-label', btn.title);
             btn.addEventListener('click', function() { _setTileLayer(btn.dataset.layer); });
         });
@@ -382,7 +386,7 @@ var _LayerToggle = L.Control.extend({
 });
 new _LayerToggle().addTo(map);
 var _savedLayer = Settings.get('map.layer', 'dark');
-_setTileLayer(_savedLayer === 'light' ? 'light' : 'dark');
+_setTileLayer(_savedLayer === 'light' || _savedLayer === 'topo' ? _savedLayer : 'dark');
 
 var meshlog = new MeshLog(
     map,
