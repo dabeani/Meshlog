@@ -28,16 +28,38 @@
             }
         } elseif (isset($_POST['delete'])) {
             $contact = MeshLogContact::findById($id, $meshlog);
-            if ($contact && $contact->delete(true)) {
-                $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
-                $meshlog->auditLog(
-                    \MeshLogAuditLog::EVENT_CONTACT_DELETE,
-                    $actor,
-                    'deleted contact ' . ($contact->name ?? '') . ' [' . ($contact->public_key ?? '') . ']'
-                );
-                $results = array('status' => 'OK');
+            if (!$contact) {
+                $errors[] = 'Contact not found';
             } else {
-                $errors[] = 'Failed to delete: ' . ($contact ? $contact->getError() : 'Contact not found');
+                $name = $contact->name ?? '';
+                $pk   = $contact->public_key ?? '';
+                try {
+                    $pdo = $meshlog->pdo;
+                    $pdo->beginTransaction();
+                    // Delete report rows first (FKs to advertisements/messages without cascade)
+                    $pdo->prepare("DELETE ar FROM advertisement_reports ar
+                        INNER JOIN advertisements a ON a.id = ar.advertisement_id
+                        WHERE a.contact_id = :id")->execute([':id' => $id]);
+                    $pdo->prepare("DELETE dmr FROM direct_message_reports dmr
+                        INNER JOIN direct_messages dm ON dm.id = dmr.direct_message_id
+                        WHERE dm.contact_id = :id")->execute([':id' => $id]);
+                    $pdo->prepare("DELETE cmr FROM channel_message_reports cmr
+                        INNER JOIN channel_messages cm ON cm.id = cmr.channel_message_id
+                        WHERE cm.contact_id = :id")->execute([':id' => $id]);
+                    // Deleting the contact cascades advertisements, direct_messages, channel_messages
+                    $pdo->prepare("DELETE FROM contacts WHERE id = :id")->execute([':id' => $id]);
+                    $pdo->commit();
+                    $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
+                    $meshlog->auditLog(
+                        \MeshLogAuditLog::EVENT_CONTACT_DELETE,
+                        $actor,
+                        'deleted contact ' . $name . ' [' . $pk . ']'
+                    );
+                    $results = array('status' => 'OK');
+                } catch (Exception $e) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    $errors[] = 'Failed to delete: ' . $e->getMessage();
+                }
             }
         } else {
             $errors[] = 'Unknown action';
