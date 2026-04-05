@@ -1013,15 +1013,24 @@ class MeshLogMqttDecoder {
             $channelName = trim($channel->name ?? '');
 
             if ($pskB64 !== '') {
-                // Explicit PSK: decode base64 → raw bytes (MeshCore accepts 16 or 32 bytes).
-                $pskBytes = base64_decode($pskB64, true);
-                if ($pskBytes === false) {
-                    error_log('[GRP_TXT] channel "' . $channelName . '": base64_decode of PSK failed');
-                    continue;
+                // Accept both hex (32/64 hex chars = 16/32 bytes) and base64 encoded PSKs.
+                // LetsMesh and other tools display PSKs as hex; base64 is the legacy format.
+                if (preg_match('/^[0-9A-Fa-f]+$/', $pskB64) && (strlen($pskB64) === 32 || strlen($pskB64) === 64)) {
+                    $pskBytes = hex2bin($pskB64);
+                    if ($pskBytes === false) {
+                        error_log('[GRP_TXT] channel "' . $channelName . '": hex2bin of PSK failed');
+                        continue;
+                    }
+                } else {
+                    $pskBytes = base64_decode($pskB64, true);
+                    if ($pskBytes === false) {
+                        error_log('[GRP_TXT] channel "' . $channelName . '": base64_decode of PSK failed');
+                        continue;
+                    }
                 }
                 $pskLen = strlen($pskBytes);
                 if ($pskLen !== 16 && $pskLen !== 32) {
-                    error_log('[GRP_TXT] channel "' . $channelName . '": PSK length ' . $pskLen . ' is not 16 or 32');
+                    error_log('[GRP_TXT] channel "' . $channelName . '": PSK length ' . $pskLen . ' is not 16 or 32 (provide as 32/64 hex chars or base64)');
                     continue;
                 }
             } elseif (strtolower($channelName) === 'public' || strtolower($channel->hash ?? '') === '11') {

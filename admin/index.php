@@ -851,7 +851,7 @@ if ($user && $meshlog->updateAvailable()) {
                                 <th>#</th>
                                 <th><span class="help-inline">Hash <button type="button" class="help-trigger" data-help-title="Channel Hash" data-help-body="Plaintext first-byte identifier that matches incoming GRP_TXT packets to this channel. Visible even when packet payload is encrypted.">?</button></span></th>
                                 <th>Name</th>
-                                <th><span class="help-inline">PSK (base64) <button type="button" class="help-trigger" data-help-title="Channel PSK" data-help-body="Optional Base64-encoded pre-shared key (16 or 32 bytes) used to decrypt AES-128 GRP_TXT packets for this channel. Leave empty to store matching packets as raw.">?</button></span></th>
+                                <th><span class="help-inline">PSK (hex or base64) <button type="button" class="help-trigger" data-help-title="Channel PSK" data-help-body="Optional pre-shared key used to decrypt AES-128 GRP_TXT/GRP_DATA packets. Enter as 32/64 hex chars (16/32 bytes) — the format shown in LetsMesh and MeshCore apps — or as base64. Leave empty for #hashtag channels (key is auto-derived from the name) or to store packets as raw.">?</button></span></th>
                                 <th><span class="help-inline">Enabled <button type="button" class="help-trigger" data-help-title="Channel Enabled" data-help-body="Disabled channels are hidden from the live feed and their messages are not shown to users. Historic data is preserved.">?</button></span></th>
                                 <th>Actions</th>
                             </tr>
@@ -1562,7 +1562,7 @@ if ($user && $meshlog->updateAvailable()) {
             const pskCell = row.insertCell();
             const psk = document.createElement('input');
             psk.type = 'text'; psk.value = channel.psk ?? '';
-            psk.placeholder = 'Base64-encoded PSK (16 or 32 bytes)';
+            psk.placeholder = 'Hex (32/64 chars) or Base64 PSK';
             psk.style.minWidth = '240px';
             psk.oninput = () => { psk.style.color = '#1976D2'; };
             pskCell.append(psk);
