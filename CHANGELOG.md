@@ -8,6 +8,9 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 
 ### WebUI / Backend — New Features
 
+- **LetsMesh PACKET decode fix** — LetsMesh reporters now route MQTT `PACKET` envelopes through the MeshCore binary decoder before the LetsMesh fallback mapper, so unencrypted ADVERT frames and known binary packet subtypes no longer collapse into generic RAW.
+- **LetsMesh RAW repair tool** — new CLI command `php tools/backfill_letsmesh_raw_packets.php --apply` repairs historically mis-stored LetsMesh raw rows in place and rebuilds collector packet rollups.
+- **Collector packet mix classification** — collector totals now classify repaired raw packet headers into `ADV`, `DIR`, `PUB`, `CTRL`, or `RAW` buckets instead of treating every raw frame as generic RAW.
 - **OpenTopoMap layer option** — the map layer switcher now includes a `Topo` source backed by OpenTopoMap tiles, and popup mini-maps follow the same selected base layer.
 - **Channel statistics in Stats** — the database-backed stats response now includes per-channel message totals and unique sender counts for the selected `1h`, `24h`, or `36h` window.
 - **Stats panel channel activity section** — WebUI Stats now renders channel message totals for the active time window alongside the existing advertisement and collector rollups.

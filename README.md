@@ -68,6 +68,16 @@ The worker listens to packet topics. Unencrypted ADVERT packets (packet_type=4) 
 - In the UI these encrypted packets are still stored as RAW packets, but are now labelled by subtype (`RAW MSG`, `RAW PUB`, etc.) based on the packet header.
 - To ingest actual decoded direct/group messages, use the firmware HTTP logger path or a MQTT publisher that already sends structured `MSG` / `PUB` JSON payloads instead of encrypted binary `PACKET` frames.
 
+### Repairing older LetsMesh RAW rows
+
+If LetsMesh `PACKET` frames were ingested before the PACKET decoder ordering fix, older `raw_packets` rows may still contain the full radio frame instead of the extracted payload metadata. MeshLog ships a one-off CLI repair tool for those rows:
+
+- Dry run: `php tools/backfill_letsmesh_raw_packets.php --limit=100 --verbose`
+- Apply changes: `php tools/backfill_letsmesh_raw_packets.php --apply`
+- Restrict scope: `--reporter-id=<id>` or `--packet-id=<raw_packets.id>`
+
+The repair tool updates historically mis-stored LetsMesh `raw_packets` rows in place, restores the real packet header/path/payload fields, regenerates decoded RAW metadata where possible, and rebuilds collector packet rollups so Stats reflects the repaired packet mix.
+
 ### Adding channels in the current build
 
 Channels can already be added in two ways:

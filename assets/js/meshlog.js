@@ -4204,6 +4204,7 @@ class MeshLog {
                 pubPackets: Number(row?.pub_packets) || 0,
                 telPackets: Number(row?.tel_packets) || 0,
                 sysPackets: Number(row?.sys_packets) || 0,
+                ctrlPackets: Number(row?.ctrl_packets) || 0,
                 rawPackets: Number(row?.raw_packets) || 0,
             }))
             : [];
@@ -4378,7 +4379,7 @@ class MeshLog {
                             <span class="collector-stats-total">${renderValue(row.totalPackets)}</span>
                         </div>
                         <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
-                        <div class="collector-stats-breakdown">ADV ${row.advPackets} · DIR ${row.dirPackets} · PUB ${row.pubPackets} · TEL ${row.telPackets} · SYS ${row.sysPackets} · RAW ${row.rawPackets}</div>
+                        <div class="collector-stats-breakdown">ADV ${row.advPackets} · DIR ${row.dirPackets} · PUB ${row.pubPackets} · TEL ${row.telPackets} · SYS ${row.sysPackets} · CTRL ${row.ctrlPackets} · RAW ${row.rawPackets}</div>
                     </div>
                 `;
             }).join('')

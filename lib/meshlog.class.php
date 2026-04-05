@@ -762,10 +762,118 @@ class MeshLog {
 
         $saved = $pkt->save($this);
         if ($saved) {
-            $this->rollupCollectorPacketStats($reporter->getId(), 'RAW');
+            $this->rollupCollectorPacketStats($reporter->getId(), $this->classifyCollectorRawPacketType($pkt));
         }
 
         return $saved;
+    }
+
+    private function classifyCollectorRawPacketType($pkt) {
+        if (!($pkt instanceof MeshLogRawPacket)) {
+            return 'RAW';
+        }
+
+        $payloadType = (intval($pkt->header ?? 0) >> 2) & 0x0F;
+        if ($payloadType === MeshLogMqttDecoder::PAYLOAD_TYPE_ADVERT) {
+            return 'ADV';
+        }
+
+        if (in_array($payloadType, array(
+            MeshLogMqttDecoder::PAYLOAD_TYPE_REQ,
+            MeshLogMqttDecoder::PAYLOAD_TYPE_RESPONSE,
+            MeshLogMqttDecoder::PAYLOAD_TYPE_TXT_MSG,
+            MeshLogMqttDecoder::PAYLOAD_TYPE_ANON_REQ,
+        ), true)) {
+            return 'DIR';
+        }
+
+        if (in_array($payloadType, array(
+            MeshLogMqttDecoder::PAYLOAD_TYPE_GRP_TXT,
+            MeshLogMqttDecoder::PAYLOAD_TYPE_GRP_DATA,
+        ), true)) {
+            return 'PUB';
+        }
+
+        if ($payloadType === MeshLogMqttDecoder::PAYLOAD_TYPE_CONTROL) {
+            return 'CTRL';
+        }
+
+        return 'RAW';
+    }
+
+    private function getCollectorRawPacketTypeCaseSql($headerExpr = 'rp.header') {
+        $payloadExpr = '((' . $headerExpr . ' >> 2) & 15)';
+
+        return "CASE
+            WHEN " . $payloadExpr . ' = ' . MeshLogMqttDecoder::PAYLOAD_TYPE_ADVERT . " THEN 'ADV'
+            WHEN " . $payloadExpr . ' IN (' . implode(', ', array(
+                MeshLogMqttDecoder::PAYLOAD_TYPE_REQ,
+                MeshLogMqttDecoder::PAYLOAD_TYPE_RESPONSE,
+                MeshLogMqttDecoder::PAYLOAD_TYPE_TXT_MSG,
+                MeshLogMqttDecoder::PAYLOAD_TYPE_ANON_REQ,
+            )) . ") THEN 'DIR'
+            WHEN " . $payloadExpr . ' IN (' . implode(', ', array(
+                MeshLogMqttDecoder::PAYLOAD_TYPE_GRP_TXT,
+                MeshLogMqttDecoder::PAYLOAD_TYPE_GRP_DATA,
+            )) . ") THEN 'PUB'
+            WHEN " . $payloadExpr . ' = ' . MeshLogMqttDecoder::PAYLOAD_TYPE_CONTROL . " THEN 'CTRL'
+            ELSE 'RAW'
+        END";
+    }
+
+    public function rebuildCollectorPacketStatsRollup() {
+        $this->pdo->exec('TRUNCATE TABLE `stats_collector_packets_rollup`');
+
+        $bucketExpr = $this->getStatsRollupBucketExpression('created_at');
+        $tables = array(
+            array('table' => 'advertisement_reports', 'packet_type' => 'ADV'),
+            array('table' => 'direct_message_reports', 'packet_type' => 'DIR'),
+            array('table' => 'channel_message_reports', 'packet_type' => 'PUB'),
+            array('table' => 'telemetry', 'packet_type' => 'TEL'),
+            array('table' => 'system_reports', 'packet_type' => 'SYS'),
+        );
+
+        foreach ($tables as $tableInfo) {
+            $tableName = $tableInfo['table'];
+            $packetType = $tableInfo['packet_type'];
+            $sql = "
+                INSERT INTO `stats_collector_packets_rollup` (
+                    `bucket_start`,
+                    `reporter_id`,
+                    `packet_type`,
+                    `packet_count`
+                )
+                SELECT
+                    " . $bucketExpr . " AS bucket_start,
+                    `reporter_id`,
+                    :packet_type AS packet_type,
+                    COUNT(*) AS packet_count
+                FROM `" . $tableName . "`
+                GROUP BY bucket_start, `reporter_id`
+            ";
+
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->bindValue(':packet_type', $packetType, PDO::PARAM_STR);
+            $stmt->execute();
+        }
+
+        $rawSql = "
+            INSERT INTO `stats_collector_packets_rollup` (
+                `bucket_start`,
+                `reporter_id`,
+                `packet_type`,
+                `packet_count`
+            )
+            SELECT
+                " . $bucketExpr . " AS bucket_start,
+                rp.`reporter_id`,
+                " . $this->getCollectorRawPacketTypeCaseSql('rp.`header`') . " AS packet_type,
+                COUNT(*) AS packet_count
+            FROM `raw_packets` rp
+            GROUP BY bucket_start, rp.`reporter_id`, packet_type
+        ";
+
+        $this->pdo->exec($rawSql);
     }
 
     private function insertSelfReport($data, $reporter) {
@@ -2021,6 +2129,7 @@ class MeshLog {
                 SUM(CASE WHEN totals.packet_type = 'PUB' THEN totals.packet_count ELSE 0 END) AS pub_packets,
                 SUM(CASE WHEN totals.packet_type = 'TEL' THEN totals.packet_count ELSE 0 END) AS tel_packets,
                 SUM(CASE WHEN totals.packet_type = 'SYS' THEN totals.packet_count ELSE 0 END) AS sys_packets,
+                SUM(CASE WHEN totals.packet_type = 'CTRL' THEN totals.packet_count ELSE 0 END) AS ctrl_packets,
                 SUM(CASE WHEN totals.packet_type = 'RAW' THEN totals.packet_count ELSE 0 END) AS raw_packets
             FROM (
                 SELECT reporter_id, packet_type, SUM(packet_count) AS packet_count
@@ -2051,6 +2160,7 @@ class MeshLog {
                 'pub_packets' => intval($row['pub_packets'] ?? 0),
                 'tel_packets' => intval($row['tel_packets'] ?? 0),
                 'sys_packets' => intval($row['sys_packets'] ?? 0),
+                'ctrl_packets' => intval($row['ctrl_packets'] ?? 0),
                 'raw_packets' => intval($row['raw_packets'] ?? 0),
             );
         }

@@ -60,11 +60,6 @@ class MeshLogMqttDecoder {
             if ($decodedStatus !== null) return $decodedStatus;
         }
 
-        if ($format === MeshLogReporter::FORMAT_LETSMESH) {
-            $decodedLetsMesh = static::decodeLetsMeshPayload($data, $reporter, $mqttMeta);
-            if ($decodedLetsMesh !== null) return $decodedLetsMesh;
-        }
-
         // Binary PACKET from meshcoretomqtt: attempt structured decode first,
         // then fall back to storing as a RAW packet.
         if ($type === 'PACKET') {
@@ -182,6 +177,11 @@ class MeshLogMqttDecoder {
                 ),
                 "_mqtt" => $mqttMeta,
             );
+        }
+
+        if ($format === MeshLogReporter::FORMAT_LETSMESH) {
+            $decodedLetsMesh = static::decodeLetsMeshPayload($data, $reporter, $mqttMeta);
+            if ($decodedLetsMesh !== null) return $decodedLetsMesh;
         }
 
         // Pre-decoded structured types (ADV, MSG, PUB, SYS, TEL, RAW) arriving over MQTT
@@ -682,6 +682,31 @@ class MeshLogMqttDecoder {
             'payload' => strtoupper(bin2hex(substr($bytes, $layout['payload_offset']))),
             'hash_size' => $layout['hash_size'],
             'scope' => static::decodeTransportScope($layout['transport_codes'] ?? null),
+        );
+    }
+
+    public static function summarizeRawPacketHex($rawHex) {
+        if (!is_scalar($rawHex)) return null;
+
+        $normalizedHex = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper(strval($rawHex)));
+        if ($normalizedHex === '' || (strlen($normalizedHex) % 2) !== 0) return null;
+
+        $bytes = hex2bin($normalizedHex);
+        if ($bytes === false) return null;
+
+        $packet = static::extractPacket($bytes);
+        if (!is_array($packet)) return null;
+
+        $header = intval($packet['header'] ?? 0);
+
+        return array(
+            'header' => $header,
+            'packet_type' => (($header >> 2) & 0x0F),
+            'path' => $packet['path'] ?? '',
+            'payload' => $packet['payload'] ?? '',
+            'hash_size' => intval($packet['hash_size'] ?? 1),
+            'scope' => static::normalizeScope($packet['scope'] ?? null),
+            'route_type' => static::normalizeRouteType($packet['route_type'] ?? null),
         );
     }
 
