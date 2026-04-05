@@ -14,6 +14,8 @@ class MeshLogAuditLog extends MeshLogEntity {
     const EVENT_REPORTER_DELETE = 'reporter.delete';
     const EVENT_CHANNEL_SAVE = 'channel.save';
     const EVENT_CHANNEL_DELETE = 'channel.delete';
+    const EVENT_CONTACT_HIDE   = 'contact.hide';
+    const EVENT_CONTACT_DELETE = 'contact.delete';
     const EVENT_ERROR        = 'error';
 
     public $event      = null;

@@ -785,6 +785,7 @@ if ($user && $meshlog->updateAvailable()) {
         <nav class="admin-nav">
             <button type="button" class="admin-nav-btn" data-page="devices">Devices</button>
             <button type="button" class="admin-nav-btn" data-page="channels">Channels</button>
+            <button type="button" class="admin-nav-btn" data-page="contacts">Contacts</button>
             <button type="button" class="admin-nav-btn" data-page="settings">Settings</button>
             <button type="button" class="admin-nav-btn" data-page="audit">Audit Log</button>
             <button type="button" class="admin-nav-btn" data-page="stats">Stats</button>
@@ -857,6 +858,38 @@ if ($user && $meshlog->updateAvailable()) {
                             </tr>
                         </thead>
                         <tbody id="channels"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- PAGE: Contacts -->
+        <div class="admin-page" id="page-contacts">
+            <section class="admin-section">
+                <div class="section-title">
+                    <span>Contacts</span>
+                    <span class="section-kicker">All observed nodes — hide from public map/API or delete contact history</span>
+                </div>
+                <div class="section-body">
+                    <div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;">
+                        <input type="search" id="contacts-search" placeholder="Search by name or public key…" style="flex:1;max-width:360px;padding:4px 8px;">
+                        <button type="button" id="contacts-search-btn">Search</button>
+                    </div>
+                    <table class="admin-table" id="contacts-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Name</th>
+                                <th>Public Key</th>
+                                <th>ADVs</th>
+                                <th>MSGs</th>
+                                <th>PUBs</th>
+                                <th>Last Heard</th>
+                                <th><span class="help-inline">Hidden <button type="button" class="help-trigger" data-help-title="Hidden Contact" data-help-body="Hidden contacts are excluded from the public map and all public API responses. They remain visible here in the admin panel and their historic data is preserved.">?</button></span></th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contacts-tbody"></tbody>
                     </table>
                 </div>
             </section>
@@ -1032,7 +1065,7 @@ if ($user && $meshlog->updateAvailable()) {
 
     <script>
         /* ── Tabs ────────────────────────────────────────────────────── */
-        const PAGES = ['devices', 'channels', 'settings', 'audit', 'stats'];
+        const PAGES = ['devices', 'channels', 'contacts', 'settings', 'audit', 'stats'];
         const loadedPages = new Set();
 
         function switchPage(name) {
@@ -1055,6 +1088,7 @@ if ($user && $meshlog->updateAvailable()) {
                 loadedPages.add(name);
                 if (name === 'devices')  loadReporters();
                 if (name === 'channels') loadChannels();
+                if (name === 'contacts') loadContacts();
                 if (name === 'settings') loadSettings();
                 if (name === 'audit')    loadAudit(0);
                 if (name === 'stats')    loadStats();
@@ -1645,6 +1679,95 @@ if ($user && $meshlog->updateAvailable()) {
 
             actionsCell.append(saveBtn, deleteBtn);
         }
+
+        /* ── Contacts ───────────────────────────────────────────────── */
+        const contactsTbody     = document.getElementById('contacts-tbody');
+        const contactsSearchIn  = document.getElementById('contacts-search');
+        const contactsSearchBtn = document.getElementById('contacts-search-btn');
+
+        function loadContacts(search) {
+            search = search ?? contactsSearchIn.value.trim();
+            const url = 'api/contacts/' + (search ? '?search=' + encodeURIComponent(search) : '');
+            fetch(url, { method: 'GET' })
+            .then(r => r.json())
+            .then(result => {
+                contactsTbody.innerHTML = '';
+                if (getError(result)) { contactsTbody.innerHTML = '<tr><td colspan="9">' + getError(result) + '</td></tr>'; return; }
+                if (!result.objects.length) { contactsTbody.innerHTML = '<tr><td colspan="9" style="color:#9dc0b6">No contacts found.</td></tr>'; return; }
+                result.objects.forEach(c => addContactRow(c));
+            });
+        }
+
+        function addContactRow(contact) {
+            const row = contactsTbody.insertRow();
+            row.dataset.id = contact.id;
+
+            row.insertCell().innerText = contact.id;
+
+            const nameCell = row.insertCell();
+            nameCell.innerText = contact.name ?? '';
+            nameCell.title = contact.name ?? '';
+
+            const pkCell = row.insertCell();
+            const pkSpan = document.createElement('span');
+            pkSpan.style.fontFamily = 'monospace';
+            pkSpan.style.fontSize   = '0.78rem';
+            pkSpan.innerText = (contact.public_key ?? '').toLowerCase();
+            pkCell.append(pkSpan);
+
+            row.insertCell().innerText = contact.adv_count ?? 0;
+            row.insertCell().innerText = contact.msg_count ?? 0;
+            row.insertCell().innerText = contact.pub_count ?? 0;
+            row.insertCell().innerText = contact.last_heard_at ?? '-';
+
+            const hiddenCell = row.insertCell();
+            const hiddenChk  = document.createElement('input');
+            hiddenChk.type    = 'checkbox';
+            hiddenChk.checked = contact.hidden === 1;
+            hiddenChk.title   = 'Hide from public map and API';
+            hiddenChk.onchange = () => {
+                fetch('api/contacts/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ hide: 1, id: contact.id, hidden: hiddenChk.checked ? 1 : 0 })
+                })
+                .then(r => r.json())
+                .then(result => {
+                    if (getError(result)) {
+                        alert(getError(result));
+                        hiddenChk.checked = !hiddenChk.checked;
+                    }
+                });
+            };
+            hiddenCell.append(hiddenChk);
+
+            const actionsCell = row.insertCell();
+            const deleteBtn   = document.createElement('button');
+            deleteBtn.innerText   = 'Delete';
+            deleteBtn.className   = 'button-danger';
+            deleteBtn.onclick = () => {
+                const total = (contact.adv_count ?? 0) + (contact.msg_count ?? 0) + (contact.pub_count ?? 0);
+                const label = contact.name ? `"${contact.name}"` : contact.public_key;
+                const msg   = total > 0
+                    ? `Delete contact ${label} and all ${total} associated records?`
+                    : `Delete contact ${label}?`;
+                if (!confirm(msg)) return;
+                fetch('api/contacts/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ delete: 1, id: contact.id })
+                })
+                .then(r => r.json())
+                .then(result => {
+                    if (getError(result)) { alert(getError(result)); }
+                    else { row.remove(); }
+                });
+            };
+            actionsCell.append(deleteBtn);
+        }
+
+        contactsSearchBtn.addEventListener('click', () => loadContacts());
+        contactsSearchIn.addEventListener('keydown', e => { if (e.key === 'Enter') loadContacts(); });
 
         /* ── Settings ────────────────────────────────────────────────── */
         const settingsGrid       = document.getElementById('settings-grid');

@@ -1671,7 +1671,7 @@ class MeshLog {
         $maxage = $this->getConfig(MeshlogSetting::KEY_MAX_CONTACT_AGE);
         $offset = (int) ($params['offset'] ?? 0);
         $limit = (int) ($params['count'] ?? DEFAULT_COUNT);
-        $extra = "WHERE last_heard_at >= NOW() - INTERVAL $maxage SECOND ";
+        $extra = "WHERE last_heard_at >= NOW() - INTERVAL $maxage SECOND AND t.hidden = 0";
         $binds = array();
         $where = $this->getTimeFiltersSql($params);
         if (!empty($where[0])) {

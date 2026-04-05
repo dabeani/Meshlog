@@ -53,11 +53,11 @@ function enrichPackets(array $packets, $pdo) {
         }
     }
 
-    // Batch: contact name + public_key
+    // Batch: contact name + public_key (exclude hidden contacts)
     $contactData = array();
     if (!empty($contactIds)) {
         $ids  = array_keys($contactIds);
-        $stmt = $pdo->prepare("SELECT id, name, public_key FROM contacts WHERE id IN (" . $makeIn($ids) . ")");
+        $stmt = $pdo->prepare("SELECT id, name, public_key FROM contacts WHERE hidden = 0 AND id IN (" . $makeIn($ids) . ")");
         $stmt->execute($ids);
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $contactData[(int)$row['id']] = array(
