@@ -2,6 +2,12 @@
 require_once __DIR__ . '/../lib/meshlog.class.php';
 require_once __DIR__ . '/../config.php';
 
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path'     => '/',
+    'httponly' => true,
+    'samesite' => 'Strict',
+]);
 session_start();
 
 $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
@@ -31,6 +37,7 @@ if (!$user && isset($_POST['login'])) {
 
     $login = MeshLogUser::login($meshlog, $username, $password);
     if ($login) {
+        session_regenerate_id(true);
         $user = array(
             'id' => $login->getId(),
             'name' => $login->name,
