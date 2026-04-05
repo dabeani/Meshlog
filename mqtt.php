@@ -6,7 +6,7 @@ if (php_sapi_name() !== 'cli') {
     exit;
 }
 
-const MQTT_RECONNECT_DELAY_SECONDS = 5;
+const MQTT_RECONNECT_DELAY_SECONDS = 1;
 
 require_once "config.php";
 require_once "lib/meshlog.class.php";
