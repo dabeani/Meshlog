@@ -3088,6 +3088,7 @@ class MeshLog {
     static MARKER_PANE_ROUTE = 'meshlog-marker-route';
     static ROUTE_PANE = 'meshlog-route-lines';
     static ROUTE_POINT_PANE = 'meshlog-route-points';
+    static LIVE_ROUTE_PANE = 'meshlog-live-route-lines';
 
     constructor(map, logsid, contactsid, stypesid, sreportersid, scontactsid, warningid, errorid, contextmenuid) {
         this.reporters = {};
@@ -4582,6 +4583,12 @@ class MeshLog {
         const routeMarkerPane = this.map.createPane(MeshLog.MARKER_PANE_ROUTE);
         routeMarkerPane.style.zIndex = '650';
         routeMarkerPane.style.pointerEvents = 'auto';
+
+        // Live animated route lines float above all markers.
+        // pointer-events: none so they never block clicks on device bubbles.
+        const liveRoutePane = this.map.createPane(MeshLog.LIVE_ROUTE_PANE);
+        liveRoutePane.style.zIndex = '660';
+        liveRoutePane.style.pointerEvents = 'none';
     }
 
     getMarkerPaneName(active = false) {
@@ -6074,9 +6081,10 @@ class MeshLog {
                 // Three-layer rendering: wide semi-transparent glow → dark outline → colored inner.
                 // Glow and outline are decorative only — mark non-interactive so they never
                 // intercept pointer events and block marker clicks underneath.
-                let lineGlow = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, interactive: false, color: reporterColor, weight: ln_glow, opacity: glowOpacity});
-                let line1    = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, interactive: false, color: linkOutlineColor, weight: ln_outline});
-                let line2    = L.polyline(linePath, {pane: MeshLog.ROUTE_PANE, color: reporterColor, weight: innerWeight, dashArray: dashArray});
+                const linePane = animatedRoute ? MeshLog.LIVE_ROUTE_PANE : MeshLog.ROUTE_PANE;
+                let lineGlow = L.polyline(linePath, {pane: linePane, interactive: false, color: reporterColor, weight: ln_glow, opacity: glowOpacity});
+                let line1    = L.polyline(linePath, {pane: linePane, interactive: false, color: linkOutlineColor, weight: ln_outline});
+                let line2    = L.polyline(linePath, {pane: linePane, interactive: !animatedRoute, color: reporterColor, weight: innerWeight, dashArray: dashArray});
 
                 if (!links.includes(line_id)) {
                     links.push(line_id);
