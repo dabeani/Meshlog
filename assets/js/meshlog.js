@@ -1759,6 +1759,39 @@ class MeshLogContact extends MeshLogObject {
     }
 }
 
+// --- Hop-hash chip helpers (live feed path display) ---
+
+let _hopTooltipEl = null;
+
+function _getHopTooltipEl() {
+    if (!_hopTooltipEl) {
+        _hopTooltipEl = document.createElement('div');
+        _hopTooltipEl.id = 'hop-name-tooltip';
+        document.body.appendChild(_hopTooltipEl);
+    }
+    return _hopTooltipEl;
+}
+
+function _showHopTooltip(name, anchor) {
+    const el = _getHopTooltipEl();
+    el.textContent = name;
+    el.style.display = 'block';
+    const rect = anchor.getBoundingClientRect();
+    el.style.left = `${rect.left}px`;
+    el.style.top = `${rect.top - 28}px`;
+}
+
+function _hideHopTooltip() {
+    if (_hopTooltipEl) _hopTooltipEl.style.display = 'none';
+}
+
+function _findAnyContactByHash(meshlog, hash) {
+    for (const c of Object.values(meshlog.contacts)) {
+        if (c.checkHash(hash)) return c;
+    }
+    return null;
+}
+
 class MeshLogReport {
     constructor(meshlog, data, contact_id, parent) {
         this._meshlog = meshlog;
@@ -1834,8 +1867,32 @@ class MeshLogReport {
         spDot.style.border = `solid ${strokeWeight} ${strokeColor}`;
 
         spDate.innerText = this.data['created_at'].split(' ').pop();
-        spPath.innerText = this.data['path'] || "direct";
         spSnr.innerText = this.data['snr'];
+
+        const hashes = parsePath(this.data.path ?? '');
+        if (hashes.length === 0) {
+            spPath.textContent = 'direct';
+        } else {
+            hashes.forEach((hash, idx) => {
+                if (idx > 0) spPath.appendChild(document.createTextNode(','));
+                const chip = document.createElement('span');
+                chip.className = 'hop-hash-chip';
+                chip.textContent = hash;
+                chip.addEventListener('mouseenter', (e) => {
+                    const contact = _findAnyContactByHash(this._meshlog, hash);
+                    const name = contact?.adv?.data?.name ?? contact?.data?.name ?? null;
+                    if (name) _showHopTooltip(name, e.currentTarget);
+                });
+                chip.addEventListener('mouseleave', () => _hideHopTooltip());
+                chip.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const contact = _findAnyContactByHash(this._meshlog, hash);
+                    if (contact) this._meshlog.focusContact(contact);
+                });
+                spPath.appendChild(chip);
+            });
+        }
 
         divReport.append(spDate);
         divReport.append(spDot);

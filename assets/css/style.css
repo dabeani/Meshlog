@@ -493,6 +493,39 @@ h2 {
     color: #fff;
 }
 
+/* Clickable hop-hash chips in live feed path rows */
+.hop-hash-chip {
+    display: inline-block;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #7ec8e3;
+    cursor: pointer;
+    padding: 0 2px;
+    border-radius: 2px;
+    user-select: none;
+}
+.hop-hash-chip:hover {
+    background: rgba(126, 200, 227, 0.15);
+    text-decoration: underline;
+    color: #b3e5f7;
+}
+
+/* Floating tooltip for hop hash names */
+#hop-name-tooltip {
+    position: fixed;
+    z-index: 99999;
+    background: #111;
+    color: #fff;
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    border-radius: 3px;
+    pointer-events: none;
+    white-space: nowrap;
+    display: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    border: 1px solid #333;
+}
+
 /* Dark-themed distance tooltip on hop lines */
 .leaflet-tooltip.hop-tooltip {
     background: rgba(12, 12, 14, 0.88);
