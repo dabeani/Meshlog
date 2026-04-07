@@ -3163,6 +3163,7 @@ class MeshLog {
         this.__init_contact_types();
         this.__init_warnings();
         this._initMapSearchControl();
+        this._initMapMenuSearch();
 
         this.link_layers.addTo(this.map);
         this.route_trail_layers.addTo(this.map);
@@ -3259,6 +3260,47 @@ class MeshLog {
         };
 
         control.addTo(this.map);
+    }
+
+    _initMapMenuSearch() {
+        // Wire up the unified map menu search input if it exists
+        const menuSearchInput = document.getElementById('map-menu-search-input');
+        if (!menuSearchInput) return;
+        
+        // Create a mock search object for the menu input
+        const resultsContainer = document.createElement('div');
+        resultsContainer.style.display = 'none';
+        
+        this._mapMenuSearch = { input: menuSearchInput, results: resultsContainer };
+        
+        menuSearchInput.addEventListener('input', () => {
+            this._renderMapSearchResultsInMenu(menuSearchInput.value);
+        });
+        
+        menuSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const items = this._getSearchableContacts(menuSearchInput.value);
+                if (items.length > 0) {
+                    this.focusContact(items[0]);
+                    menuSearchInput.value = '';
+                }
+            } else if (e.key === 'Escape') {
+                menuSearchInput.value = '';
+                menuSearchInput.blur();
+            }
+        });
+    }
+    
+    _renderMapSearchResultsInMenu(query) {
+        const needle = this._normalizeSearchText(query);
+        if (!needle) return;
+        
+        const items = this._getSearchableContacts(query);
+        // On successful search, automatically focus the first result
+        if (items.length === 1) {
+            this.focusContact(items[0]);
+        }
     }
 
     _normalizeSearchText(value) {
@@ -6107,8 +6149,8 @@ class MeshLog {
 
                 const mouseover = function(e) {
                     lineGlow.setStyle({ opacity: 0.6, weight: ln_glow + 4 });
-                    line1.setStyle({ color: '#ffea00' });
-                    line2.setStyle({ color: '#ffef80', weight: ln_weight + 1 });
+                    line1.setStyle({ color: '#00acc1' });
+                    line2.setStyle({ color: '#00d9e9', weight: ln_weight + 1 });
                     this.openTooltip();
                 };
 
@@ -6128,6 +6170,16 @@ class MeshLog {
 
                 if (animatedRoute) {
                     this._startRouteLineAnimation(lineGlow, line2, innerWeight);
+                    // Apply glow effect to devices on the active path
+                    for (const contactId of desc.markers) {
+                        const contact = this.contacts[contactId];
+                        if (contact?.marker?.getElement?.()) {
+                            const markerEl = contact.marker.getElement();
+                            markerEl.classList.add('device-packet-active');
+                            // Remove the animation class after it completes so it can be retriggered
+                            setTimeout(() => markerEl.classList.remove('device-packet-active'), 600);
+                        }
+                    }
                 }
 
                 // Circle for client-origin unknowns

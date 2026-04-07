@@ -1,26 +1,19 @@
 # Changelog
 
-All notable changes to MeshLog are recorded here, in reverse chronological order.
+All notable changes to MeshLogAustria (forked) are recorded here, in reverse chronological order.
 
 ---
 
-## [v1.0.5] — Topo Map Source & Channel Stats (2026-04-04)
+## [v1.0.5] — Map/Live Feed UI (2026-04-06)
 
-### WebUI / Backend — New Features
+### WebUI — Fixes & Improvements
 
-- **LetsMesh PACKET decode fix** — LetsMesh reporters now route MQTT `PACKET` envelopes through the MeshCore binary decoder before the LetsMesh fallback mapper, so unencrypted ADVERT frames and known binary packet subtypes no longer collapse into generic RAW.
-- **LetsMesh RAW repair tool** — new CLI command `php tools/backfill_letsmesh_raw_packets.php --apply` repairs historically mis-stored LetsMesh raw rows in place and rebuilds collector packet rollups.
-- **Collector packet mix classification** — collector totals now classify repaired raw packet headers into `ADV`, `DIR`, `PUB`, `CTRL`, or `RAW` buckets instead of treating every raw frame as generic RAW.
-- **OpenTopoMap layer option** — the map layer switcher now includes a `Topo` source backed by OpenTopoMap tiles, and popup mini-maps follow the same selected base layer.
-- **Channel statistics in Stats** — the database-backed stats response now includes per-channel message totals and unique sender counts for the selected `1h`, `24h`, or `36h` window.
-- **Stats panel channel activity section** — WebUI Stats now renders channel message totals for the active time window alongside the existing advertisement and collector rollups.
+- **Live feed path hops: clickable + tooltip** — Each relay hop hash in the live feed path list is now rendered as a clickable chip. Hovering shows the device name in a black tooltip; clicking focuses the map and opens the device popup.
+- **Live animated routes always foreground** — Live packet animation lines (mouseover or new packet) are now drawn in a dedicated top overlay pane above all device bubbles, so animated routes never disappear behind markers. Static (non-animated) routes remain below markers as before.
 
-### iOS App — New Features
+---
 
-- **Three-mode map source toggle** — the Map toolbar now cycles between Dark, Light, and Topo sources, with Topo rendered from OpenTopoMap tiles.
-- **Channel activity in Stats** — the iOS Statistics screen now shows per-channel message totals and unique sender counts for the selected `1h`, `24h`, or `36h` window.
-
-## [v1.0.4] — Reporter Format, Status, and Channel Filtering (2026-04-02)
+## [v1.0.4] (2026-04-02)
 
 ### WebUI / Backend — New Features
 
@@ -31,21 +24,21 @@ All notable changes to MeshLog are recorded here, in reverse chronological order
 - **Reporter status snapshot ingestion** — MQTT `.../status` topic payloads (MeshLog and LetsMesh shapes) are normalized and cached in reporter metadata.
 - **Map device detail: Collector Status** — device popup detail now shows collector status information (basic identity and radio/health metrics) for reporter devices.
 - **Collector status presentation cleanup** — status rows with empty/unknown values are suppressed, and fields are grouped into **Basic** and **Radio / Health** blocks.
-
-### iOS App — New Features
-
-- **Collector status in map detail** — reporter status from API is decoded and rendered in the iOS map device detail view with relevant system/radio fields.
-- **Live/Channels all-vs-selected filtering** — users can switch between showing all channels or only selected channels in Live → Channels.
-- **Settings-level live channel filter controls** — simple All/Selected toggle and channel multi-select controls were added in Settings, reusing the same persisted preferences as Live.
-
----
-
-## [v1.0.3] — Channels History & Map Legend Clarity (2026-04-02)
+- **LetsMesh PACKET decode fix** — LetsMesh reporters now route MQTT `PACKET` envelopes through the MeshCore binary decoder before the LetsMesh fallback mapper, so unencrypted ADVERT frames and known binary packet subtypes no longer collapse into generic RAW.
+- **Collector packet mix classification** — collector totals now classify repaired raw packet headers into `ADV`, `DIR`, `PUB`, `CTRL`, or `RAW` buckets instead of treating every raw frame as generic RAW.
+- **OpenTopoMap layer option** — the map layer switcher now includes a `Topo` source backed by OpenTopoMap tiles, and popup mini-maps follow the same selected base layer.
+- **Channel statistics in Stats** — the database-backed stats response now includes per-channel message totals and unique sender counts for the selected `1h`, `24h`, or `36h` window.
+- **Stats panel channel activity section** — WebUI Stats now renders channel message totals for the active time window alongside the existing advertisement and collector rollups.
 
 ### iOS App — New Features
 
 - **Live Channels backward history paging** — opening a channel and scrolling to the oldest visible message now fetches older PUB packets from the database (`before_ms` paging) until the oldest available channel history is reached.
 - **Openable Map legend** — the Map now includes a toolbar legend toggle that opens a concise in-map reference card explaining bubble colors, active-route highlighting, badges, and node-type icons.
+- **Collector status in map detail** — reporter status from API is decoded and rendered in the iOS map device detail view with relevant system/radio fields.
+- **Live/Channels all-vs-selected filtering** — users can switch between showing all channels or only selected channels in Live → Channels.
+- **Settings-level live channel filter controls** — simple All/Selected toggle and channel multi-select controls were added in Settings, reusing the same persisted preferences as Live.
+- **Three-mode map source toggle** — the Map toolbar now cycles between Dark, Light, and Topo sources, with Topo rendered from OpenTopoMap tiles.
+- **Channel activity in Stats** — the iOS Statistics screen now shows per-channel message totals and unique sender counts for the selected `1h`, `24h`, or `36h` window.
 
 ### iOS App — Fixes & Improvements
 

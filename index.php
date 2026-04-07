@@ -364,27 +364,104 @@ function _setTileLayer(name) {
     var cfg = _TILE_LAYERS[name] || _TILE_LAYERS.dark;
     _activeTileLayer = L.tileLayer(cfg.url, cfg.opts).addTo(map);
     Settings.set('map.layer', _TILE_LAYERS[name] ? name : 'dark');
-    document.querySelectorAll('.map-layer-btn').forEach(function(b) {
+    document.querySelectorAll('.map-menu-layer-btn, .map-layer-btn').forEach(function(b) {
         b.classList.toggle('active', b.dataset.layer === (_TILE_LAYERS[name] ? name : 'dark'));
     });
 }
-var _LayerToggle = L.Control.extend({
-    options: { position: 'bottomleft' },
+
+var _UnifiedMapMenu = L.Control.extend({
+    options: { position: 'topright' },
     onAdd: function() {
-        var div = L.DomUtil.create('div', 'map-layer-toggle');
-        div.innerHTML = '<button class="map-layer-btn" data-layer="dark">Dark</button><button class="map-layer-btn" data-layer="light">Light</button><button class="map-layer-btn" data-layer="topo">Topo</button>';
-        L.DomEvent.disableClickPropagation(div);
-        div.querySelectorAll('.map-layer-btn').forEach(function(btn) {
-            btn.title = btn.dataset.layer === 'dark'
-                ? 'Use the dark map tile layer'
-                : (btn.dataset.layer === 'light' ? 'Use the light map tile layer' : 'Use the topographic map tile layer');
-            btn.setAttribute('aria-label', btn.title);
-            btn.addEventListener('click', function() { _setTileLayer(btn.dataset.layer); });
+        var container = L.DomUtil.create('div', 'map-menu-container');
+        
+        var toggleBtn = L.DomUtil.create('button', 'map-menu-toggle-btn');
+        toggleBtn.innerHTML = '⚙️';
+        toggleBtn.title = 'Toggle map menu';
+        
+        var panel = L.DomUtil.create('div', 'map-menu-panel');
+        
+        // Search section
+        var searchSection = L.DomUtil.create('div', 'map-menu-section');
+        var searchInput = L.DomUtil.create('input', 'map-search-input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search devices...';
+        searchInput.id = 'map-menu-search-input';
+        searchSection.appendChild(searchInput);
+        panel.appendChild(searchSection);
+        
+        // Layer selection section
+        var layerSection = L.DomUtil.create('div', 'map-menu-section');
+        var layerTitle = L.DomUtil.create('span', 'map-menu-title');
+        layerTitle.textContent = 'Map Layer';
+        layerSection.appendChild(layerTitle);
+        
+        var layerButtons = L.DomUtil.create('div', 'map-menu-layer-buttons');
+        ['dark', 'light', 'topo'].forEach(function(layer) {
+            var btn = L.DomUtil.create('button', 'map-menu-layer-btn');
+            btn.dataset.layer = layer;
+            btn.textContent = layer.charAt(0).toUpperCase() + layer.slice(1);
+            btn.addEventListener('click', function() { _setTileLayer(layer); });
+            layerButtons.appendChild(btn);
         });
-        return div;
+        layerSection.appendChild(layerButtons);
+        panel.appendChild(layerSection);
+        
+        // Legend section
+        var legendSection = L.DomUtil.create('div', 'map-menu-section');
+        var legendTitle = L.DomUtil.create('span', 'map-menu-title');
+        legendTitle.textContent = 'Legend';
+        legendSection.appendChild(legendTitle);
+        
+        var legend = L.DomUtil.create('div', 'map-legend');
+        var legendItems = [
+            { marker: '#4ea4c4', text: 'Device / Node' },
+            { marker: '#d87dff', text: 'Highlighted' },
+            { line: '#4ea4c4', text: 'Static route' },
+            { line: '#00d9e9', text: 'Active route' },
+            { line: '#ff3030', text: 'GPS trail' }
+        ];
+        
+        legendItems.forEach(function(item) {
+            var div = L.DomUtil.create('div', 'map-legend-item');
+            if (item.marker) {
+                var marker = L.DomUtil.create('div', 'map-legend-marker');
+                marker.style.backgroundColor = item.marker;
+                div.appendChild(marker);
+            } else if (item.line) {
+                var line = L.DomUtil.create('div', 'map-legend-line');
+                line.style.backgroundColor = item.line;
+                div.appendChild(line);
+            }
+            var text = L.DomUtil.create('span');
+            text.textContent = item.text;
+            div.appendChild(text);
+            legend.appendChild(div);
+        });
+        legendSection.appendChild(legend);
+        panel.appendChild(legendSection);
+        
+        // Toggle behavior
+        var isCollapsed = false;
+        toggleBtn.addEventListener('click', function() {
+            isCollapsed = !isCollapsed;
+            panel.classList.toggle('collapsed', isCollapsed);
+            if (isCollapsed) {
+                toggleBtn.style.opacity = '0.5';
+            } else {
+                toggleBtn.style.opacity = '1';
+            }
+        });
+        
+        L.DomEvent.disableClickPropagation(panel);
+        L.DomEvent.disableScrollPropagation(panel);
+        container.appendChild(toggleBtn);
+        container.appendChild(panel);
+        
+        return container;
     }
 });
-new _LayerToggle().addTo(map);
+
+new _UnifiedMapMenu().addTo(map);
 var _savedLayer = Settings.get('map.layer', 'dark');
 _setTileLayer(_savedLayer === 'light' || _savedLayer === 'topo' ? _savedLayer : 'dark');
 
