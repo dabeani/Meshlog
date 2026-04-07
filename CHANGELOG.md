@@ -13,6 +13,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Route line highlight color: yellow → cyan** — Route line mouseover highlight changed from yellow (#ffea00/#ffef80) to cyan (#00acc1/#00d9e9) for better color palette fit and reduced visual interference with other UI elements.
 - **Unified map menu (top-right)** — The map layer switcher (Dark/Light/Topo) has been integrated with the device search field and a legend into a single collapsible menu panel in the top-right corner. Includes device color key, active route indicator, and GPS trail legend. Menu can be toggled to a semi-transparent collapsed state.
 - **Device activity indicator glow** — Device bubbles on an active packet path now smoothly pulse with a cyan glow effect while the animated route is displayed, providing visual feedback for receive/forward/send activity. Glow automatically resets to allow re-triggering on new packets.
+- **Map control overlap fix** — Removed duplicate search control from top-right that was overlapping with the unified menu since search is now integrated into the unified panel.
 
 
 ---
