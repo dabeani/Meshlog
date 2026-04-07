@@ -3162,7 +3162,8 @@ class MeshLog {
         this.__init_contact_order();
         this.__init_contact_types();
         this.__init_warnings();
-        this._initMapSearchControl();
+        // Old search control disabled - search now integrated into unified map menu at top-right
+        // this._initMapSearchControl();
         this._initMapMenuSearch();
 
         this.link_layers.addTo(this.map);
@@ -3200,7 +3201,9 @@ class MeshLog {
     }
 
     _initMapSearchControl() {
-        const control = L.control({ position: 'topright' });
+        // Old standalone search control - kept disabled since search is now integrated into unified menu
+        // This method is preserved for backward compatibility but no longer called
+        const control = L.control({ position: 'topleft' });
 
         control.onAdd = () => {
             const root = document.createElement('div');
