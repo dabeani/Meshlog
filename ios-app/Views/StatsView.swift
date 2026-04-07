@@ -248,7 +248,7 @@ struct StatsView: View {
                 .padding(.vertical, 16)
             }
             .navigationTitle("Statistics")
-            .navigationBarTitleDisplayMode(.inline)
+            .meshNavigationBarInline()
             .onAppear {
                 Task { await loadStats() }
             }
