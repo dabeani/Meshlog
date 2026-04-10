@@ -373,28 +373,33 @@ var _UnifiedMapMenu = L.Control.extend({
     options: { position: 'topright' },
     onAdd: function() {
         var container = L.DomUtil.create('div', 'map-menu-container');
-        
-        var toggleBtn = L.DomUtil.create('button', 'map-menu-toggle-btn');
-        toggleBtn.innerHTML = '⚙️';
-        toggleBtn.title = 'Toggle map menu';
-        
+
         var panel = L.DomUtil.create('div', 'map-menu-panel');
-        
+
         // Search section
-        var searchSection = L.DomUtil.create('div', 'map-menu-section');
+        var searchSection = L.DomUtil.create('div', 'map-menu-section map-menu-search-row');
         var searchInput = L.DomUtil.create('input', 'map-search-input');
         searchInput.type = 'text';
         searchInput.placeholder = 'Search devices...';
         searchInput.id = 'map-menu-search-input';
+
+        var toggleBtn = L.DomUtil.create('button', 'map-menu-toggle-btn');
+        toggleBtn.type = 'button';
+        toggleBtn.innerHTML = '+';
+        toggleBtn.title = 'Open map options';
+
         searchSection.appendChild(searchInput);
+        searchSection.appendChild(toggleBtn);
         panel.appendChild(searchSection);
-        
+
+        var extraSection = L.DomUtil.create('div', 'map-menu-extra');
+
         // Layer selection section
         var layerSection = L.DomUtil.create('div', 'map-menu-section');
         var layerTitle = L.DomUtil.create('span', 'map-menu-title');
         layerTitle.textContent = 'Map Layer';
         layerSection.appendChild(layerTitle);
-        
+
         var layerButtons = L.DomUtil.create('div', 'map-menu-layer-buttons');
         ['dark', 'light', 'topo'].forEach(function(layer) {
             var btn = L.DomUtil.create('button', 'map-menu-layer-btn');
@@ -404,14 +409,14 @@ var _UnifiedMapMenu = L.Control.extend({
             layerButtons.appendChild(btn);
         });
         layerSection.appendChild(layerButtons);
-        panel.appendChild(layerSection);
-        
+        extraSection.appendChild(layerSection);
+
         // Legend section
         var legendSection = L.DomUtil.create('div', 'map-menu-section');
         var legendTitle = L.DomUtil.create('span', 'map-menu-title');
         legendTitle.textContent = 'Legend';
         legendSection.appendChild(legendTitle);
-        
+
         var legend = L.DomUtil.create('div', 'map-legend');
         var legendItems = [
             { marker: '#4ea4c4', text: 'Device / Node' },
@@ -420,7 +425,7 @@ var _UnifiedMapMenu = L.Control.extend({
             { line: '#00d9e9', text: 'Active route' },
             { line: '#ff3030', text: 'GPS trail' }
         ];
-        
+
         legendItems.forEach(function(item) {
             var div = L.DomUtil.create('div', 'map-legend-item');
             if (item.marker) {
@@ -438,25 +443,30 @@ var _UnifiedMapMenu = L.Control.extend({
             legend.appendChild(div);
         });
         legendSection.appendChild(legend);
-        panel.appendChild(legendSection);
-        
+        extraSection.appendChild(legendSection);
+        panel.appendChild(extraSection);
+
         // Toggle behavior
-        var isCollapsed = false;
+        var isCollapsed = true;
+        panel.classList.add('collapsed');
         toggleBtn.addEventListener('click', function() {
             isCollapsed = !isCollapsed;
             panel.classList.toggle('collapsed', isCollapsed);
             if (isCollapsed) {
-                toggleBtn.style.opacity = '0.5';
+                toggleBtn.innerHTML = '+';
+                toggleBtn.title = 'Open map options';
             } else {
-                toggleBtn.style.opacity = '1';
+                toggleBtn.innerHTML = '-';
+                toggleBtn.title = 'Close map options';
             }
         });
-        
+
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
         L.DomEvent.disableClickPropagation(panel);
         L.DomEvent.disableScrollPropagation(panel);
-        container.appendChild(toggleBtn);
         container.appendChild(panel);
-        
+
         return container;
     }
 });

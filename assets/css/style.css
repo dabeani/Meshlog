@@ -493,48 +493,51 @@ h2 {
     color: #fff;
 }
 
-/* Map unified menu panel — combines search, layer toggle, and legend */
+/* Compact map menu panel — search always visible, extras collapsible */
+.map-menu-container {
+    min-width: 0;
+}
+
 .map-menu-panel {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    width: 260px;
-    max-height: 90vh;
+    width: 214px;
+    max-height: 86vh;
     background: rgba(18, 18, 20, 0.94);
     border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 12px;
+    border-radius: 10px;
     backdrop-filter: blur(8px);
     box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-    padding: 12px;
-    z-index: 999;
+    padding: 6px;
     overflow-y: auto;
-    transition: opacity 0.2s, transform 0.2s;
+    transition: width 0.16s ease, padding 0.16s ease;
 }
 
 .map-menu-panel.collapsed {
-    pointer-events: none;
-    opacity: 0.3;
-    transform: scale(0.95);
+    width: 192px;
+}
+
+.map-menu-search-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
 }
 
 .map-menu-toggle-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
     border: 1px solid rgba(255,255,255,0.2);
     background: rgba(20, 20, 24, 0.92);
     color: #fff;
     cursor: pointer;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.2rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1;
     transition: background 0.2s, border-color 0.2s;
-    z-index: 998;
     padding: 0;
+    flex-shrink: 0;
 }
 
 .map-menu-toggle-btn:hover {
@@ -542,8 +545,16 @@ h2 {
     border-color: rgba(255,255,255,0.4);
 }
 
+.map-menu-extra {
+    margin-top: 6px;
+}
+
+.map-menu-panel.collapsed .map-menu-extra {
+    display: none;
+}
+
 .map-menu-section {
-    margin-bottom: 12px;
+    margin-bottom: 6px;
 }
 
 .map-menu-section:last-child {
@@ -551,30 +562,30 @@ h2 {
 }
 
 .map-menu-title {
-    font-size: 0.75rem;
+    font-size: 0.68rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: rgba(255,255,255,0.48);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     display: block;
 }
 
 .map-menu-layer-buttons {
     display: flex;
-    gap: 6px;
+    gap: 4px;
     flex-wrap: wrap;
 }
 
 .map-menu-layer-btn {
     flex: 1;
-    min-width: 70px;
-    padding: 6px 0;
+    min-width: 58px;
+    padding: 5px 0;
     border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 8px;
+    border-radius: 7px;
     background: rgba(255,255,255,0.05);
     color: rgba(255,255,255,0.6);
-    font-size: 0.7rem;
+    font-size: 0.64rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s;
@@ -594,18 +605,18 @@ h2 {
 .map-legend {
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 8px;
-    padding: 8px;
-    font-size: 0.7rem;
-    line-height: 1.5;
+    border-radius: 7px;
+    padding: 6px;
+    font-size: 0.62rem;
+    line-height: 1.35;
     color: rgba(255,255,255,0.75);
 }
 
 .map-legend-item {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 6px;
+    gap: 5px;
+    margin-bottom: 4px;
 }
 
 .map-legend-item:last-child {
@@ -613,14 +624,14 @@ h2 {
 }
 
 .map-legend-marker {
-    width: 12px;
-    height: 12px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
     flex-shrink: 0;
 }
 
 .map-legend-line {
-    width: 20px;
+    width: 16px;
     height: 2px;
     border-radius: 1px;
     flex-shrink: 0;
@@ -728,14 +739,14 @@ h2 {
 
 .map-search-input {
     width: 100%;
-    padding: 9px 12px;
+    padding: 6px 8px;
     border: 1px solid rgba(255,255,255,0.2);
     border-radius: 999px;
     background: rgba(20, 20, 24, 0.94);
     color: #fff;
-    font-size: 0.83rem;
+    font-size: 0.72rem;
     outline: none;
-    box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
 }
 
 .map-search-input::placeholder {
