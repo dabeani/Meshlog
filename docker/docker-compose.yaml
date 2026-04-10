@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   mariadb:
     image: mariadb:12
@@ -23,6 +22,8 @@ services:
     build:
       context: ..
       dockerfile: docker/build/Dockerfile
+      provenance: false
+      sbom: false
     container_name: backend
     depends_on:
       mariadb:

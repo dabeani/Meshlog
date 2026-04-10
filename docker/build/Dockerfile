@@ -1,5 +1,7 @@
 FROM php:8.4-fpm-alpine
 
+ARG TIMEZONE=Europe/Riga
+
 RUN apk add --no-cache nginx supervisor bash tzdata \
 	&& docker-php-ext-install mysqli pdo pdo_mysql
 
