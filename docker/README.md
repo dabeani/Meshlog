@@ -75,6 +75,26 @@ Set `MQTT_DEBUG=true` to enable detailed MQTT topic/reporter resolution logs fro
 sudo docker compose up -d --build
 ```
 
+If your host hits a Docker Compose v2 metadata bug (for example:
+`open /tmp/.tmp-compose-build-metadataFile-...: no such file or directory`),
+use this command instead:
+
+```bash
+sudo COMPOSE_BAKE=false BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker compose up -d --build
+```
+
+If the host still fails, force the legacy build path:
+
+```bash
+sudo DOCKER_BUILDKIT=0 COMPOSE_DOCKER_CLI_BUILD=0 docker compose up -d --build
+```
+
+Check Compose plugin version with:
+
+```bash
+docker compose version
+```
+
 Stop the stack:
 
 ```bash
