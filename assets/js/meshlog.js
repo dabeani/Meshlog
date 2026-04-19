@@ -1255,10 +1255,16 @@ class MeshLogContact extends MeshLogObject {
         const activeTab = options.tab ?? 'general';
         const statsWindowHours = Number(options.statsWindowHours ?? 24);
         const generalActive = activeTab === 'general' ? ' device-popup-tab-active' : '';
-        const statsActive = activeTab === 'stats' ? ' device-popup-tab-active' : '';
-        const bodyHtml = activeTab === 'stats'
-            ? this.getDevicePopupStatsHtml(statsWindowHours)
-            : this.getDevicePopupGeneralHtml();
+        const statsActive   = activeTab === 'stats'   ? ' device-popup-tab-active' : '';
+        const healthActive  = activeTab === 'health'  ? ' device-popup-tab-active' : '';
+        let bodyHtml;
+        if (activeTab === 'stats') {
+            bodyHtml = this.getDevicePopupStatsHtml(statsWindowHours);
+        } else if (activeTab === 'health') {
+            bodyHtml = this._meshlog.getDevicePopupHealthHtml(this.data.id);
+        } else {
+            bodyHtml = this.getDevicePopupGeneralHtml();
+        }
 
         return `
             <div class="device-popup-card">
@@ -1273,6 +1279,7 @@ class MeshLogContact extends MeshLogObject {
                 <div class="device-popup-tabs" data-contact-id="${this.data.id}">
                     <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="general">General</button>
                     <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="stats">Stats</button>
+                    <button type="button" class="device-popup-tab${healthActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="health">Health</button>
                 </div>
                 <div class="device-popup-panel">${bodyHtml}</div>
             </div>
@@ -3171,6 +3178,7 @@ class MeshLog {
         this.route_trail_layers.addTo(this.map);
         this.popupUiState = { tab: 'general', statsWindowHours: 24 };
         this.contactPacketStatsCache = new Map();
+        this.contactHealthCache = new Map();
         this.contactAdvertisementTrailCache = new Map();
         this.generalStatsCache = new Map();
         this.generalStatsWindowHours = this._normalizeStatsWindowHours(Number(Settings.get('stats.window.hours', 24)));
@@ -3407,10 +3415,14 @@ class MeshLog {
         if (!contact?.adv) return;
 
         if (action === 'tab') {
+            const validTabs = ['general', 'stats', 'health'];
             this.popupUiState = {
                 ...this.popupUiState,
-                tab: value === 'stats' ? 'stats' : 'general'
+                tab: validTabs.includes(value) ? value : 'general',
             };
+            if (value === 'health') {
+                this._loadContactHealth(targetContactId);
+            }
             this.openContactPopup(contact);
             return;
         }
@@ -4151,6 +4163,254 @@ class MeshLog {
         }
         return this.showRouteTrail(contact);
     }
+
+    // ── Node Health Timeline ──────────────────────────────────────────────────
+
+    _getEmptyContactHealth(overrides = {}) {
+        return {
+            systemReports: overrides.systemReports ?? [],
+            telemetry: overrides.telemetry ?? null,
+            isLoading: overrides.isLoading ?? false,
+            hasError: overrides.hasError ?? false,
+            hasData: overrides.hasData ?? false,
+            note: overrides.note ?? '',
+        };
+    }
+
+    _loadContactHealth(contactId, forceRefresh = false) {
+        const numericContactId = Number(contactId);
+        if (!Number.isFinite(numericContactId)) return;
+
+        const key = `health:${numericContactId}`;
+        const now = Date.now();
+        const cacheTtlMs = 30 * 60 * 1000;
+        const cached = this.contactHealthCache.get(key) ?? null;
+
+        if (!forceRefresh && cached?.status === 'ready' && (now - cached.fetchedAt) < cacheTtlMs) return;
+        if (cached?.status === 'loading') return;
+
+        const loadingData = cached?.data
+            ? { ...cached.data, isLoading: true, hasError: false }
+            : this._getEmptyContactHealth({ isLoading: true });
+
+        this.contactHealthCache.set(key, { status: 'loading', fetchedAt: cached?.fetchedAt ?? 0, data: loadingData });
+
+        this.__fetchJson(
+            'api/v1/contact_health',
+            { contact_id: numericContactId, limit: 48 },
+            (data) => {
+                const normalized = data?.error
+                    ? this._getEmptyContactHealth({ hasError: true, note: data.error })
+                    : {
+                        systemReports: Array.isArray(data?.system_reports) ? data.system_reports : [],
+                        telemetry: data?.telemetry ?? null,
+                        isLoading: false,
+                        hasError: false,
+                        hasData: (data?.system_reports?.length ?? 0) > 0 || data?.telemetry != null,
+                        note: '',
+                    };
+                this.contactHealthCache.set(key, {
+                    status: data?.error ? 'error' : 'ready',
+                    fetchedAt: Date.now(),
+                    data: { ...normalized, isLoading: false },
+                });
+                if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'health') {
+                    this.updateSelectedContactPopup();
+                }
+            },
+            () => {
+                this.contactHealthCache.set(key, {
+                    status: 'error',
+                    fetchedAt: Date.now(),
+                    data: this._getEmptyContactHealth({ hasError: true, note: 'Failed to load health data.' }),
+                });
+                if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'health') {
+                    this.updateSelectedContactPopup();
+                }
+            }
+        );
+    }
+
+    getContactHealth(contactId) {
+        const key = `health:${Number(contactId)}`;
+        const cached = this.contactHealthCache.get(key) ?? null;
+        const cacheTtlMs = 30 * 60 * 1000;
+        if (cached?.status === 'ready' && (Date.now() - cached.fetchedAt) < cacheTtlMs) return cached.data;
+        if (!cached || cached?.status !== 'loading') this._loadContactHealth(contactId);
+        return cached?.data ?? this._getEmptyContactHealth({ isLoading: true });
+    }
+
+    _buildHealthSparkline(values, color = '#60b7ff', unitLabel = '', yMin = null) {
+        if (!values || values.length < 2) return '';
+        const valid = values.filter(v => v != null && Number.isFinite(Number(v))).map(Number);
+        if (valid.length < 2) return '';
+        const W = 240, H = 48;
+        const pad = 4;
+        const minV = yMin != null ? Math.min(yMin, ...valid) : Math.min(...valid);
+        const maxV = Math.max(...valid);
+        const range = maxV - minV || 1;
+        const pts = valid.map((v, i) => {
+            const x = pad + (i / (valid.length - 1)) * (W - pad * 2);
+            const y = H - pad - ((v - minV) / range) * (H - pad * 2);
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+        const firstVal = valid[valid.length - 1]; // newest first in array
+        const lastVal  = valid[0];
+        const labelVal = lastVal != null ? `${lastVal}${unitLabel}` : '';
+        return `
+            <svg class="health-sparkline" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+                <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+                <circle cx="${valid.length > 1 ? (pad + ((valid.length - 1) / (valid.length - 1)) * (W - pad * 2)).toFixed(1) : W - pad}" cy="${(H - pad - ((valid[valid.length - 1] - minV) / range) * (H - pad * 2)).toFixed(1)}" r="3" fill="${color}"/>
+            </svg>
+            <span class="health-sparkline-label">${escapeXml(labelVal)}</span>`;
+    }
+
+    _formatUptime(seconds) {
+        if (seconds == null || !Number.isFinite(Number(seconds))) return null;
+        const s = Number(seconds);
+        if (s < 60) return `${s}s`;
+        if (s < 3600) return `${Math.floor(s / 60)}m`;
+        if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+        return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
+    }
+
+    _formatHeapPct(free, total) {
+        if (free == null || total == null || !total) return null;
+        return `${Math.round((free / total) * 100)}%`;
+    }
+
+    getDevicePopupHealthHtml(contactId) {
+        const health = this.getContactHealth(contactId);
+
+        if (health.isLoading && !health.hasData) {
+            return `<div class="device-popup-section"><div class="device-popup-note">Loading health data…</div></div>`;
+        }
+        if (health.hasError) {
+            return `<div class="device-popup-section"><div class="device-popup-note device-popup-note-error">${escapeXml(health.note || 'Error loading health data.')}</div></div>`;
+        }
+        if (!health.hasData) {
+            return `<div class="device-popup-section"><div class="device-popup-note">No system reports recorded for this device.</div></div>`;
+        }
+
+        const reports = health.systemReports; // newest first
+        const latest  = reports[0] ?? null;
+
+        // Extract time series (oldest→newest for sparklines — reverse)
+        const ordered = [...reports].reverse();
+        const rssiSeries    = ordered.map(r => r.rssi);
+        const heapFreeSeries = ordered.map(r => r.heap_free != null && r.heap_total ? Math.round((r.heap_free / r.heap_total) * 100) : null);
+        const uptimeSeries  = ordered.map(r => r.uptime);
+
+        // Reboot detection: uptime went down
+        const reboots = reports.slice(0, -1).filter((r, i) => {
+            const next = reports[i + 1]; // older
+            return r.uptime != null && next?.uptime != null && r.uptime < next.uptime;
+        }).length;
+
+        // Version changes
+        const versions = [...new Set(reports.map(r => r.version).filter(Boolean))];
+
+        // RSSI color
+        const rssiColor = (v) => {
+            if (v == null) return 'rgba(205,220,238,0.4)';
+            if (v >= -60) return '#6dd98c';
+            if (v >= -75) return '#a3d96d';
+            if (v >= -85) return '#f0d060';
+            if (v >= -95) return '#f09040';
+            return '#e05050';
+        };
+
+        // Heap color (% free)
+        const heapColor = (pct) => {
+            if (pct == null) return 'rgba(205,220,238,0.4)';
+            if (pct >= 50) return '#6dd98c';
+            if (pct >= 30) return '#f0d060';
+            return '#e05050';
+        };
+
+        const latestRssi   = latest?.rssi;
+        const latestHeapPct = latest?.heap_free != null && latest?.heap_total
+            ? Math.round((latest.heap_free / latest.heap_total) * 100)
+            : null;
+        const latestUptime = this._formatUptime(latest?.uptime);
+        const latestVersion = latest?.version ?? null;
+        const receivedStr = latest?.received_at ? this.formatPopupTimestamp?.(latest.received_at) ?? latest.received_at : '-';
+
+        const rssiSparkline   = this._buildHealthSparkline(rssiSeries, rssiColor(latestRssi), ' dBm');
+        const heapSparkline   = this._buildHealthSparkline(heapFreeSeries, heapColor(latestHeapPct), '%', 0);
+        const uptimeSparkline = this._buildHealthSparkline(uptimeSeries, '#c890e8', 's');
+
+        const metricRow = (label, value, color, sparkline) => value != null
+            ? `<div class="health-metric-row">
+                <div class="health-metric-head">
+                    <span class="health-metric-label">${escapeXml(label)}</span>
+                    <span class="health-metric-value" style="color:${color}">${escapeXml(String(value))}</span>
+                </div>
+                <div class="health-metric-spark">${sparkline}</div>
+               </div>`
+            : '';
+
+        const rssiLabel  = latestRssi  != null ? `${latestRssi} dBm` : null;
+        const heapLabel  = latestHeapPct != null ? `${latestHeapPct}% free (${latest.heap_free != null ? (latest.heap_free / 1024).toFixed(0) + ' KB' : '-'})` : null;
+
+        const metricsHtml = [
+            metricRow('RSSI',      rssiLabel,  rssiColor(latestRssi),    rssiSparkline),
+            metricRow('Heap free', heapLabel,  heapColor(latestHeapPct), heapSparkline),
+            latestUptime ? metricRow('Uptime', latestUptime, '#c890e8', uptimeSparkline) : '',
+        ].join('');
+
+        const versionBadge = latestVersion
+            ? `<span class="health-version-badge">${escapeXml(latestVersion)}</span>`
+            : '';
+
+        const rebootBadge = reboots > 0
+            ? `<span class="health-reboot-badge" title="Detected ${reboots} uptime reset(s) in recorded history">${reboots} reboot${reboots !== 1 ? 's' : ''}</span>`
+            : '';
+
+        const versionList = versions.length > 1
+            ? `<div class="health-version-history">Versions seen: ${versions.map(v => `<span class="health-version-badge">${escapeXml(v)}</span>`).join(' ')}</div>`
+            : '';
+
+        // Telemetry section
+        let telemetryHtml = '';
+        if (health.telemetry?.data && Object.keys(health.telemetry.data).length > 0) {
+            const fields = Object.entries(health.telemetry.data)
+                .filter(([, v]) => v !== null && v !== undefined)
+                .map(([k, v]) => {
+                    const displayVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                    return `<div class="device-popup-row"><span class="device-popup-key">${escapeXml(k)}</span><span class="device-popup-value">${escapeXml(displayVal)}</span></div>`;
+                }).join('');
+            const telTime = health.telemetry.received_at
+                ? `<span class="health-tel-time">${escapeXml(health.telemetry.received_at)}</span>`
+                : '';
+            telemetryHtml = `
+                <div class="device-popup-section">
+                    <div class="health-section-head">
+                        <div class="device-popup-section-title">Latest Telemetry</div>
+                        ${telTime}
+                    </div>
+                    ${fields}
+                </div>`;
+        }
+
+        return `
+            <div class="device-popup-section">
+                <div class="health-section-head">
+                    <div class="device-popup-section-title">System Health</div>
+                    <div class="health-badges">${versionBadge}${rebootBadge}</div>
+                </div>
+                <div class="health-meta-row">
+                    <span class="health-meta-item">Last report: <b>${escapeXml(receivedStr)}</b></span>
+                    <span class="health-meta-item">Records: <b>${escapeXml(String(reports.length))}</b></span>
+                </div>
+                ${versionList}
+                ${metricsHtml}
+            </div>
+            ${telemetryHtml}
+        `;
+    }
+
+    // ── end Node Health Timeline ──────────────────────────────────────────────
 
     _getEmptyContactPacketStats(windowHours = 24, overrides = {}) {
         const bucketCount = this._getStatsBucketCount(windowHours);

@@ -2365,3 +2365,142 @@ h2 {
     color: #1d1a07;
     font-weight: bold;
 }
+
+/* ===== Health tab ===== */
+.health-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.health-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.health-version-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #1a3a5c;
+    color: #7ec8ff;
+    font-size: 10px;
+    font-family: monospace;
+    white-space: nowrap;
+}
+
+.health-reboot-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #3d1f00;
+    color: #ffaa44;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.health-version-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+/* One metric row: label+value on top, sparkline below */
+.health-metric-row {
+    margin-bottom: 10px;
+}
+
+.health-metric-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px;
+    margin-bottom: 2px;
+}
+
+.health-metric-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.health-metric-value {
+    font-size: 13px;
+    font-weight: 700;
+    font-family: monospace;
+}
+
+.health-metric-spark {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+}
+
+.health-sparkline {
+    display: block;
+    width: 100%;
+    height: 38px;
+    overflow: visible;
+}
+
+.health-sparkline-label {
+    display: block;
+    font-size: 10px;
+    color: #666;
+    text-align: right;
+    margin-top: 1px;
+}
+
+/* Meta row: a horizontal strip of small key=value pairs */
+.health-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.health-meta-item {
+    font-size: 11px;
+    color: #888;
+}
+
+.health-meta-item b {
+    color: #ccc;
+    font-weight: 600;
+}
+
+/* Telemetry section */
+.health-tel-time {
+    font-size: 10px;
+    color: #666;
+    margin-left: 4px;
+}
+
+.health-tel-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+    font-size: 11px;
+    padding: 2px 0;
+    border-bottom: 1px solid #222;
+}
+
+.health-tel-row:last-child {
+    border-bottom: none;
+}
+
+.health-tel-key {
+    color: #888;
+}
+
+.health-tel-val {
+    color: #ddd;
+    font-family: monospace;
+    text-align: right;
+}

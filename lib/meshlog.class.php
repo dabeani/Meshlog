@@ -2448,6 +2448,71 @@ class MeshLog {
         $params['where'] = array();
         return MeshLogSystemReport::getAll($this, $params);
     }
+
+    public function getContactHealthTimeline($contactId, $limit = 48) {
+        $contactId = intval($contactId);
+        $limit = max(1, min(200, intval($limit)));
+
+        if ($contactId <= 0) {
+            return array('error' => 'invalid contact_id');
+        }
+
+        // System reports for this contact
+        $sysStmt = $this->pdo->prepare("
+            SELECT sr.id, sr.version, sr.heap_total, sr.heap_free, sr.rssi, sr.uptime,
+                   sr.sent_at, sr.received_at, r.name AS reporter_name
+            FROM system_reports sr
+            LEFT JOIN reporters r ON r.id = sr.reporter_id
+            WHERE sr.contact_id = :contact_id
+            ORDER BY sr.received_at DESC
+            LIMIT :limit
+        ");
+        $sysStmt->bindValue(':contact_id', $contactId, PDO::PARAM_INT);
+        $sysStmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $sysStmt->execute();
+        $sysRows = array();
+        while ($row = $sysStmt->fetch(PDO::FETCH_ASSOC)) {
+            $sysRows[] = array(
+                'id'            => intval($row['id']),
+                'version'       => $row['version'] ?? null,
+                'heap_total'    => $row['heap_total'] !== null ? intval($row['heap_total']) : null,
+                'heap_free'     => $row['heap_free']  !== null ? intval($row['heap_free'])  : null,
+                'rssi'          => $row['rssi']        !== null ? intval($row['rssi'])        : null,
+                'uptime'        => $row['uptime']      !== null ? intval($row['uptime'])      : null,
+                'sent_at'       => $row['sent_at']     ?? null,
+                'received_at'   => $row['received_at'] ?? null,
+                'reporter_name' => $row['reporter_name'] ?? null,
+            );
+        }
+
+        // Latest telemetry blob for this contact
+        $telStmt = $this->pdo->prepare("
+            SELECT t.data, t.received_at, r.name AS reporter_name
+            FROM telemetry t
+            LEFT JOIN reporters r ON r.id = t.reporter_id
+            WHERE t.contact_id = :contact_id
+            ORDER BY t.received_at DESC
+            LIMIT 1
+        ");
+        $telStmt->bindValue(':contact_id', $contactId, PDO::PARAM_INT);
+        $telStmt->execute();
+        $telRow = $telStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $telemetry = null;
+        if ($telRow) {
+            $decoded = json_decode($telRow['data'] ?? '{}', true);
+            $telemetry = array(
+                'data'          => is_array($decoded) ? $decoded : array(),
+                'received_at'   => $telRow['received_at'] ?? null,
+                'reporter_name' => $telRow['reporter_name'] ?? null,
+            );
+        }
+
+        return array(
+            'contact_id'     => $contactId,
+            'system_reports' => $sysRows,
+            'telemetry'      => $telemetry,
+        );
+    }
 };
 
 ?>
