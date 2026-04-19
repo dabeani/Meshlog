@@ -3733,11 +3733,22 @@ class MeshLog {
         const barsHeight = barsBottom - barsTop;
         const barGap = 3;
         const barWidth = Math.max(4, Math.floor((barsWidth - ((bucketCount - 1) * barGap)) / bucketCount));
+        const bucketHours = windowHours / bucketCount;
         const barsSvg = safeBuckets.map((count, index) => {
             const height = Math.max(count > 0 ? 4 : 0, Math.round((count / maxBucket) * barsHeight));
             const x = yAxisWidth + index * (barWidth + barGap);
             const y = barsBottom - height;
-            return `<rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="2" ry="2"></rect>`;
+            // Time range for this bar: index 0 is oldest, last index is newest (now)
+            const hoursAgoEnd = Math.round((bucketCount - 1 - index) * bucketHours * 10) / 10;
+            const hoursAgoStart = Math.round((hoursAgoEnd + bucketHours) * 10) / 10;
+            const timeLabel = hoursAgoEnd === 0
+                ? `last ${bucketHours < 1 ? Math.round(bucketHours * 60) + ' min' : bucketHours.toFixed(1) + 'h'}`
+                : `-${hoursAgoStart.toFixed(hoursAgoStart % 1 === 0 ? 0 : 1)}h → -${hoursAgoEnd.toFixed(hoursAgoEnd % 1 === 0 ? 0 : 1)}h`;
+            const tooltipText = `${timeLabel}: ${count} ${unitLabel}`;
+            // Always render a full-height transparent hit area so empty bars are also hoverable.
+            const hitRect = `<rect x="${x}" y="${barsTop}" width="${barWidth}" height="${barsHeight}" fill="transparent"><title>${tooltipText}</title></rect>`;
+            const barRect = height > 0 ? `<rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="2" ry="2"></rect>` : '';
+            return hitRect + barRect;
         }).join('');
 
         return `
