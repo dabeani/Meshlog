@@ -8,8 +8,9 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ### Frontend — New Features
 
+- **Node Health tab in device popup** — Device popups now have a third `Health` tab alongside General and Stats. The tab fetches the last 48 system reports for the device and shows RSSI, heap-free percentage, and uptime as live sparkline charts. Detected reboots (uptime resets in the history) are flagged with an orange badge and a count. Firmware version history is shown in labeled pills, and the latest telemetry payload is rendered as a key-value section below the charts.
 - **Map heatmap overlay** — toggleable heatmap layer on the main map showing node advertisement position density weighted by report count; state is persisted across sessions and auto-reloads when the time window changes.
-- **Statistics page redesign** — compact KPI strip (devices · reports · collectors · channels in one line), side-by-side charts, 2-line collector and channel rows, and a route-type breakdown row; removes several hundred pixels of wasted vertical space.
+- **Statistics page redesign** — compact KPI strip (devices · reports · collectors · channels in one line), side-by-side charts, 2-line collector and channel rows, and a route-type breakdown row; removes several hundred pixels of wasted vertical space. Each collector now shows per-type packet breakdown as a segmented color bar, SNR quality badge, and channel message-per-hour rate.
 
 ### WebUI — Fixes & Improvements
 
