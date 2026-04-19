@@ -2512,17 +2512,35 @@ class MeshLog {
             return array('error' => 'invalid contact_id');
         }
 
+        $reporterIdStmt = $this->pdo->prepare(
+            "SELECT r.id FROM reporters r
+             JOIN contacts c ON UPPER(r.public_key) = UPPER(c.public_key)
+             WHERE c.id = :contact_id LIMIT 1"
+        );
+        $reporterIdStmt->bindValue(':contact_id', $contactId, PDO::PARAM_INT);
+        $reporterIdStmt->execute();
+        $reporterRow = $reporterIdStmt->fetch(PDO::FETCH_ASSOC);
+        $reporterId = $reporterRow ? intval($reporterRow['id']) : null;
+
         // System reports for this contact
-        $sysStmt = $this->pdo->prepare("
+        $sysSql = "
             SELECT sr.id, sr.version, sr.heap_total, sr.heap_free, sr.rssi, sr.uptime,
                    sr.sent_at, sr.received_at, r.name AS reporter_name
             FROM system_reports sr
             LEFT JOIN reporters r ON r.id = sr.reporter_id
-            WHERE sr.contact_id = :contact_id
+            WHERE sr.contact_id = :contact_id";
+        if ($reporterId !== null) {
+            $sysSql .= " OR sr.reporter_id = :reporter_id";
+        }
+        $sysSql .= "
             ORDER BY sr.received_at DESC
             LIMIT :limit
-        ");
+        ";
+        $sysStmt = $this->pdo->prepare($sysSql);
         $sysStmt->bindValue(':contact_id', $contactId, PDO::PARAM_INT);
+        if ($reporterId !== null) {
+            $sysStmt->bindValue(':reporter_id', $reporterId, PDO::PARAM_INT);
+        }
         $sysStmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $sysStmt->execute();
         $sysRows = array();
@@ -2541,15 +2559,23 @@ class MeshLog {
         }
 
         // Latest telemetry blob for this contact
-        $telStmt = $this->pdo->prepare("
+        $telSql = "
             SELECT t.data, t.received_at, r.name AS reporter_name
             FROM telemetry t
             LEFT JOIN reporters r ON r.id = t.reporter_id
-            WHERE t.contact_id = :contact_id
+            WHERE t.contact_id = :contact_id";
+        if ($reporterId !== null) {
+            $telSql .= " OR t.reporter_id = :reporter_id";
+        }
+        $telSql .= "
             ORDER BY t.received_at DESC
             LIMIT 1
-        ");
+        ";
+        $telStmt = $this->pdo->prepare($telSql);
         $telStmt->bindValue(':contact_id', $contactId, PDO::PARAM_INT);
+        if ($reporterId !== null) {
+            $telStmt->bindValue(':reporter_id', $reporterId, PDO::PARAM_INT);
+        }
         $telStmt->execute();
         $telRow = $telStmt->fetch(PDO::FETCH_ASSOC) ?: null;
         $telemetry = null;
@@ -2564,6 +2590,7 @@ class MeshLog {
 
         return array(
             'contact_id'     => $contactId,
+            'reporter_id'    => $reporterId,
             'system_reports' => $sysRows,
             'telemetry'      => $telemetry,
         );

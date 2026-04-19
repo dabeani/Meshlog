@@ -39,6 +39,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Contact enabled flag stored with correct database type** — the contact enabled column is now bound as an integer to the database, matching the underlying column type and preventing silent type coercion.
 - **Migrations run automatically at container boot** — The Docker entrypoint now applies any pending schema migrations before starting services, eliminating the need for a manual setup run after deployment.
 - **Device packet stats include relayed traffic** — The per-device packet count on the device detail popup previously only counted packets where the device was the sender. It now also counts all packets the device forwarded as a collector (reporter), giving an accurate total of activity seen for that node.
+- **Health tab now falls back to reporter-linked history** — Device popup health data now also resolves through the matching reporter identity when older or reporter-side system reports and telemetry are not directly linked by contact ID, so collector nodes no longer appear empty just because their health rows were stored reporter-first.
 
 ### Admin — New Features
 - **Coverage API SQL syntax fix** — The coverage spot API endpoint previously caused 500 errors due to incorrect parameter binding syntax in the DATE_SUB INTERVAL clause. Fixed by using `NOW() - INTERVAL :value HOUR` syntax instead, which is the correct MySQL parameter binding pattern.
