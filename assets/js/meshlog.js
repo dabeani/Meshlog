@@ -679,6 +679,64 @@ class MeshLogContact extends MeshLogObject {
         return this.neighbors_visible;
     }
 
+    showCollectorLinks() {
+        const contactLat = Number(this.adv?.data?.lat);
+        const contactLon = Number(this.adv?.data?.lon);
+        if (!Number.isFinite(contactLat) || !Number.isFinite(contactLon)) return false;
+        if (contactLat === 0 && contactLon === 0) return false;
+
+        const reporterIdsRaw = Array.isArray(this.data?.reporter_ids) ? this.data.reporter_ids : [];
+        const reporterIds = Array.from(new Set(reporterIdsRaw.map(Number).filter(id => Number.isFinite(id) && id > 0)));
+
+        const paths = [];
+        const markers = new Set([this.data.id]);
+
+        for (const rid of reporterIds) {
+            const reporter = this._meshlog.reporters[rid];
+            if (!reporter) continue;
+            const reporterContactId = Number(reporter.getContactId());
+            if (!Number.isFinite(reporterContactId) || reporterContactId < 0) continue;
+            const reporterContact = this._meshlog.contacts[reporterContactId];
+            if (!reporterContact?.adv?.data) continue;
+            const rLat = Number(reporterContact.adv.data.lat);
+            const rLon = Number(reporterContact.adv.data.lon);
+            if (!Number.isFinite(rLat) || !Number.isFinite(rLon)) continue;
+            if (rLat === 0 && rLon === 0) continue;
+            markers.add(reporterContactId);
+            paths.push(new MeshLogLinkLayer(
+                { lat: contactLat, lon: contactLon, contact_id: this.data.id },
+                { lat: rLat,       lon: rLon,       contact_id: reporterContactId },
+                reporter,
+                false
+            ));
+        }
+
+        const key = `cl_${this.data.id}`;
+        delete this._meshlog.layer_descs[key];
+
+        if (paths.length === 0) {
+            this._meshlog.updatePaths();
+            return false;
+        }
+
+        this._meshlog.layer_descs[key] = { paths, markers, warnings: [] };
+        this._meshlog.updatePaths();
+        return true;
+    }
+
+    hideCollectorLinks() {
+        delete this._meshlog.layer_descs[`cl_${this.data.id}`];
+        this._meshlog.updatePaths();
+    }
+
+    toggleCollectorLinks() {
+        if (this._meshlog.layer_descs[`cl_${this.data.id}`]) {
+            this.hideCollectorLinks();
+            return false;
+        }
+        return this.showCollectorLinks();
+    }
+
     createDom(recreate = false) {
         if (this.dom && !recreate) return this.dom;
 
@@ -1011,9 +1069,20 @@ class MeshLogContact extends MeshLogObject {
             `;
         }).join('');
 
+        const hasCoords = Number.isFinite(Number(this.adv?.data?.lat))
+            && Number.isFinite(Number(this.adv?.data?.lon))
+            && !(Number(this.adv?.data?.lat) === 0 && Number(this.adv?.data?.lon) === 0);
+        const linksVisible = !!this._meshlog.layer_descs?.[`cl_${this.data.id}`];
+        const mapBtnHtml = hasCoords
+            ? `<button type="button" class="device-popup-link-map-btn${linksVisible ? ' device-popup-tab-active' : ''}" data-contact-id="${this.data.id}" data-popup-action="collector-links">${linksVisible ? 'Hide from map' : 'Show on map'}</button>`
+            : '';
+
         return `
             <div class="device-popup-section">
-                <div class="device-popup-section-title">${escapeXml(title)}</div>
+                <div class="device-popup-section-head">
+                    <div class="device-popup-section-title">${escapeXml(title)}</div>
+                    ${mapBtnHtml}
+                </div>
                 ${rowsHtml}
             </div>
         `;
@@ -3441,6 +3510,16 @@ class MeshLog {
 
         if (action === 'neighbors') {
             contact.toggleNeighbors();
+            this.popupUiState = {
+                ...this.popupUiState,
+                tab: 'general',
+            };
+            this.openContactPopup(contact);
+            return;
+        }
+
+        if (action === 'collector-links') {
+            contact.toggleCollectorLinks();
             this.popupUiState = {
                 ...this.popupUiState,
                 tab: 'general',
