@@ -408,6 +408,39 @@ var _UnifiedMapMenu = L.Control.extend({
         layerSection.appendChild(layerButtons);
         extraSection.appendChild(layerSection);
 
+        // Heatmap section
+        var heatmapSection = L.DomUtil.create('div', 'map-menu-section');
+        var heatmapTitleEl = L.DomUtil.create('span', 'map-menu-title');
+        heatmapTitleEl.textContent = 'Heatmap';
+        heatmapSection.appendChild(heatmapTitleEl);
+
+        var heatmapCtrlRow = L.DomUtil.create('div', 'map-menu-heatmap-ctrl');
+        var heatmapToggleBtn = L.DomUtil.create('button', 'map-menu-heatmap-toggle');
+        heatmapToggleBtn.id = 'map-heatmap-toggle-btn';
+        heatmapToggleBtn.textContent = 'Off';
+        heatmapToggleBtn.title = 'Toggle heatmap overlay';
+        heatmapToggleBtn.addEventListener('click', function() {
+            if (window.meshlog) window.meshlog.toggleHeatmap();
+        });
+        var heatmapStatusEl = L.DomUtil.create('span', 'map-menu-heatmap-status');
+        heatmapStatusEl.id = 'map-heatmap-status';
+        heatmapCtrlRow.appendChild(heatmapToggleBtn);
+        heatmapCtrlRow.appendChild(heatmapStatusEl);
+        heatmapSection.appendChild(heatmapCtrlRow);
+
+        var heatmapWindowRow = L.DomUtil.create('div', 'map-menu-heatmap-windows');
+        [1, 24, 36].forEach(function(h) {
+            var wBtn = L.DomUtil.create('button', 'map-menu-heatmap-window-btn');
+            wBtn.dataset.hours = String(h);
+            wBtn.textContent = h + 'h';
+            wBtn.addEventListener('click', function() {
+                if (window.meshlog) window.meshlog.setHeatmapWindow(h);
+            });
+            heatmapWindowRow.appendChild(wBtn);
+        });
+        heatmapSection.appendChild(heatmapWindowRow);
+        extraSection.appendChild(heatmapSection);
+
         // Legend section
         var legendSection = L.DomUtil.create('div', 'map-menu-section');
         var legendTitle = L.DomUtil.create('span', 'map-menu-title');
@@ -485,6 +518,7 @@ var meshlog = new MeshLog(
 );
 meshlog.loadAll();
 meshlog.setAutorefresh(10000);
+meshlog.updateHeatmapMenuState();
 if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
     meshlog.refreshGeneralStatsPanel();
 }

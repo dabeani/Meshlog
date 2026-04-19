@@ -3174,6 +3174,7 @@ class MeshLog {
         this.generalStatsCache = new Map();
         this.generalStatsWindowHours = this._normalizeStatsWindowHours(Number(Settings.get('stats.window.hours', 24)));
         this._heatmapEnabled = Settings.get('heatmap.enabled', '0') === '1';
+        this.heatmapWindowHours = this._normalizeStatsWindowHours(Number(Settings.get('heatmap.window.hours', 24)));
         this._heatmapLayer = null;
         this.activePopupContactId = null;
         this.activeContactTrailMap = null;
@@ -3361,12 +3362,6 @@ class MeshLog {
             return;
         }
 
-        const heatmapToggleButton = target.closest('[data-action="toggle-heatmap"]');
-        if (heatmapToggleButton) {
-            event.preventDefault();
-            event.stopPropagation();
-            this._toggleHeatmap();
-        }
     }
 
     handlePopupAction(contactId, action, value) {
@@ -4448,9 +4443,6 @@ class MeshLog {
         this.generalStatsWindowHours = this._normalizeStatsWindowHours(windowHours);
         Settings.set('stats.window.hours', this.generalStatsWindowHours);
         this.refreshGeneralStatsPanel(true);
-        if (this._heatmapEnabled) {
-            this._loadHeatmapData(this.generalStatsWindowHours);
-        }
     }
 
     _renderGeneralStatsHtml(stats, windowHours = 24) {
@@ -4469,12 +4461,6 @@ class MeshLog {
             const active = hours === normalizedWindowHours ? ' general-stats-range-active' : '';
             return `<button type="button" class="general-stats-range${active}" data-hours="${hours}">${hours}h</button>`;
         }).join('');
-
-        // Heatmap toggle (only shown when leaflet.heat is loaded)
-        const heatmapActive = this._heatmapEnabled ? ' general-stats-heatmap-btn-active' : '';
-        const heatmapBtn = (typeof L !== 'undefined' && typeof L.heatLayer === 'function')
-            ? `<button type="button" class="general-stats-heatmap-btn${heatmapActive}" data-action="toggle-heatmap">${this._heatmapEnabled ? '🔥 Heatmap ON' : '🔥 Heatmap'}</button>`
-            : '';
 
         // Compact KPI strip
         const kpiItems = [
@@ -4575,7 +4561,6 @@ class MeshLog {
                     <div class="general-stats-range-group">${windowButtons}</div>
                     <div class="general-stats-toolbar-right">
                         <span class="general-stats-meta">History: ${renderValue(stats.loadedSpanLabel)}</span>
-                        ${heatmapBtn}
                     </div>
                 </div>
                 <div class="stats-kpi-strip">${kpiHtml}</div>
@@ -4617,29 +4602,56 @@ class MeshLog {
         this.dom_general_stats.innerHTML = this._renderGeneralStatsHtml(stats, normalizedWindowHours);
     }
 
-    _toggleHeatmap() {
+    toggleHeatmap() {
         this._heatmapEnabled = !this._heatmapEnabled;
         Settings.set('heatmap.enabled', this._heatmapEnabled ? '1' : '0');
         if (this._heatmapEnabled) {
-            this._loadHeatmapData(this._normalizeStatsWindowHours(this.generalStatsWindowHours));
+            this._loadHeatmapData(this.heatmapWindowHours);
         } else {
             this._removeHeatmapLayer();
         }
-        this.refreshGeneralStatsPanel();
+        this.updateHeatmapMenuState();
+    }
+
+    setHeatmapWindow(hours) {
+        this.heatmapWindowHours = this._normalizeStatsWindowHours(hours);
+        Settings.set('heatmap.window.hours', this.heatmapWindowHours);
+        if (this._heatmapEnabled) {
+            this._loadHeatmapData(this.heatmapWindowHours);
+        }
+        this.updateHeatmapMenuState();
+    }
+
+    updateHeatmapMenuState() {
+        const toggleBtn = document.getElementById('map-heatmap-toggle-btn');
+        if (toggleBtn) {
+            toggleBtn.textContent = this._heatmapEnabled ? 'On' : 'Off';
+            toggleBtn.classList.toggle('map-menu-heatmap-toggle-active', this._heatmapEnabled);
+        }
+        document.querySelectorAll('.map-menu-heatmap-window-btn').forEach((btn) => {
+            btn.classList.toggle('active', parseInt(btn.dataset.hours) === this.heatmapWindowHours);
+        });
     }
 
     _loadHeatmapData(windowHours) {
         const wh = this._normalizeStatsWindowHours(windowHours);
+        const statusEl = document.getElementById('map-heatmap-status');
+        if (statusEl) statusEl.textContent = 'loading…';
         fetch(`api/v1/stats/heatmap/?window_hours=${wh}`)
             .then((r) => r.json())
             .then((data) => {
                 if (Array.isArray(data.points) && data.points.length > 0) {
                     this._applyHeatmapLayer(data.points);
+                    if (statusEl) statusEl.textContent = `${data.points.length} pts`;
                 } else {
                     this._removeHeatmapLayer();
+                    if (statusEl) statusEl.textContent = 'no data';
                 }
             })
-            .catch((e) => error_log('[Heatmap] fetch failed: ' + e));
+            .catch((e) => {
+                console.warn('[Heatmap] fetch failed:', e);
+                if (statusEl) statusEl.textContent = 'error';
+            });
     }
 
     _applyHeatmapLayer(points) {
@@ -4662,6 +4674,8 @@ class MeshLog {
             this.map.removeLayer(this._heatmapLayer);
             this._heatmapLayer = null;
         }
+        const statusEl = document.getElementById('map-heatmap-status');
+        if (statusEl) statusEl.textContent = '';
     }
 
     _initMapPanes() {

@@ -637,6 +637,78 @@ h2 {
     flex-shrink: 0;
 }
 
+/* Heatmap controls in map menu */
+.map-menu-heatmap-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+}
+
+.map-menu-heatmap-toggle {
+    padding: 4px 11px;
+    border-radius: 7px;
+    border: 1px solid rgba(255,140,0,0.22);
+    background: rgba(255,100,0,0.07);
+    color: rgba(255,185,100,0.65);
+    font-size: 0.66rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.map-menu-heatmap-toggle:hover {
+    background: rgba(255,100,0,0.18);
+    color: #ffcc80;
+    border-color: rgba(255,160,0,0.42);
+}
+
+.map-menu-heatmap-toggle.map-menu-heatmap-toggle-active {
+    background: rgba(255,120,0,0.28);
+    border-color: rgba(255,165,0,0.6);
+    color: #ffcc80;
+}
+
+.map-menu-heatmap-status {
+    font-size: 0.62rem;
+    color: rgba(255,255,255,0.38);
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.map-menu-heatmap-windows {
+    display: flex;
+    gap: 4px;
+}
+
+.map-menu-heatmap-window-btn {
+    flex: 1;
+    padding: 4px 0;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.5);
+    font-size: 0.62rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.map-menu-heatmap-window-btn:hover {
+    background: rgba(255,100,0,0.12);
+    color: rgba(255,185,100,0.85);
+    border-color: rgba(255,140,0,0.28);
+}
+
+.map-menu-heatmap-window-btn.active {
+    background: rgba(255,120,0,0.24);
+    border-color: rgba(255,165,0,0.55);
+    color: #ffcc80;
+}
+
 /* Device bubble activity indicator glow */
 @keyframes device-activity-glow {
     0% {
