@@ -4,6 +4,25 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ---
 
+## [v1.0.6] — GPS routes, coverage overlay, contextual help (2026-04-19)
+
+### Frontend — New Features
+
+- **GPS movement route lines on the device minimap** — The GPS history trail in the device popup now connects consecutive fixes with a polyline. A gap of more than 2 hours between fixes breaks the route into a new segment. Dots fade from dim blue (oldest) to bright cyan (newest), and the last-known-position fix is rendered larger.
+- **SNR coverage spot overlay** — A new Coverage layer in the map menu draws small colored circles across the map, one per ~111 m grid cell, colored by average Signal-to-Noise Ratio (green = strong, red = poor). Spot size scales with the number of reports in that cell. A time-window selector (24 h / 7 d / 30 d) and an On/Off toggle mirror the existing heatmap controls.
+- **Contextual help overlay** — Every major map menu section (Map Layer, Heatmap, Coverage) and sidebar panel (Device List, Stats) now has a `?` button that opens a full-screen overlay with a plain-language explanation. Works on both mobile and desktop. The overlay also closes on backdrop click or Escape.
+
+### Backend — New Features
+
+- **Coverage spot API** — New endpoint `api/v1/coverage/` returns average SNR, peak SNR, and report count per grid cell for a configurable time window; used by the coverage overlay.
+
+### Bug Fixes
+
+- **Map menu `?` buttons were non-functional** — Leaflet's `stopPropagation` prevented click events from reaching the delegated `[data-help]` document listener. Fixed by calling the help function directly inside the Leaflet handler.
+- **Help overlay lost line breaks for filter-panel topics** — Legacy help text using `\n` for paragraph breaks was rendered without formatting after switching to `innerHTML`. Fixed by escaping the text and converting `\n` to `<br>`.
+
+---
+
 ## [v1.0.5] — Map/Live Feed UI (2026-04-19)
 
 ### Frontend — New Features
