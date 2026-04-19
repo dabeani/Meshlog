@@ -877,12 +877,9 @@ h2 {
     line-height: 1.1;
 }
 
-/* Dropdown anchored below the map menu search field */
+/* Dropdown for map menu search — positioned via JS (fixed, viewport-relative)
+   so it escapes the overflow:auto clipping on .map-menu-panel */
 .map-menu-search-dropdown {
-    position: absolute;
-    top: calc(100% + 5px);
-    left: 0;
-    right: 0;
     z-index: 10000;
     margin-top: 0;
 }

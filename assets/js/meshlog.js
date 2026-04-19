@@ -3351,16 +3351,21 @@ class MeshLog {
         const menuSearchInput = document.getElementById('map-menu-search-input');
         if (!menuSearchInput) return;
 
-        // Build the dropdown anchored to the search-row container
-        const searchRow = menuSearchInput.closest('.map-menu-search-row') ?? menuSearchInput.parentElement;
-        searchRow.style.position = 'relative';
-
+        // Mount the dropdown on <body> so it escapes overflow:auto clipping on the panel
         const results = document.createElement('div');
         results.className = 'map-search-results map-menu-search-dropdown';
         results.hidden = true;
-        searchRow.appendChild(results);
+        document.body.appendChild(results);
 
         this._mapMenuSearch = { input: menuSearchInput, results, activeIndex: -1 };
+
+        const reposition = () => {
+            const r = menuSearchInput.getBoundingClientRect();
+            results.style.position = 'fixed';
+            results.style.top  = (r.bottom + 5) + 'px';
+            results.style.left = r.left + 'px';
+            results.style.width = r.width + 'px';
+        };
 
         const hide = () => {
             results.hidden = true;
@@ -3375,12 +3380,12 @@ class MeshLog {
         };
 
         menuSearchInput.addEventListener('input', () => {
-            this._renderMapSearchResultsInMenu(menuSearchInput.value);
+            this._renderMapSearchResultsInMenu(menuSearchInput.value, reposition);
         });
 
         menuSearchInput.addEventListener('focus', () => {
             if (menuSearchInput.value.trim()) {
-                this._renderMapSearchResultsInMenu(menuSearchInput.value);
+                this._renderMapSearchResultsInMenu(menuSearchInput.value, reposition);
             }
         });
 
@@ -3439,7 +3444,7 @@ class MeshLog {
         });
     }
 
-    _renderMapSearchResultsInMenu(query) {
+    _renderMapSearchResultsInMenu(query, reposition) {
         const s = this._mapMenuSearch;
         if (!s?.results) return;
 
@@ -3463,7 +3468,6 @@ class MeshLog {
 
         s.activeIndex = -1;
         s.results.innerHTML = '';
-        s.results.hidden = false;
 
         for (const contact of items) {
             const btn = document.createElement('button');
@@ -3493,6 +3497,10 @@ class MeshLog {
             });
             s.results.appendChild(btn);
         }
+
+        // Position then show — avoids flash at wrong location
+        if (typeof reposition === 'function') reposition();
+        s.results.hidden = false;
     }
 
     _normalizeSearchText(value) {
