@@ -2339,7 +2339,7 @@ class MeshLog {
                     COUNT(*)              AS report_count
                 FROM advertisement_reports ar
                 JOIN advertisements a ON a.id = ar.advertisement_id
-                WHERE ar.received_at >= DATE_SUB(NOW(), INTERVAL :wh HOUR)
+                WHERE ar.received_at >= NOW() - INTERVAL :wh HOUR
                   AND a.lat IS NOT NULL AND a.lat != 0
                   AND a.lon IS NOT NULL AND a.lon != 0
                   AND ar.snr IS NOT NULL
@@ -2387,41 +2387,41 @@ class MeshLog {
             // all contribute to the heatmap weight.
             $stmt = $this->pdo->prepare("
                 SELECT MAX(loc.lat) AS lat, MAX(loc.lon) AS lon, SUM(act.cnt) AS weight
-                FROM (
-                    SELECT contact_id, AVG(lat) AS lat, AVG(lon) AS lon
-                    FROM advertisements
-                    WHERE lat IS NOT NULL AND lat != 0
-                      AND lon IS NOT NULL AND lon != 0
-                    GROUP BY contact_id
-                ) loc
+                                FROM (
+                                        SELECT contact_id, AVG(lat) AS lat, AVG(lon) AS lon
+                                        FROM advertisements
+                                        WHERE type = 2 AND lat IS NOT NULL AND lat != 0
+                                            AND lon IS NOT NULL AND lon != 0
+                                        GROUP BY contact_id
+                                ) loc
                 INNER JOIN (
                     SELECT a.contact_id, COUNT(*) AS cnt
                     FROM advertisement_reports ar
                     JOIN advertisements a ON a.id = ar.advertisement_id
-                    WHERE ar.received_at >= DATE_SUB(NOW(), INTERVAL :w1 HOUR)
+                    WHERE a.type = 2 AND ar.received_at >= NOW() - INTERVAL :w1 HOUR
                     GROUP BY a.contact_id
                     UNION ALL
                     SELECT dm.contact_id, COUNT(*) AS cnt
                     FROM direct_message_reports dmr
                     JOIN direct_messages dm ON dm.id = dmr.direct_message_id
-                    WHERE dmr.received_at >= DATE_SUB(NOW(), INTERVAL :w2 HOUR)
+                    WHERE dmr.received_at >= NOW() - INTERVAL :w2 HOUR
                     GROUP BY dm.contact_id
                     UNION ALL
                     SELECT cm.contact_id, COUNT(*) AS cnt
                     FROM channel_message_reports cmr
                     JOIN channel_messages cm ON cm.id = cmr.channel_message_id
-                    WHERE cmr.received_at >= DATE_SUB(NOW(), INTERVAL :w3 HOUR)
+                    WHERE cmr.received_at >= NOW() - INTERVAL :w3 HOUR
                     GROUP BY cm.contact_id
                     UNION ALL
                     SELECT contact_id, COUNT(*) AS cnt
                     FROM telemetry
-                    WHERE received_at >= DATE_SUB(NOW(), INTERVAL :w4 HOUR)
+                    WHERE received_at >= NOW() - INTERVAL :w4 HOUR
                       AND contact_id IS NOT NULL
                     GROUP BY contact_id
                     UNION ALL
                     SELECT contact_id, COUNT(*) AS cnt
                     FROM raw_packets
-                    WHERE received_at >= DATE_SUB(NOW(), INTERVAL :w5 HOUR)
+                    WHERE received_at >= NOW() - INTERVAL :w5 HOUR
                       AND contact_id IS NOT NULL
                     GROUP BY contact_id
                 ) act ON act.contact_id = loc.contact_id
