@@ -12,7 +12,6 @@ if (php_sapi_name() !== 'cli') {
 $appRoot = dirname(__DIR__);
 
 require_once "$appRoot/lib/migration.class.php";
-require_once "$appRoot/lib/meshlog.class.php";
 
 // Include every migration file in order.
 $migrationFiles = glob("$appRoot/migrations/[0-9][0-9][0-9]_*.php");
