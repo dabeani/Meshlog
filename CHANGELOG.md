@@ -4,29 +4,13 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ---
 
-## [v1.0.6] — GPS routes, coverage overlay, contextual help (2026-04-19)
+## [v1.0.5] — Map/Live Feed UI (2026-04-19)
 
 ### Frontend — New Features
 
 - **GPS movement route lines on the device minimap** — The GPS history trail in the device popup now connects consecutive fixes with a polyline. A gap of more than 2 hours between fixes breaks the route into a new segment. Dots fade from dim blue (oldest) to bright cyan (newest), and the last-known-position fix is rendered larger.
 - **SNR coverage spot overlay** — A new Coverage layer in the map menu draws small colored circles across the map, one per ~111 m grid cell, colored by average Signal-to-Noise Ratio (green = strong, red = poor). Spot size scales with the number of reports in that cell. A time-window selector (24 h / 7 d / 30 d) and an On/Off toggle mirror the existing heatmap controls.
 - **Contextual help overlay** — Every major map menu section (Map Layer, Heatmap, Coverage) and sidebar panel (Device List, Stats) now has a `?` button that opens a full-screen overlay with a plain-language explanation. Works on both mobile and desktop. The overlay also closes on backdrop click or Escape.
-
-### Backend — New Features
-
-- **Coverage spot API** — New endpoint `api/v1/coverage/` returns average SNR, peak SNR, and report count per grid cell for a configurable time window; used by the coverage overlay.
-
-### Bug Fixes
-
-- **Map menu `?` buttons were non-functional** — Leaflet's `stopPropagation` prevented click events from reaching the delegated `[data-help]` document listener. Fixed by calling the help function directly inside the Leaflet handler.
-- **Help overlay lost line breaks for filter-panel topics** — Legacy help text using `\n` for paragraph breaks was rendered without formatting after switching to `innerHTML`. Fixed by escaping the text and converting `\n` to `<br>`.
-
----
-
-## [v1.0.5] — Map/Live Feed UI (2026-04-19)
-
-### Frontend — New Features
-
 - **Node Health tab in device popup** — Device popups now have a third `Health` tab alongside General and Stats. The tab fetches the last 48 system reports for the device and shows RSSI, heap-free percentage, and uptime as live sparkline charts. Detected reboots (uptime resets in the history) are flagged with an orange badge and a count. Firmware version history is shown in labeled pills, and the latest telemetry payload is rendered as a key-value section below the charts.
 - **Collector-links map overlay** — The "Reported By" section in the General tab now has a "Show on map" toggle button. Clicking it draws lines from the device to each collector (reporter) that has heard it, using each collector's assigned color. Clicking again hides the lines. Works the same as the neighbor-link overlay — lines stay on the map while the popup is open or closed.
 - **Map heatmap overlay** — toggleable heatmap layer on the main map showing node advertisement position density weighted by report count; state is persisted across sessions and auto-reloads when the time window changes.
@@ -41,6 +25,10 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Device activity indicator glow** — Device bubbles on an active packet path now smoothly pulse with a cyan glow effect while the animated route is displayed, providing visual feedback for receive/forward/send activity. Glow automatically resets to allow re-triggering on new packets.
 - **Map control overlap fix** — Removed duplicate search control from top-right that was overlapping with the unified menu since search is now integrated into the unified panel.
 - **Chart bar tooltip** — Hovering over a bar in the device activity chart now shows a styled floating tooltip with the time range and packet count, replacing the plain unstyled browser-native tooltip.
+
+### Backend — New Features
+
+- **Coverage spot API** — New endpoint `api/v1/coverage/` returns average SNR, peak SNR, and report count per grid cell for a configurable time window; used by the coverage overlay.
 
 ### Backend — Security & Fixes
 
