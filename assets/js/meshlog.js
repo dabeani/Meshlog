@@ -1232,6 +1232,7 @@ class MeshLogContact extends MeshLogObject {
             `Newest packet: ${renderValue(stats.newestLabel)}`,
             `Oldest packet: ${renderValue(stats.oldestLabel)}`,
             `Packet mix: ${renderValue(stats.packetMixLabel)}`,
+            ...(stats.reporterId != null ? [`Collector (reporter id): ${renderValue(stats.reporterId)}`] : []),
         ];
 
         return `
@@ -4121,7 +4122,8 @@ class MeshLog {
             packetMixLabel: overrides.packetMixLabel ?? 'No packets recorded',
             chartSvg: this._buildStatsChartSvg(buckets, windowHours),
             sourceLabel: overrides.sourceLabel ?? 'Database',
-            note: overrides.note ?? 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, CTRL, RAW).',
+            note: overrides.note ?? '',
+            reporterId: overrides.reporterId ?? null,
             isLoading: overrides.isLoading ?? false,
             hasError: overrides.hasError ?? false,
             hasData: overrides.hasData ?? false,
@@ -4143,6 +4145,10 @@ class MeshLog {
             : [];
         const totalLoaded = Number(response?.total_packets) || 0;
 
+        const reporterId = (response?.reporter_id != null && response.reporter_id !== '' && Number(response.reporter_id) > 0)
+            ? Number(response.reporter_id)
+            : null;
+
         return this._getEmptyContactPacketStats(windowHours, {
             totalLoaded,
             last1h: Number(response?.last_1h) || 0,
@@ -4153,8 +4159,9 @@ class MeshLog {
             oldestLabel: Number.isFinite(oldestTime) ? new Date(oldestTime).toLocaleString() : '-',
             packetMixLabel,
             buckets,
-            sourceLabel: 'Database',
-            note: response?.note ?? 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, CTRL, RAW).',
+            sourceLabel: reporterId != null ? 'Database (sent + relayed)' : 'Database',
+            note: response?.note ?? '',
+            reporterId,
             hasData: totalLoaded > 0,
         });
     }

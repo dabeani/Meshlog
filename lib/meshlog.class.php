@@ -1851,58 +1851,138 @@ class MeshLog {
         $bucketSeconds = max(1, intval(($windowHours * 3600) / $bucketCount));
         $bucketMaxIndex = $bucketCount - 1;
 
-        $unionSql = "
+        // Packets sent BY this device (where it is the originating contact).
+        $sentUnionSql = "
             SELECT 'ADV' AS packet_type, created_at
             FROM advertisements
-            WHERE contact_id = :contact_id_adv
+            WHERE contact_id = :sent_contact_id_adv
 
             UNION ALL
 
             SELECT 'DIR' AS packet_type, created_at
             FROM direct_messages
-            WHERE contact_id = :contact_id_dir
+            WHERE contact_id = :sent_contact_id_dir
 
             UNION ALL
 
             SELECT 'PUB' AS packet_type, created_at
             FROM channel_messages
-            WHERE contact_id = :contact_id_pub
+            WHERE contact_id = :sent_contact_id_pub
 
             UNION ALL
 
             SELECT 'TEL' AS packet_type, created_at
             FROM telemetry
-            WHERE contact_id = :contact_id_tel
+            WHERE contact_id = :sent_contact_id_tel
 
             UNION ALL
 
             SELECT 'SYS' AS packet_type, created_at
             FROM system_reports
-            WHERE contact_id = :contact_id_sys
+            WHERE contact_id = :sent_contact_id_sys
 
             UNION ALL
 
-            -- CONTROL packets (payload_type = 11, derived from header byte)
             SELECT 'CTRL' AS packet_type, created_at
             FROM raw_packets
-            WHERE contact_id = :contact_id_ctrl AND (header >> 2) & 15 = 11
+            WHERE contact_id = :sent_contact_id_ctrl AND (header >> 2) & 15 = 11
 
             UNION ALL
 
-            -- All other raw packets (ACK, PATH, ANON_REQ, undecoded, etc.)
             SELECT 'RAW' AS packet_type, created_at
             FROM raw_packets
-            WHERE contact_id = :contact_id_raw AND (header >> 2) & 15 != 11
+            WHERE contact_id = :sent_contact_id_raw AND (header >> 2) & 15 != 11
         ";
 
-        $bindContact = function($stmt) use ($contactId) {
-            $stmt->bindValue(':contact_id_adv',  $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_dir',  $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_pub',  $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_tel',  $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_sys',  $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_ctrl', $contactId, PDO::PARAM_INT);
-            $stmt->bindValue(':contact_id_raw',  $contactId, PDO::PARAM_INT);
+        $bindSent = function($stmt) use ($contactId) {
+            $stmt->bindValue(':sent_contact_id_adv',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':sent_contact_id_dir',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':sent_contact_id_pub',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':sent_contact_id_tel',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':sent_contact_id_sys',  $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':sent_contact_id_ctrl', $contactId, PDO::PARAM_INT);
+            $stmt->bindValue(':sent_contact_id_raw',  $contactId, PDO::PARAM_INT);
+        };
+
+        // If this contact is also a reporter (same public_key in reporters table),
+        // build a second UNION for all packets it received/relayed as a collector.
+        $reporterIdStmt = $this->pdo->prepare(
+            "SELECT r.id FROM reporters r
+             JOIN contacts c ON UPPER(r.public_key) = UPPER(c.public_key)
+             WHERE c.id = :contact_id LIMIT 1"
+        );
+        $reporterIdStmt->bindValue(':contact_id', $contactId, PDO::PARAM_INT);
+        $reporterIdStmt->execute();
+        $reporterRow = $reporterIdStmt->fetch(PDO::FETCH_ASSOC);
+        $reporterId = $reporterRow ? intval($reporterRow['id']) : null;
+
+        // Packets seen/relayed BY this device as a reporter (every packet it forwarded,
+        // regardless of sender — the full through-put of the collector).
+        $relayedUnionSql = null;
+        $bindRelayed = null;
+        if ($reporterId !== null) {
+            $relayedUnionSql = "
+                SELECT 'ADV' AS packet_type, ar.created_at
+                FROM advertisement_reports ar
+                WHERE ar.reporter_id = :relay_reporter_id_adv
+
+                UNION ALL
+
+                SELECT 'DIR' AS packet_type, dr.created_at
+                FROM direct_message_reports dr
+                WHERE dr.reporter_id = :relay_reporter_id_dir
+
+                UNION ALL
+
+                SELECT 'PUB' AS packet_type, cr.created_at
+                FROM channel_message_reports cr
+                WHERE cr.reporter_id = :relay_reporter_id_pub
+
+                UNION ALL
+
+                SELECT 'TEL' AS packet_type, tel.created_at
+                FROM telemetry tel
+                WHERE tel.reporter_id = :relay_reporter_id_tel
+
+                UNION ALL
+
+                SELECT 'SYS' AS packet_type, sys.created_at
+                FROM system_reports sys
+                WHERE sys.reporter_id = :relay_reporter_id_sys
+
+                UNION ALL
+
+                SELECT 'CTRL' AS packet_type, rp.created_at
+                FROM raw_packets rp
+                WHERE rp.reporter_id = :relay_reporter_id_ctrl AND (rp.header >> 2) & 15 = 11
+
+                UNION ALL
+
+                SELECT 'RAW' AS packet_type, rp.created_at
+                FROM raw_packets rp
+                WHERE rp.reporter_id = :relay_reporter_id_raw AND (rp.header >> 2) & 15 != 11
+            ";
+            $bindRelayed = function($stmt) use ($reporterId) {
+                $stmt->bindValue(':relay_reporter_id_adv',  $reporterId, PDO::PARAM_INT);
+                $stmt->bindValue(':relay_reporter_id_dir',  $reporterId, PDO::PARAM_INT);
+                $stmt->bindValue(':relay_reporter_id_pub',  $reporterId, PDO::PARAM_INT);
+                $stmt->bindValue(':relay_reporter_id_tel',  $reporterId, PDO::PARAM_INT);
+                $stmt->bindValue(':relay_reporter_id_sys',  $reporterId, PDO::PARAM_INT);
+                $stmt->bindValue(':relay_reporter_id_ctrl', $reporterId, PDO::PARAM_INT);
+                $stmt->bindValue(':relay_reporter_id_raw',  $reporterId, PDO::PARAM_INT);
+            };
+        }
+
+        // Combined UNION of sent + relayed (deduplicated only by time, not ID — intentionally
+        // double-counts if device sent AND relayed the same packet, which doesn't happen in practice).
+        $full_union_parts = array("SELECT packet_type, created_at FROM ($sentUnionSql) _sent");
+        if ($relayedUnionSql !== null) {
+            $full_union_parts[] = "SELECT packet_type, created_at FROM ($relayedUnionSql) _relayed";
+        }
+        $unionSql = implode("\n UNION ALL\n", $full_union_parts);
+        $bindAll = function($stmt) use ($bindSent, $bindRelayed) {
+            $bindSent($stmt);
+            if ($bindRelayed) $bindRelayed($stmt);
         };
 
         $summarySql = "
@@ -1919,7 +1999,7 @@ class MeshLog {
         ";
 
         $summaryStmt = $this->pdo->prepare($summarySql);
-        $bindContact($summaryStmt);
+        $bindAll($summaryStmt);
         $summaryStmt->execute();
         $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: array();
 
@@ -1933,7 +2013,7 @@ class MeshLog {
         ";
 
         $mixStmt = $this->pdo->prepare($mixSql);
-        $bindContact($mixStmt);
+        $bindAll($mixStmt);
         $mixStmt->execute();
 
         $packetMix = array();
@@ -1966,7 +2046,7 @@ class MeshLog {
         $bucketStmt->bindValue(':bucket_max_index', $bucketMaxIndex, PDO::PARAM_INT);
         $bucketStmt->bindValue(':bucket_seconds', $bucketSeconds, PDO::PARAM_INT);
         $bucketStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
-        $bindContact($bucketStmt);
+        $bindAll($bucketStmt);
         $bucketStmt->execute();
 
         $buckets = array_fill(0, $bucketCount, 0);
@@ -1977,8 +2057,13 @@ class MeshLog {
             }
         }
 
+        $note = $reporterId !== null
+            ? 'Includes packets sent by this device and all packets it received/relayed as a collector (reporter id ' . $reporterId . ').'
+            : 'Includes packets sent by this device (ADV, DIR, PUB, TEL, SYS, CTRL, RAW). Not a collector.';
+
         return array(
             'contact_id' => $contactId,
+            'reporter_id' => $reporterId,
             'window_hours' => $windowHours,
             'bucket_count' => $bucketCount,
             'bucket_seconds' => $bucketSeconds,
@@ -1990,7 +2075,7 @@ class MeshLog {
             'newest_created_at' => $summary['newest_created_at'] ?? null,
             'packet_mix' => $packetMix,
             'chart_buckets' => $buckets,
-            'note' => 'Includes all contact-linked packets stored in the database (ADV, DIR, PUB, TEL, SYS, CTRL, RAW).',
+            'note' => $note,
         );
     }
 
