@@ -3173,6 +3173,8 @@ class MeshLog {
         this.contactAdvertisementTrailCache = new Map();
         this.generalStatsCache = new Map();
         this.generalStatsWindowHours = this._normalizeStatsWindowHours(Number(Settings.get('stats.window.hours', 24)));
+        this._heatmapEnabled = Settings.get('heatmap.enabled', '0') === '1';
+        this._heatmapLayer = null;
         this.activePopupContactId = null;
         this.activeContactTrailMap = null;
         this.activeContactTrailContactId = null;
@@ -3356,6 +3358,14 @@ class MeshLog {
             event.preventDefault();
             event.stopPropagation();
             this.setGeneralStatsWindowHours(Number(generalStatsRangeButton.dataset.hours));
+            return;
+        }
+
+        const heatmapToggleButton = target.closest('[data-action="toggle-heatmap"]');
+        if (heatmapToggleButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            this._toggleHeatmap();
         }
     }
 
@@ -4438,6 +4448,9 @@ class MeshLog {
         this.generalStatsWindowHours = this._normalizeStatsWindowHours(windowHours);
         Settings.set('stats.window.hours', this.generalStatsWindowHours);
         this.refreshGeneralStatsPanel(true);
+        if (this._heatmapEnabled) {
+            this._loadHeatmapData(this.generalStatsWindowHours);
+        }
     }
 
     _renderGeneralStatsHtml(stats, windowHours = 24) {
@@ -4450,13 +4463,153 @@ class MeshLog {
             if (value.toLowerCase() === 'public') return 'Public';
             return value.startsWith('#') ? value : `#${value}`;
         };
+
+        // Window selector
         const windowButtons = [1, 24, 36].map((hours) => {
             const active = hours === normalizedWindowHours ? ' general-stats-range-active' : '';
             return `<button type="button" class="general-stats-range${active}" data-hours="${hours}">${hours}h</button>`;
         }).join('');
-        const legacyRouteNote = stats.unknownRouteReports > 0
-            ? `Legacy route split unavailable for ${renderCount(stats.unknownRouteReports)} older advertisement report${Number(stats.unknownRouteReports) === 1 ? '' : 's'} collected before route tracking was stored.`
-            : 'Direct and flood counts are available for all advertisement reports in this window.';
+
+        // Heatmap toggle (only shown when leaflet.heat is loaded)
+        const heatmapActive = this._heatmapEnabled ? ' general-stats-heatmap-btn-active' : '';
+        const heatmapBtn = (typeof L !== 'undefined' && typeof L.heatLayer === 'function')
+            ? `<button type="button" class="general-stats-heatmap-btn${heatmapActive}" data-action="toggle-heatmap">${this._heatmapEnabled ? '🔥 Heatmap ON' : '🔥 Heatmap'}</button>`
+            : '';
+
+        // Compact KPI strip
+        const kpiItems = [
+            { v: stats.uniqueDevices,              l: 'devices' },
+            { v: stats.totalReports,               l: 'reports' },
+            { v: stats.uniqueCollectors,           l: 'collectors' },
+            { v: stats.channelTotals?.length ?? 0, l: 'channels' },
+        ];
+        const kpiHtml = kpiItems.map((k, i) =>
+            `${i > 0 ? '<span class="stats-kpi-sep">·</span>' : ''}<span class="stats-kpi"><b class="stats-kpi-value">${renderCount(k.v)}</b><span class="stats-kpi-label">${k.l}</span></span>`
+        ).join('');
+
+        // Route breakdown
+        const total  = Number(stats.totalReports)   || 0;
+        const direct = Number(stats.directReports)  || 0;
+        const flood  = Number(stats.floodReports)   || 0;
+        const relay  = Number(stats.relayedReports) || 0;
+        const legacy = Number(stats.unknownRouteReports) || 0;
+        const routeHtml = total > 0 ? `
+            <div class="stats-route-row">
+                <span class="stats-route-seg"><span class="stats-route-dot" style="background:#5ab4e4"></span>Direct ${renderCount(direct)}</span>
+                <span class="stats-route-sep">·</span>
+                <span class="stats-route-seg"><span class="stats-route-dot" style="background:#72c472"></span>Flood ${renderCount(flood)}</span>
+                <span class="stats-route-sep">·</span>
+                <span class="stats-route-seg"><span class="stats-route-dot" style="background:#e4a84a"></span>Relay-hop ${renderCount(relay)}</span>
+                ${legacy > 0 ? `<span class="stats-route-sep">·</span><span class="stats-route-seg" style="opacity:0.45">Legacy ${renderCount(legacy)}</span>` : ''}
+            </div>` : '';
+
+        const noteClassName = stats.hasError ? 'general-stats-note general-stats-note-error' : 'general-stats-note';
+        const noteText = stats.isLoading && !stats.hasData ? 'Loading statistics…' : renderValue(stats.note);
+
+        // Collector rows — compact 2-line layout
+        const collectorMax = Math.max(1, ...stats.collectorTotals.map((row) => Number(row.totalPackets) || 0));
+        const collectorRows = stats.collectorTotals.length > 0
+            ? stats.collectorTotals.map((row) => {
+                const width = Math.max(4, Math.round(((Number(row.totalPackets) || 0) / collectorMax) * 100));
+                const reporter = this.reporters[row.reporterId] ?? null;
+                const style = reporter ? reporter.getStyle() : (() => { try { return JSON.parse(row.style || '{}'); } catch { return {}; } })();
+                const color = style?.color ?? '#4ea4c4';
+                const shortKey = row.publicKey ? row.publicKey.slice(0, 10) : '';
+                return `
+                    <div class="collector-stats-compact-row">
+                        <div class="collector-stats-head">
+                            <div class="collector-stats-name-wrap">
+                                <span class="collector-stats-swatch" style="background:${escapeXml(color)}"></span>
+                                <span class="collector-stats-name">${escapeXml(row.reporterName)}</span>
+                                <span class="collector-stats-key">${escapeXml(shortKey)}</span>
+                            </div>
+                            <span class="collector-stats-total">${renderCount(row.totalPackets)}</span>
+                        </div>
+                        <div class="collector-stats-bar-line">
+                            <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
+                            <div class="collector-stats-breakdown">ADV ${row.advPackets} · DIR ${row.dirPackets} · PUB ${row.pubPackets} · TEL ${row.telPackets} · RAW ${row.rawPackets}</div>
+                        </div>
+                    </div>`;
+            }).join('')
+            : '<div class="general-stats-note">No collector packet activity recorded in this window.</div>';
+
+        // Channel rows — compact 2-line layout
+        const channelMax = Math.max(1, ...stats.channelTotals.map((row) => Number(row.totalMessages) || 0));
+        const channelRows = stats.channelTotals.length > 0
+            ? stats.channelTotals.map((row) => {
+                const width = Math.max(4, Math.round(((Number(row.totalMessages) || 0) / channelMax) * 100));
+                const theme = getChannelTheme(`${row.channelHash ?? ''}:${row.channelName ?? ''}`);
+                const color = theme.badgeBg ?? theme.ring ?? '#8fb3c9';
+                const keyLabel = row.channelHash ? row.channelHash.slice(0, 10) : `ID ${row.channelId}`;
+                return `
+                    <div class="collector-stats-compact-row">
+                        <div class="collector-stats-head">
+                            <div class="collector-stats-name-wrap">
+                                <span class="collector-stats-swatch" style="background:${escapeXml(color)}"></span>
+                                <span class="collector-stats-name">${escapeXml(normalizeChannelName(row.channelName))}</span>
+                                <span class="collector-stats-key">${escapeXml(keyLabel)}</span>
+                            </div>
+                            <span class="collector-stats-total">${renderCount(row.totalMessages)}</span>
+                        </div>
+                        <div class="collector-stats-bar-line">
+                            <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
+                            <div class="collector-stats-breakdown">${renderCount(row.uniqueSenders)} senders</div>
+                        </div>
+                    </div>`;
+            }).join('')
+            : '';
+
+        const channelSection = channelRows
+            ? `<section class="settings-card general-stats-shell">
+                <div class="stats-section-head">
+                    <span class="stats-section-title">Channels</span>
+                    <span class="general-stats-meta">last ${normalizedWindowHours}h</span>
+                </div>
+                <div class="collector-stats-list">${channelRows}</div>
+               </section>`
+            : '';
+
+        return `
+            <section class="settings-card general-stats-shell">
+                <div class="general-stats-toolbar">
+                    <div class="general-stats-range-group">${windowButtons}</div>
+                    <div class="general-stats-toolbar-right">
+                        <span class="general-stats-meta">History: ${renderValue(stats.loadedSpanLabel)}</span>
+                        ${heatmapBtn}
+                    </div>
+                </div>
+                <div class="stats-kpi-strip">${kpiHtml}</div>
+                ${routeHtml}
+                <div class="${noteClassName}">${noteText}</div>
+            </section>
+            <section class="settings-card general-stats-shell">
+                <div class="stats-charts-row">
+                    <div class="stats-chart-half">
+                        <div class="stats-chart-label">ADV reports · ${normalizedWindowHours}h</div>
+                        ${stats.chartSvg}
+                    </div>
+                    <div class="stats-chart-half">
+                        <div class="stats-chart-label">Unique devices · ${normalizedWindowHours}h</div>
+                        ${stats.uniqueDeviceChartSvg}
+                    </div>
+                </div>
+            </section>
+            <section class="settings-card general-stats-shell">
+                <div class="stats-section-head">
+                    <span class="stats-section-title">Collectors</span>
+                    <span class="general-stats-meta">last ${normalizedWindowHours}h</span>
+                </div>
+                <div class="collector-stats-list">${collectorRows}</div>
+            </section>
+            ${channelSection}
+        `;
+    }
+
+    refreshGeneralStatsPanel(forceRefresh = false) {
+        if (!this.dom_general_stats) return;
+
+        const normalizedWindowHours = this._normalizeStatsWindowHours(this.generalStatsWindowHours);
+        if (forceRefresh) {
         const collectorMax = Math.max(1, ...stats.collectorTotals.map((row) => Number(row.totalPackets) || 0));
         const collectorRows = stats.collectorTotals.length > 0
             ? stats.collectorTotals.map((row) => {
@@ -4477,124 +4630,6 @@ class MeshLog {
                             <div class="collector-stats-name-wrap">
                                 <span class="collector-stats-swatch" style="background:${escapeXml(color)}"></span>
                                 <span class="collector-stats-name">${escapeXml(row.reporterName)}</span>
-                                <span class="collector-stats-key">${escapeXml(shortKey)}</span>
-                            </div>
-                            <span class="collector-stats-total">${renderValue(row.totalPackets)}</span>
-                        </div>
-                        <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
-                        <div class="collector-stats-breakdown">ADV ${row.advPackets} · DIR ${row.dirPackets} · PUB ${row.pubPackets} · TEL ${row.telPackets} · SYS ${row.sysPackets} · CTRL ${row.ctrlPackets} · RAW ${row.rawPackets}</div>
-                    </div>
-                `;
-            }).join('')
-            : '<div class="general-stats-note">No collector packet activity recorded in this window.</div>';
-        const channelMax = Math.max(1, ...stats.channelTotals.map((row) => Number(row.totalMessages) || 0));
-        const channelRows = stats.channelTotals.length > 0
-            ? stats.channelTotals.map((row) => {
-                const width = Math.max(4, Math.round(((Number(row.totalMessages) || 0) / channelMax) * 100));
-                const theme = getChannelTheme(`${row.channelHash ?? ''}:${row.channelName ?? ''}`);
-                const color = theme.badgeBg ?? theme.ring ?? '#8fb3c9';
-                const keyLabel = row.channelHash ? row.channelHash.slice(0, 10) : `ID ${row.channelId}`;
-                return `
-                    <div class="collector-stats-row">
-                        <div class="collector-stats-head">
-                            <div class="collector-stats-name-wrap">
-                                <span class="collector-stats-swatch" style="background:${escapeXml(color)}"></span>
-                                <span class="collector-stats-name">${escapeXml(normalizeChannelName(row.channelName))}</span>
-                                <span class="collector-stats-key">${escapeXml(keyLabel)}</span>
-                            </div>
-                            <span class="collector-stats-total">${renderValue(row.totalMessages)}</span>
-                        </div>
-                        <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
-                        <div class="collector-stats-breakdown">Unique senders ${renderValue(row.uniqueSenders)}</div>
-                    </div>
-                `;
-            }).join('')
-            : '<div class="general-stats-note">No channel messages recorded in this window.</div>';
-
-        const noteClassName = stats.hasError ? 'general-stats-note general-stats-note-error' : 'general-stats-note';
-
-        return `
-            <section class="settings-card general-stats-shell">
-                <div class="settings-card-heading">
-                    <div class="settings-card-title">Advertisement Overview</div>
-                </div>
-                <div class="general-stats-toolbar">
-                    <div class="general-stats-range-group">${windowButtons}</div>
-                    <div class="general-stats-meta">History span: ${renderValue(stats.loadedSpanLabel)}</div>
-                </div>
-                <div class="general-stats-card-grid">
-                    <div class="general-stats-card">
-                        <div class="general-stats-card-label">All advertisement reports</div>
-                        <div class="general-stats-card-value">${renderValue(stats.totalReports)}</div>
-                    </div>
-                    <div class="general-stats-card">
-                        <div class="general-stats-card-label">Direct advertisements</div>
-                        <div class="general-stats-card-value">${renderValue(stats.directReports)}</div>
-                    </div>
-                    <div class="general-stats-card">
-                        <div class="general-stats-card-label">Flood advertisements</div>
-                        <div class="general-stats-card-value">${renderValue(stats.floodReports)}</div>
-                    </div>
-                    <div class="general-stats-card">
-                        <div class="general-stats-card-label">Unique devices heard</div>
-                        <div class="general-stats-card-value">${renderValue(stats.uniqueDevices)}</div>
-                    </div>
-                    <div class="general-stats-card">
-                        <div class="general-stats-card-label">Unique advertisement payloads</div>
-                        <div class="general-stats-card-value">${renderValue(stats.totalAdvertisements)}</div>
-                    </div>
-                    <div class="general-stats-card">
-                        <div class="general-stats-card-label">Collectors receiving ads</div>
-                        <div class="general-stats-card-value">${renderValue(stats.uniqueCollectors)}</div>
-                    </div>
-                    <div class="general-stats-card">
-                        <div class="general-stats-card-label">Relay-assisted receptions</div>
-                        <div class="general-stats-card-value">${renderValue(stats.relayedReports)}</div>
-                    </div>
-                    <div class="general-stats-card">
-                        <div class="general-stats-card-label">Legacy / unknown route</div>
-                        <div class="general-stats-card-value">${renderValue(stats.unknownRouteReports)}</div>
-                    </div>
-                </div>
-                <div class="general-stats-note">${legacyRouteNote}</div>
-            </section>
-            <section class="settings-card general-stats-shell">
-                <div class="general-stats-chart-head">
-                    <div class="settings-card-title">Advertisement Reports in Last ${normalizedWindowHours}h</div>
-                    <div class="general-stats-meta">Newest: ${renderValue(stats.newestLabel)}</div>
-                </div>
-                ${stats.chartSvg}
-                <div class="general-stats-footnotes">
-                    <div class="general-stats-meta">Oldest: ${renderValue(stats.oldestLabel)}</div>
-                    <div class="general-stats-meta">Direct with no relays: ${renderValue(stats.noHopReports)}</div>
-                </div>
-                <div class="${noteClassName}">${stats.isLoading && !stats.hasData ? 'Loading statistics...' : renderValue(stats.note)}</div>
-            </section>
-            <section class="settings-card general-stats-shell">
-                <div class="general-stats-chart-head">
-                    <div class="settings-card-title">Unique Devices Heard per Time Bucket</div>
-                    <div class="general-stats-meta">Peak active devices: ${renderValue(stats.uniqueDevices)}</div>
-                </div>
-                ${stats.uniqueDeviceChartSvg}
-                <div class="general-stats-meta">Distinct devices are deduplicated per bucket and counted from advertisement receptions.</div>
-            </section>
-            <section class="settings-card general-stats-shell">
-                <div class="general-stats-chart-head">
-                    <div class="settings-card-title">Collector Packet Totals</div>
-                    <div class="general-stats-meta">All stored packets in last ${normalizedWindowHours}h</div>
-                </div>
-                <div class="collector-stats-list">${collectorRows}</div>
-            </section>
-            <section class="settings-card general-stats-shell">
-                <div class="general-stats-chart-head">
-                    <div class="settings-card-title">Channel Message Totals</div>
-                    <div class="general-stats-meta">All stored channel messages in last ${normalizedWindowHours}h</div>
-                </div>
-                <div class="collector-stats-list">${channelRows}</div>
-            </section>
-        `;
-    }
-
     refreshGeneralStatsPanel(forceRefresh = false) {
         if (!this.dom_general_stats) return;
 
@@ -4605,6 +4640,53 @@ class MeshLog {
 
         const stats = this.getGeneralStats(normalizedWindowHours);
         this.dom_general_stats.innerHTML = this._renderGeneralStatsHtml(stats, normalizedWindowHours);
+    }
+
+    _toggleHeatmap() {
+        this._heatmapEnabled = !this._heatmapEnabled;
+        Settings.set('heatmap.enabled', this._heatmapEnabled ? '1' : '0');
+        if (this._heatmapEnabled) {
+            this._loadHeatmapData(this._normalizeStatsWindowHours(this.generalStatsWindowHours));
+        } else {
+            this._removeHeatmapLayer();
+        }
+        this.refreshGeneralStatsPanel();
+    }
+
+    _loadHeatmapData(windowHours) {
+        const wh = this._normalizeStatsWindowHours(windowHours);
+        fetch(`api/v1/stats/heatmap/?window_hours=${wh}`)
+            .then((r) => r.json())
+            .then((data) => {
+                if (Array.isArray(data.points) && data.points.length > 0) {
+                    this._applyHeatmapLayer(data.points);
+                } else {
+                    this._removeHeatmapLayer();
+                }
+            })
+            .catch((e) => error_log('[Heatmap] fetch failed: ' + e));
+    }
+
+    _applyHeatmapLayer(points) {
+        if (!this.map || typeof L === 'undefined' || typeof L.heatLayer !== 'function') return;
+        if (this._heatmapLayer) {
+            this._heatmapLayer.setLatLngs(points);
+        } else {
+            this._heatmapLayer = L.heatLayer(points, {
+                radius: 28,
+                blur: 18,
+                maxZoom: 17,
+                max: 10,
+                gradient: { 0.2: '#2166ac', 0.45: '#74add1', 0.65: '#fee090', 0.85: '#f46d43', 1.0: '#d73027' },
+            }).addTo(this.map);
+        }
+    }
+
+    _removeHeatmapLayer() {
+        if (this._heatmapLayer && this.map) {
+            this.map.removeLayer(this._heatmapLayer);
+            this._heatmapLayer = null;
+        }
     }
 
     _initMapPanes() {

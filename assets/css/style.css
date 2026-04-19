@@ -1196,8 +1196,8 @@ h2 {
 }
 
 .general-stats-shell {
-    gap: 10px;
-    padding: 10px;
+    gap: 6px;
+    padding: 8px 10px;
 }
 
 .general-stats-toolbar,
@@ -1206,6 +1206,13 @@ h2 {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.general-stats-toolbar-right {
+    display: flex;
+    align-items: center;
     gap: 8px;
     flex-wrap: wrap;
 }
@@ -1362,11 +1369,159 @@ h2 {
 }
 
 .general-stats-shell .device-popup-chart-wrap {
-    margin-top: 2px;
+    margin-top: 0;
+}
+
+/* Compact KPI strip */
+.stats-kpi-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 3px 8px;
+    padding: 1px 0;
+}
+
+.stats-kpi {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+}
+
+.stats-kpi-value {
+    color: #f6fbff;
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.stats-kpi-label {
+    color: rgba(205,220,238,0.58);
+    font-size: 0.72rem;
+}
+
+.stats-kpi-sep {
+    color: rgba(205,220,238,0.28);
+    font-size: 0.78rem;
+}
+
+/* Route breakdown */
+.stats-route-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 10px;
+    font-size: 0.73rem;
+    color: rgba(220,235,248,0.65);
+}
+
+.stats-route-seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.stats-route-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
+.stats-route-sep {
+    color: rgba(205,220,238,0.28);
+}
+
+/* Side-by-side charts */
+.stats-charts-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+}
+
+.stats-chart-half {
+    min-width: 0;
+}
+
+.stats-chart-label {
+    color: rgba(205,220,238,0.55);
+    font-size: 0.68rem;
+    padding-bottom: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Compact collector/channel rows */
+.collector-stats-compact-row {
+    display: grid;
+    gap: 4px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(7,11,16,0.28);
+}
+
+.collector-stats-bar-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.collector-stats-bar-line .collector-stats-bar {
+    flex: 1;
+    min-width: 0;
+}
+
+.collector-stats-bar-line .collector-stats-breakdown {
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 55%;
+}
+
+/* Stats section header */
+.stats-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.stats-section-title {
+    color: rgba(205,220,238,0.55);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+/* Heatmap toggle button */
+.general-stats-heatmap-btn {
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,140,0,0.25);
+    background: rgba(255,100,0,0.06);
+    color: rgba(255,185,100,0.7);
+    cursor: pointer;
+    font-size: 0.73rem;
+    font-weight: 600;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.general-stats-heatmap-btn:hover {
+    background: rgba(255,100,0,0.16);
+    color: #ffcc80;
+    border-color: rgba(255,160,0,0.4);
+}
+
+.general-stats-heatmap-btn-active {
+    background: rgba(255,120,0,0.26);
+    border-color: rgba(255,165,0,0.55);
+    color: #ffcc80;
 }
 
 @media (max-width: 900px) {
-    .general-stats-card-grid {
+    .stats-charts-row {
         grid-template-columns: minmax(0, 1fr);
     }
 }

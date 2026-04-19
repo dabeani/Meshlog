@@ -2219,6 +2219,44 @@ class MeshLog {
         );
     }
 
+    public function getHeatmapData($windowHours = 24) {
+        $windowHours = intval($windowHours);
+        if (!in_array($windowHours, array(1, 24, 36), true)) {
+            $windowHours = 24;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT a.lat, a.lon, COUNT(ar.id) AS weight
+                FROM advertisements a
+                JOIN advertisement_reports ar ON ar.advertisement_id = a.id
+                WHERE ar.received_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
+                  AND a.lat IS NOT NULL AND a.lat != 0
+                  AND a.lon IS NOT NULL AND a.lon != 0
+                GROUP BY a.id
+                HAVING weight > 0
+                ORDER BY weight DESC
+                LIMIT 2000
+            ");
+            $stmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log('getHeatmapData: ' . $e->getMessage());
+            return array('points' => array(), 'window_hours' => $windowHours, 'error' => 'Query failed');
+        }
+
+        $points = array();
+        foreach ($rows as $row) {
+            $lat = floatval($row['lat']);
+            $lon = floatval($row['lon']);
+            if ($lat === 0.0 && $lon === 0.0) continue;
+            $points[] = array($lat, $lon, intval($row['weight']));
+        }
+
+        return array('points' => $points, 'window_hours' => $windowHours);
+    }
+
     public function getChannelMessages($params, $reports = false) {
         $params['where'] = array();
         if (isset($params['id'])) {

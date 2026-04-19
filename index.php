@@ -34,6 +34,7 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
         integrity="sha256-b6wRq6tXNDnatickDjAMTffu2ZO2lsaV5Aivm+oh2s4="
         crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.min.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     <script src="assets/js/meshlog.js?v=<?= $jsVersion ?>"></script>
     <link rel="stylesheet" href="assets/css/style.css?v=<?= $cssVersion ?>">
     <title>MeshCore Log v1.99.1 (forked)</title>
@@ -61,10 +62,6 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
         <div id="contacts"></div>
     </div>
     <div id="tab-stats" class="sidebar-tab-panel" hidden>
-        <section class="settings-panel">
-            <div class="settings-panel-title">General Statistics</div>
-            <div class="settings-panel-subtitle">Advertisement activity across the whole mesh for the last 1, 24, or 36 hours.</div>
-        </section>
         <div id="general-stats"></div>
     </div>
     <div id="tab-settings" class="sidebar-tab-panel" hidden>

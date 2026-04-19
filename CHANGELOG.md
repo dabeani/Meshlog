@@ -4,6 +4,15 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ---
 
+## [Unreleased] — Stats Redesign & Heatmap (2026-04-19)
+
+### Frontend — New Features
+
+- **Map heatmap overlay** — toggleable heatmap layer on the main map showing node advertisement position density weighted by report count; state is persisted across sessions and auto-reloads when the time window changes.
+- **Statistics page redesign** — compact KPI strip (devices · reports · collectors · channels in one line), side-by-side charts, 2-line collector and channel rows, and a route-type breakdown row; removes several hundred pixels of wasted vertical space.
+
+---
+
 ## [Unreleased] — Security & Code Quality (2026-04-19)
 
 ### Backend — Security & Fixes
