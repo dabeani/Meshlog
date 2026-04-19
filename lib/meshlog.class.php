@@ -2226,19 +2226,60 @@ class MeshLog {
         }
 
         try {
+            // Location per contact: average of all non-zero ADV lat/lon (contact's known position).
+            // Activity per contact: row count across ALL packet report tables within the window,
+            // so forwarded ADVs, direct messages, channel messages, telemetry and raw packets
+            // all contribute to the heatmap weight.
             $stmt = $this->pdo->prepare("
-                SELECT a.lat, a.lon, COUNT(ar.id) AS weight
-                FROM advertisements a
-                JOIN advertisement_reports ar ON ar.advertisement_id = a.id
-                WHERE ar.received_at >= DATE_SUB(NOW(), INTERVAL :window_hours HOUR)
-                  AND a.lat IS NOT NULL AND a.lat != 0
-                  AND a.lon IS NOT NULL AND a.lon != 0
-                GROUP BY a.id
+                SELECT MAX(loc.lat) AS lat, MAX(loc.lon) AS lon, SUM(act.cnt) AS weight
+                FROM (
+                    SELECT contact_id, AVG(lat) AS lat, AVG(lon) AS lon
+                    FROM advertisements
+                    WHERE lat IS NOT NULL AND lat != 0
+                      AND lon IS NOT NULL AND lon != 0
+                    GROUP BY contact_id
+                ) loc
+                INNER JOIN (
+                    SELECT a.contact_id, COUNT(*) AS cnt
+                    FROM advertisement_reports ar
+                    JOIN advertisements a ON a.id = ar.advertisement_id
+                    WHERE ar.received_at >= DATE_SUB(NOW(), INTERVAL :w1 HOUR)
+                    GROUP BY a.contact_id
+                    UNION ALL
+                    SELECT dm.contact_id, COUNT(*) AS cnt
+                    FROM direct_message_reports dmr
+                    JOIN direct_messages dm ON dm.id = dmr.direct_message_id
+                    WHERE dmr.received_at >= DATE_SUB(NOW(), INTERVAL :w2 HOUR)
+                    GROUP BY dm.contact_id
+                    UNION ALL
+                    SELECT cm.contact_id, COUNT(*) AS cnt
+                    FROM channel_message_reports cmr
+                    JOIN channel_messages cm ON cm.id = cmr.channel_message_id
+                    WHERE cmr.received_at >= DATE_SUB(NOW(), INTERVAL :w3 HOUR)
+                    GROUP BY cm.contact_id
+                    UNION ALL
+                    SELECT contact_id, COUNT(*) AS cnt
+                    FROM telemetry
+                    WHERE received_at >= DATE_SUB(NOW(), INTERVAL :w4 HOUR)
+                      AND contact_id IS NOT NULL
+                    GROUP BY contact_id
+                    UNION ALL
+                    SELECT contact_id, COUNT(*) AS cnt
+                    FROM raw_packets
+                    WHERE received_at >= DATE_SUB(NOW(), INTERVAL :w5 HOUR)
+                      AND contact_id IS NOT NULL
+                    GROUP BY contact_id
+                ) act ON act.contact_id = loc.contact_id
+                GROUP BY loc.contact_id
                 HAVING weight > 0
                 ORDER BY weight DESC
                 LIMIT 2000
             ");
-            $stmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+            $stmt->bindValue(':w1', $windowHours, PDO::PARAM_INT);
+            $stmt->bindValue(':w2', $windowHours, PDO::PARAM_INT);
+            $stmt->bindValue(':w3', $windowHours, PDO::PARAM_INT);
+            $stmt->bindValue(':w4', $windowHours, PDO::PARAM_INT);
+            $stmt->bindValue(':w5', $windowHours, PDO::PARAM_INT);
             $stmt->execute();
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
