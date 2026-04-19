@@ -40,6 +40,8 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Device packet stats include relayed traffic** — The per-device packet count on the device detail popup previously only counted packets where the device was the sender. It now also counts all packets the device forwarded as a collector (reporter), giving an accurate total of activity seen for that node.
 
 ### Admin — New Features
+- **Coverage API SQL syntax fix** — The coverage spot API endpoint previously caused 500 errors due to incorrect parameter binding syntax in the DATE_SUB INTERVAL clause. Fixed by using `NOW() - INTERVAL :value HOUR` syntax instead, which is the correct MySQL parameter binding pattern.
+- **Heatmap now shows repeaters only** — The heatmap layer now filters to display only repeater nodes (type = 2) instead of showing all device types. This provides clearer mesh topology visibility by highlighting key relay infrastructure.
 
 - **Pending reporter auto-registration** — Unknown reporters seen over MQTT are automatically registered as pending instead of being silently dropped. Admins can approve or dismiss them directly from the Reporter Devices list without manual DB edits.
 - **Channel hash auto-computed** — The PSK hash for a channel is now computed server-side on save; the hash input field has been removed from the channel create/edit form.
