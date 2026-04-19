@@ -4610,31 +4610,6 @@ class MeshLog {
 
         const normalizedWindowHours = this._normalizeStatsWindowHours(this.generalStatsWindowHours);
         if (forceRefresh) {
-        const collectorMax = Math.max(1, ...stats.collectorTotals.map((row) => Number(row.totalPackets) || 0));
-        const collectorRows = stats.collectorTotals.length > 0
-            ? stats.collectorTotals.map((row) => {
-                const width = Math.max(4, Math.round(((Number(row.totalPackets) || 0) / collectorMax) * 100));
-                const reporter = this.reporters[row.reporterId] ?? null;
-                const style = reporter ? reporter.getStyle() : (() => {
-                    try {
-                        return JSON.parse(row.style || '{}');
-                    } catch {
-                        return {};
-                    }
-                })();
-                const color = style?.color ?? '#4ea4c4';
-                const shortKey = row.publicKey ? row.publicKey.slice(0, 10) : '';
-                return `
-                    <div class="collector-stats-row">
-                        <div class="collector-stats-head">
-                            <div class="collector-stats-name-wrap">
-                                <span class="collector-stats-swatch" style="background:${escapeXml(color)}"></span>
-                                <span class="collector-stats-name">${escapeXml(row.reporterName)}</span>
-    refreshGeneralStatsPanel(forceRefresh = false) {
-        if (!this.dom_general_stats) return;
-
-        const normalizedWindowHours = this._normalizeStatsWindowHours(this.generalStatsWindowHours);
-        if (forceRefresh) {
             this._loadGeneralStats(normalizedWindowHours, true);
         }
 
