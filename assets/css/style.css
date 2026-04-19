@@ -2090,7 +2090,9 @@ h2 {
 }
 
 .highlight {
-    background: #ff0;
+    background: rgba(0, 172, 193, 0.18);
+    outline: 1px solid rgba(0, 217, 233, 0.35);
+    border-radius: 2px;
 }
 
 .settings-cb {
