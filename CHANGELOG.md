@@ -26,6 +26,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Map control overlap fix** — Removed duplicate search control from top-right that was overlapping with the unified menu since search is now integrated into the unified panel.
 - **Chart bar tooltip** — Hovering over a bar in the device activity chart now shows a styled floating tooltip with the time range and packet count, replacing the plain unstyled browser-native tooltip.
 - **Stats bar colors bold and distinct** — The route breakdown (Direct/Flood/Relay) and packet-type segmented bars in the Statistics tab now use bright, saturated, clearly distinguishable colors (#00ccff/#00ff33/#ff7700 for routes, #0099ff/#00ff33/#cc33ff/#ffdd00/#ff7700/#ff3333 for packet types) so users can easily see the difference between segments.
+- **Stats summary colors tuned for readability** — The Statistics summary cards and chart highlights now use a stronger green/orange/magenta/cyan palette so Active Devices, Total Reports, Collectors, and Direct Links are visually distinct at a glance.
 
 ### Backend — New Features
 

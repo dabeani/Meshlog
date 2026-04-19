@@ -5040,10 +5040,10 @@ class MeshLog {
         const rate = normalizedWindowHours > 0 ? (total / normalizedWindowHours).toFixed(1) : '—';
 
         const kpiCards = [
-            { value: renderCount(devices),     label: 'Active devices',   sub: `${renderCount(advs)} advertisements`,  color: '#60b7ff' },
-            { value: renderCount(total),        label: 'Total reports',    sub: `~${rate}/h avg rate`,                  color: '#78c8a8' },
-            { value: renderCount(cols),         label: 'Collectors',       sub: `${renderCount(chans)} channels`,       color: '#c890e8' },
-            { value: renderCount(direct),       label: 'Direct links',     sub: `${pct(direct)} of reports`,            color: '#5ab4e4' },
+            { value: renderCount(devices),     label: 'Active devices',   sub: `${renderCount(advs)} advertisements`,  color: '#19d38a' },
+            { value: renderCount(total),       label: 'Total reports',    sub: `~${rate}/h avg rate`,                  color: '#ff8a1f' },
+            { value: renderCount(cols),        label: 'Collectors',       sub: `${renderCount(chans)} channels`,       color: '#d35cff' },
+            { value: renderCount(direct),      label: 'Direct links',     sub: `${pct(direct)} of reports`,            color: '#00ccff' },
         ].map((card) => `
             <div class="stats-kpi-card">
                 <div class="stats-kpi-card-value" style="color:${card.color}">${card.value}</div>
