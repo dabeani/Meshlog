@@ -441,6 +441,39 @@ var _UnifiedMapMenu = L.Control.extend({
         heatmapSection.appendChild(heatmapWindowRow);
         extraSection.appendChild(heatmapSection);
 
+        // Coverage spot overlay section
+        var coverageSection = L.DomUtil.create('div', 'map-menu-section');
+        var coverageTitleEl = L.DomUtil.create('span', 'map-menu-title');
+        coverageTitleEl.textContent = 'Coverage';
+        coverageSection.appendChild(coverageTitleEl);
+
+        var coverageCtrlRow = L.DomUtil.create('div', 'map-menu-heatmap-ctrl');
+        var coverageToggleBtn = L.DomUtil.create('button', 'map-menu-coverage-toggle');
+        coverageToggleBtn.id = 'map-coverage-toggle-btn';
+        coverageToggleBtn.textContent = 'Off';
+        coverageToggleBtn.title = 'Toggle SNR coverage overlay';
+        coverageToggleBtn.addEventListener('click', function() {
+            if (window.meshlog) window.meshlog.toggleCoverage();
+        });
+        var coverageStatusEl = L.DomUtil.create('span', 'map-menu-heatmap-status');
+        coverageStatusEl.id = 'map-coverage-status';
+        coverageCtrlRow.appendChild(coverageToggleBtn);
+        coverageCtrlRow.appendChild(coverageStatusEl);
+        coverageSection.appendChild(coverageCtrlRow);
+
+        var coverageWindowRow = L.DomUtil.create('div', 'map-menu-heatmap-windows');
+        [{h: 24, label: '24h'}, {h: 168, label: '7d'}, {h: 720, label: '30d'}].forEach(function(item) {
+            var wBtn = L.DomUtil.create('button', 'map-menu-coverage-window-btn');
+            wBtn.dataset.hours = String(item.h);
+            wBtn.textContent = item.label;
+            wBtn.addEventListener('click', function() {
+                if (window.meshlog) window.meshlog.setCoverageWindow(item.h);
+            });
+            coverageWindowRow.appendChild(wBtn);
+        });
+        coverageSection.appendChild(coverageWindowRow);
+        extraSection.appendChild(coverageSection);
+
         // Legend section
         var legendSection = L.DomUtil.create('div', 'map-menu-section');
         var legendTitle = L.DomUtil.create('span', 'map-menu-title');

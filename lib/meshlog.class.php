@@ -2319,6 +2319,61 @@ class MeshLog {
         );
     }
 
+    public function getCoverageSpots($windowHours = 168, $precision = 3) {
+        $windowHours = intval($windowHours);
+        if ($windowHours <= 0 || $windowHours > 8760) {
+            $windowHours = 168;
+        }
+        $precision = intval($precision);
+        if ($precision < 1 || $precision > 6) {
+            $precision = 3;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare("
+                SELECT
+                    ROUND(a.lat, :p1) AS grid_lat,
+                    ROUND(a.lon,  :p2) AS grid_lon,
+                    ROUND(AVG(ar.snr), 1) AS avg_snr,
+                    MAX(ar.snr)           AS max_snr,
+                    COUNT(*)              AS report_count
+                FROM advertisement_reports ar
+                JOIN advertisements a ON a.id = ar.advertisement_id
+                WHERE ar.received_at >= DATE_SUB(NOW(), INTERVAL :wh HOUR)
+                  AND a.lat IS NOT NULL AND a.lat != 0
+                  AND a.lon IS NOT NULL AND a.lon != 0
+                  AND ar.snr IS NOT NULL
+                GROUP BY grid_lat, grid_lon
+                ORDER BY report_count DESC
+                LIMIT 5000
+            ");
+            $stmt->bindValue(':p1', $precision, PDO::PARAM_INT);
+            $stmt->bindValue(':p2', $precision, PDO::PARAM_INT);
+            $stmt->bindValue(':wh', $windowHours, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log('getCoverageSpots: ' . $e->getMessage());
+            return array('spots' => array(), 'window_hours' => $windowHours, 'error' => 'Query failed');
+        }
+
+        $spots = array();
+        foreach ($rows as $row) {
+            $lat = floatval($row['grid_lat']);
+            $lon = floatval($row['grid_lon']);
+            if ($lat === 0.0 && $lon === 0.0) continue;
+            $spots[] = array(
+                'lat'          => $lat,
+                'lon'          => $lon,
+                'avg_snr'      => floatval($row['avg_snr']),
+                'max_snr'      => floatval($row['max_snr']),
+                'report_count' => intval($row['report_count']),
+            );
+        }
+
+        return array('spots' => $spots, 'window_hours' => $windowHours);
+    }
+
     public function getHeatmapData($windowHours = 24) {
         $windowHours = intval($windowHours);
         if (!in_array($windowHours, array(1, 24, 36), true)) {

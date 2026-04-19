@@ -3254,6 +3254,9 @@ class MeshLog {
         this._heatmapEnabled = Settings.get('heatmap.enabled', '0') === '1';
         this.heatmapWindowHours = this._normalizeStatsWindowHours(Number(Settings.get('heatmap.window.hours', 24)));
         this._heatmapLayer = null;
+        this._coverageEnabled = Settings.get('coverage.enabled', '0') === '1';
+        this._coverageWindowHours = this._normalizeCoverageWindowHours(Number(Settings.get('coverage.window.hours', 168)));
+        this._coverageLayer = null;
         this.activePopupContactId = null;
         this.activeContactTrailMap = null;
         this.activeContactTrailContactId = null;
@@ -3878,24 +3881,60 @@ class MeshLog {
             attributionControl: false,
         }).addTo(miniMap);
 
-        const latLngs = [];
+        // Build valid point list (skip non-finite coords)
+        const validPoints = [];
         for (let i = 0; i < trail.points.length; i++) {
             const point = trail.points[i];
             const lat = Number(point.lat);
             const lon = Number(point.lon);
             if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+            validPoints.push({ ...point, lat, lon });
+        }
+
+        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+        const n = validPoints.length;
+
+        // Draw segmented polylines — connect consecutive points within 2-hour gap
+        let segStart = 0;
+        for (let i = 1; i <= n; i++) {
+            const gap = i < n
+                ? new Date(validPoints[i].created_at).getTime() - new Date(validPoints[i - 1].created_at).getTime()
+                : Infinity;
+            if (gap > TWO_HOURS_MS || i === n) {
+                const segment = validPoints.slice(segStart, i).map((p) => [p.lat, p.lon]);
+                if (segment.length >= 2) {
+                    L.polyline(segment, {
+                        color: '#67b7ff',
+                        weight: 2,
+                        opacity: 0.55,
+                        interactive: false,
+                    }).addTo(miniMap);
+                }
+                segStart = i;
+            }
+        }
+
+        // Draw dots — oldest dim, newest bright/larger
+        const latLngs = [];
+        for (let i = 0; i < n; i++) {
+            const point = validPoints[i];
+            const { lat, lon } = point;
+            const isLatest = (i === n - 1);
+            const ageFraction = n > 1 ? i / (n - 1) : 1; // 0=oldest, 1=newest
+            const fillOpacity = 0.35 + ageFraction * 0.6;
+            const fillColor = isLatest ? '#00d9e9' : '#67b7ff';
+            const radius = isLatest ? 6 : 3;
 
             const marker = L.circleMarker([lat, lon], {
-                radius: 4,
-                color: '#e6eef7',
+                radius,
+                color: isLatest ? '#e6eef7' : '#8ab8d8',
                 weight: 1,
-                fillColor: '#67b7ff',
-                fillOpacity: 0.95,
+                fillColor,
+                fillOpacity,
             }).addTo(miniMap);
 
             const sentAt = contact.formatPopupTimestamp(point.sent_at);
             const receivedAt = contact.formatPopupTimestamp(point.created_at);
-            const tooltipText = `${receivedAt}`;
             const popupHtml = `
                 <div class="device-popup-mini-dot-popup">
                     <div><strong>Received:</strong> ${escapeXml(receivedAt)}</div>
@@ -3903,7 +3942,7 @@ class MeshLog {
                 </div>
             `;
 
-            marker.bindTooltip(escapeXml(tooltipText), {
+            marker.bindTooltip(escapeXml(receivedAt), {
                 direction: 'top',
                 offset: [0, -6],
                 opacity: 0.95,
@@ -5258,6 +5297,104 @@ class MeshLog {
             this._heatmapLayer = null;
         }
         const statusEl = document.getElementById('map-heatmap-status');
+        if (statusEl) statusEl.textContent = '';
+    }
+
+    // ── Coverage spot overlay ───────────────────────────────────────────────
+
+    _normalizeCoverageWindowHours(hours) {
+        return [24, 168, 720].includes(Number(hours)) ? Number(hours) : 168;
+    }
+
+    toggleCoverage() {
+        this._coverageEnabled = !this._coverageEnabled;
+        Settings.set('coverage.enabled', this._coverageEnabled ? '1' : '0');
+        if (this._coverageEnabled) {
+            this._loadCoverageSpots(this._coverageWindowHours);
+        } else {
+            this._removeCoverageLayer();
+        }
+        this._updateCoverageMenuState();
+    }
+
+    setCoverageWindow(hours) {
+        this._coverageWindowHours = this._normalizeCoverageWindowHours(hours);
+        Settings.set('coverage.window.hours', this._coverageWindowHours);
+        if (this._coverageEnabled) {
+            this._loadCoverageSpots(this._coverageWindowHours);
+        }
+        this._updateCoverageMenuState();
+    }
+
+    _updateCoverageMenuState() {
+        const toggleBtn = document.getElementById('map-coverage-toggle-btn');
+        if (toggleBtn) {
+            toggleBtn.textContent = this._coverageEnabled ? 'On' : 'Off';
+            toggleBtn.classList.toggle('map-menu-coverage-toggle-active', this._coverageEnabled);
+        }
+        document.querySelectorAll('.map-menu-coverage-window-btn').forEach((btn) => {
+            btn.classList.toggle('active', parseInt(btn.dataset.hours) === this._coverageWindowHours);
+        });
+    }
+
+    _loadCoverageSpots(windowHours) {
+        const wh = this._normalizeCoverageWindowHours(windowHours);
+        const statusEl = document.getElementById('map-coverage-status');
+        if (statusEl) statusEl.textContent = 'loading…';
+        fetch(`api/v1/coverage/?window_hours=${wh}`)
+            .then((r) => r.json())
+            .then((data) => {
+                if (Array.isArray(data.spots) && data.spots.length > 0) {
+                    this._renderCoverageSpots(data.spots);
+                    if (statusEl) statusEl.textContent = `${data.spots.length} cells`;
+                } else {
+                    this._removeCoverageLayer();
+                    if (statusEl) statusEl.textContent = 'no data';
+                }
+            })
+            .catch((e) => {
+                console.warn('[Coverage] fetch failed:', e);
+                if (statusEl) statusEl.textContent = 'error';
+            });
+    }
+
+    _snrToColor(snr) {
+        if (snr >= 5)   return '#4caf50'; // strong — green
+        if (snr >= 0)   return '#8bc34a'; // good — light green
+        if (snr >= -5)  return '#ffeb3b'; // fair — yellow
+        if (snr >= -10) return '#ff9800'; // weak — orange
+        return '#f44336';                  // poor — red
+    }
+
+    _renderCoverageSpots(spots) {
+        if (!this.map || typeof L === 'undefined') return;
+        this._removeCoverageLayer();
+        const markers = spots.map((spot) => {
+            const color = this._snrToColor(spot.avg_snr);
+            const radius = 3 + Math.min(4, Math.log10(spot.report_count + 1) * 3);
+            const marker = L.circleMarker([spot.lat, spot.lon], {
+                radius,
+                color,
+                weight: 0,
+                fillColor: color,
+                fillOpacity: 0.75,
+                interactive: true,
+            });
+            marker.bindTooltip(
+                `SNR: ${spot.avg_snr} dB · ${spot.report_count} report${spot.report_count !== 1 ? 's' : ''}`,
+                { direction: 'top', offset: [0, -4], opacity: 0.92, className: 'map-coverage-tooltip' }
+            );
+            return marker;
+        });
+        this._coverageLayer = L.layerGroup(markers).addTo(this.map);
+    }
+
+    _removeCoverageLayer() {
+        if (this._coverageLayer && this.map) {
+            this.map.removeLayer(this._coverageLayer);
+            this._coverageLayer = null;
+        }
+        const statusEl = document.getElementById('map-coverage-status');
         if (statusEl) statusEl.textContent = '';
     }
 

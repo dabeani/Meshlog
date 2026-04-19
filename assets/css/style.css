@@ -709,6 +709,66 @@ h2 {
     color: #ffcc80;
 }
 
+/* Coverage spot overlay controls */
+.map-menu-coverage-toggle {
+    padding: 4px 11px;
+    border-radius: 7px;
+    border: 1px solid rgba(76,175,80,0.22);
+    background: rgba(76,175,80,0.07);
+    color: rgba(140,220,140,0.65);
+    font-size: 0.66rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.map-menu-coverage-toggle:hover {
+    background: rgba(76,175,80,0.18);
+    color: #a5d6a7;
+    border-color: rgba(76,175,80,0.42);
+}
+
+.map-menu-coverage-toggle.map-menu-coverage-toggle-active {
+    background: rgba(76,175,80,0.28);
+    border-color: rgba(76,175,80,0.6);
+    color: #a5d6a7;
+}
+
+.map-menu-coverage-window-btn {
+    flex: 1;
+    padding: 4px 0;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.5);
+    font-size: 0.62rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.map-menu-coverage-window-btn:hover {
+    background: rgba(76,175,80,0.12);
+    color: rgba(140,220,140,0.85);
+    border-color: rgba(76,175,80,0.28);
+}
+
+.map-menu-coverage-window-btn.active {
+    background: rgba(76,175,80,0.24);
+    border-color: rgba(76,175,80,0.55);
+    color: #a5d6a7;
+}
+
+.map-coverage-tooltip {
+    background: rgba(20,30,24,0.92);
+    border: 1px solid rgba(76,175,80,0.35);
+    color: #c8e6c9;
+    font-size: 0.65rem;
+    padding: 3px 7px;
+    border-radius: 5px;
+}
+
 /* Device bubble activity indicator glow */
 @keyframes device-activity-glow {
     0% {
