@@ -2218,7 +2218,9 @@ class MeshLog {
                 SUM(CASE WHEN totals.packet_type = 'TEL' THEN totals.packet_count ELSE 0 END) AS tel_packets,
                 SUM(CASE WHEN totals.packet_type = 'SYS' THEN totals.packet_count ELSE 0 END) AS sys_packets,
                 SUM(CASE WHEN totals.packet_type = 'CTRL' THEN totals.packet_count ELSE 0 END) AS ctrl_packets,
-                SUM(CASE WHEN totals.packet_type = 'RAW' THEN totals.packet_count ELSE 0 END) AS raw_packets
+                SUM(CASE WHEN totals.packet_type = 'RAW' THEN totals.packet_count ELSE 0 END) AS raw_packets,
+                ROUND(snr_data.avg_snr, 1) AS avg_snr,
+                ROUND(snr_data.max_snr, 1) AS max_snr
             FROM (
                 SELECT reporter_id, packet_type, SUM(packet_count) AS packet_count
                 FROM stats_collector_packets_rollup
@@ -2227,12 +2229,20 @@ class MeshLog {
                 GROUP BY reporter_id, packet_type
             ) totals
             LEFT JOIN reporters r ON r.id = totals.reporter_id
-            GROUP BY totals.reporter_id, reporter_name, public_key, style
+            LEFT JOIN (
+                SELECT reporter_id, AVG(snr) AS avg_snr, MAX(snr) AS max_snr
+                FROM advertisement_reports
+                WHERE received_at >= DATE_SUB(NOW(), INTERVAL :window_hours_snr HOUR)
+                  AND snr IS NOT NULL
+                GROUP BY reporter_id
+            ) snr_data ON snr_data.reporter_id = totals.reporter_id
+            GROUP BY totals.reporter_id, reporter_name, public_key, style, snr_data.avg_snr, snr_data.max_snr
             ORDER BY total_packets DESC, reporter_name ASC, totals.reporter_id ASC
         ";
 
         $collectorStmt = $this->pdo->prepare($collectorSql);
         $collectorStmt->bindValue(':window_hours', $windowHours, PDO::PARAM_INT);
+        $collectorStmt->bindValue(':window_hours_snr', $windowHours, PDO::PARAM_INT);
         $collectorStmt->execute();
 
         $collectorTotals = array();
@@ -2250,6 +2260,8 @@ class MeshLog {
                 'sys_packets' => intval($row['sys_packets'] ?? 0),
                 'ctrl_packets' => intval($row['ctrl_packets'] ?? 0),
                 'raw_packets' => intval($row['raw_packets'] ?? 0),
+                'avg_snr' => isset($row['avg_snr']) ? floatval($row['avg_snr']) : null,
+                'max_snr' => isset($row['max_snr']) ? floatval($row['max_snr']) : null,
             );
         }
 

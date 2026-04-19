@@ -4368,6 +4368,8 @@ class MeshLog {
                 sysPackets: Number(row?.sys_packets) || 0,
                 ctrlPackets: Number(row?.ctrl_packets) || 0,
                 rawPackets: Number(row?.raw_packets) || 0,
+                avgSnr: row?.avg_snr != null ? Number(row.avg_snr) : null,
+                maxSnr: row?.max_snr != null ? Number(row.max_snr) : null,
             }))
             : [];
         const channelTotals = Array.isArray(response?.channel_totals)
@@ -4502,12 +4504,23 @@ class MeshLog {
     _renderGeneralStatsHtml(stats, windowHours = 24) {
         const normalizedWindowHours = this._normalizeStatsWindowHours(windowHours);
         const renderValue = (value) => (value === null || value === undefined || value === '') ? '-' : value;
-        const renderCount = (value) => Number.isFinite(Number(value)) ? `${Number(value)}` : '-';
+        const renderCount = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString() : '-';
+        const renderSnr = (v) => (v != null && Number.isFinite(Number(v))) ? `${Number(v).toFixed(1)} dB` : null;
         const normalizeChannelName = (rawName) => {
             const value = String(rawName ?? '').trim();
             if (!value) return 'Unknown';
             if (value.toLowerCase() === 'public') return 'Public';
             return value.startsWith('#') ? value : `#${value}`;
+        };
+
+        // Snr quality color
+        const snrColor = (snr) => {
+            if (snr == null) return 'rgba(205,220,238,0.35)';
+            if (snr >= 8)  return '#6dd98c';
+            if (snr >= 3)  return '#a3d96d';
+            if (snr >= -2) return '#f0d060';
+            if (snr >= -8) return '#f09040';
+            return '#e05050';
         };
 
         // Window selector
@@ -4516,45 +4529,98 @@ class MeshLog {
             return `<button type="button" class="general-stats-range${active}" data-hours="${hours}">${hours}h</button>`;
         }).join('');
 
-        // Compact KPI strip
-        const kpiItems = [
-            { v: stats.uniqueDevices,              l: 'devices' },
-            { v: stats.totalReports,               l: 'reports' },
-            { v: stats.uniqueCollectors,           l: 'collectors' },
-            { v: stats.channelTotals?.length ?? 0, l: 'channels' },
-        ];
-        const kpiHtml = kpiItems.map((k, i) =>
-            `${i > 0 ? '<span class="stats-kpi-sep">·</span>' : ''}<span class="stats-kpi"><b class="stats-kpi-value">${renderCount(k.v)}</b><span class="stats-kpi-label">${k.l}</span></span>`
-        ).join('');
+        // KPI metric cards
+        const total    = Number(stats.totalReports)      || 0;
+        const devices  = Number(stats.uniqueDevices)     || 0;
+        const cols     = Number(stats.uniqueCollectors)  || 0;
+        const chans    = Number(stats.channelTotals?.length) || 0;
+        const advs     = Number(stats.totalAdvertisements) || 0;
+        const direct   = Number(stats.directReports)     || 0;
+        const flood    = Number(stats.floodReports)      || 0;
+        const relay    = Number(stats.relayedReports)    || 0;
+        const legacy   = Number(stats.unknownRouteReports) || 0;
+        const noHop    = Number(stats.noHopReports)      || 0;
 
-        // Route breakdown
-        const total  = Number(stats.totalReports)   || 0;
-        const direct = Number(stats.directReports)  || 0;
-        const flood  = Number(stats.floodReports)   || 0;
-        const relay  = Number(stats.relayedReports) || 0;
-        const legacy = Number(stats.unknownRouteReports) || 0;
-        const routeHtml = total > 0 ? `
-            <div class="stats-route-row">
-                <span class="stats-route-seg"><span class="stats-route-dot" style="background:#5ab4e4"></span>Direct ${renderCount(direct)}</span>
-                <span class="stats-route-sep">·</span>
-                <span class="stats-route-seg"><span class="stats-route-dot" style="background:#72c472"></span>Flood ${renderCount(flood)}</span>
-                <span class="stats-route-sep">·</span>
-                <span class="stats-route-seg"><span class="stats-route-dot" style="background:#e4a84a"></span>Relay-hop ${renderCount(relay)}</span>
-                ${legacy > 0 ? `<span class="stats-route-sep">·</span><span class="stats-route-seg" style="opacity:0.45">Legacy ${renderCount(legacy)}</span>` : ''}
-            </div>` : '';
+        const pct = (n) => total > 0 ? `${Math.round((n / total) * 100)}%` : '—';
+
+        // Rate: packets per hour
+        const rate = normalizedWindowHours > 0 ? (total / normalizedWindowHours).toFixed(1) : '—';
+
+        const kpiCards = [
+            { value: renderCount(devices),     label: 'Active devices',   sub: `${renderCount(advs)} advertisements`,  color: '#60b7ff' },
+            { value: renderCount(total),        label: 'Total reports',    sub: `~${rate}/h avg rate`,                  color: '#78c8a8' },
+            { value: renderCount(cols),         label: 'Collectors',       sub: `${renderCount(chans)} channels`,       color: '#c890e8' },
+            { value: renderCount(direct),       label: 'Direct links',     sub: `${pct(direct)} of reports`,            color: '#5ab4e4' },
+        ].map((card) => `
+            <div class="stats-kpi-card">
+                <div class="stats-kpi-card-value" style="color:${card.color}">${card.value}</div>
+                <div class="stats-kpi-card-label">${card.label}</div>
+                <div class="stats-kpi-card-sub">${card.sub}</div>
+            </div>`).join('');
+
+        // Route breakdown — stacked proportional bar
+        const routeBar = total > 0 ? (() => {
+            const segments = [
+                { count: direct, color: '#5ab4e4', label: 'Direct' },
+                { count: flood,  color: '#72c472', label: 'Flood' },
+                { count: relay,  color: '#e4a84a', label: 'Relay-hop' },
+                { count: legacy, color: 'rgba(200,220,240,0.22)', label: 'Legacy' },
+            ].filter(s => s.count > 0);
+            const bars = segments.map(s =>
+                `<span class="stats-route-bar-seg" style="width:${(s.count/total*100).toFixed(2)}%;background:${s.color}" data-chart-tooltip="${s.label}: ${s.count.toLocaleString()} (${pct(s.count)})"></span>`
+            ).join('');
+            const pills = segments.map(s =>
+                `<span class="stats-route-pill"><span class="stats-route-dot" style="background:${s.color}"></span>${s.label} <b>${s.count.toLocaleString()}</b> <span class="stats-route-pct">${pct(s.count)}</span></span>`
+            ).join('');
+            const noHopNote = noHop > 0
+                ? `<span class="stats-route-pill stats-route-pill-ghost" title="Reports received direct from sender with no relay hops in path">No-hop ${noHop.toLocaleString()}</span>`
+                : '';
+            return `
+                <div class="stats-route-stacked-bar">${bars}</div>
+                <div class="stats-route-legend">${pills}${noHopNote}</div>`;
+        })() : '';
 
         const noteClassName = stats.hasError ? 'general-stats-note general-stats-note-error' : 'general-stats-note';
         const noteText = stats.isLoading && !stats.hasData ? 'Loading statistics…' : renderValue(stats.note);
 
-        // Collector rows — compact 2-line layout
-        const collectorMax = Math.max(1, ...stats.collectorTotals.map((row) => Number(row.totalPackets) || 0));
+        // Collector rows — segmented type bar + SNR badge
+        const pkTypeColors = { adv:'#60b7ff', dir:'#78c8a8', pub:'#c890e8', tel:'#f0c060', sys:'#7abcdc', ctrl:'#e07060', raw:'rgba(200,220,238,0.35)' };
+        const collectorMax = Math.max(1, ...stats.collectorTotals.map((r) => Number(r.totalPackets) || 0));
         const collectorRows = stats.collectorTotals.length > 0
             ? stats.collectorTotals.map((row) => {
-                const width = Math.max(4, Math.round(((Number(row.totalPackets) || 0) / collectorMax) * 100));
                 const reporter = this.reporters[row.reporterId] ?? null;
                 const style = reporter ? reporter.getStyle() : (() => { try { return JSON.parse(row.style || '{}'); } catch { return {}; } })();
                 const color = style?.color ?? '#4ea4c4';
                 const shortKey = row.publicKey ? row.publicKey.slice(0, 10) : '';
+                const pTotal = Number(row.totalPackets) || 0;
+                const widthPct = Math.max(4, Math.round((pTotal / collectorMax) * 100));
+
+                // Segmented type bar
+                const typeSegs = [
+                    { k: 'adv',  n: row.advPackets,  label: 'ADV'  },
+                    { k: 'dir',  n: row.dirPackets,  label: 'DIR'  },
+                    { k: 'pub',  n: row.pubPackets,  label: 'PUB'  },
+                    { k: 'tel',  n: row.telPackets,  label: 'TEL'  },
+                    { k: 'sys',  n: row.sysPackets,  label: 'SYS'  },
+                    { k: 'ctrl', n: row.ctrlPackets, label: 'CTRL' },
+                    { k: 'raw',  n: row.rawPackets,  label: 'RAW'  },
+                ].filter(s => s.n > 0);
+
+                const typeBarSegs = pTotal > 0
+                    ? typeSegs.map(s =>
+                        `<span style="width:${(s.n/pTotal*100).toFixed(2)}%;background:${pkTypeColors[s.k]}" data-chart-tooltip="${s.label}: ${s.n.toLocaleString()}"></span>`
+                    ).join('')
+                    : '';
+
+                const breakdownPills = typeSegs.map(s =>
+                    `<span class="coll-type-pill" style="color:${pkTypeColors[s.k]}">${s.label} ${s.n.toLocaleString()}</span>`
+                ).join('');
+
+                const snrLabel = renderSnr(row.avgSnr);
+                const snrBadge = snrLabel
+                    ? `<span class="collector-snr-badge" style="color:${snrColor(row.avgSnr)}" title="Avg ADV SNR: ${snrLabel}">${snrLabel}</span>`
+                    : '';
+
                 return `
                     <div class="collector-stats-compact-row">
                         <div class="collector-stats-head">
@@ -4563,24 +4629,30 @@ class MeshLog {
                                 <span class="collector-stats-name">${escapeXml(row.reporterName)}</span>
                                 <span class="collector-stats-key">${escapeXml(shortKey)}</span>
                             </div>
-                            <span class="collector-stats-total">${renderCount(row.totalPackets)}</span>
+                            <div class="collector-stats-head-right">
+                                ${snrBadge}
+                                <span class="collector-stats-total">${renderCount(pTotal)}</span>
+                            </div>
                         </div>
-                        <div class="collector-stats-bar-line">
-                            <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
-                            <div class="collector-stats-breakdown">ADV ${row.advPackets} · DIR ${row.dirPackets} · PUB ${row.pubPackets} · TEL ${row.telPackets} · RAW ${row.rawPackets}</div>
+                        <div class="stats-segmented-bar-wrap">
+                            <div class="stats-segmented-bar" style="--bar-w:${widthPct}%">${typeBarSegs}</div>
                         </div>
+                        <div class="collector-stats-breakdown">${breakdownPills}</div>
                     </div>`;
             }).join('')
             : '<div class="general-stats-note">No collector packet activity recorded in this window.</div>';
 
-        // Channel rows — compact 2-line layout
-        const channelMax = Math.max(1, ...stats.channelTotals.map((row) => Number(row.totalMessages) || 0));
+        // Channel rows — message rate + unique sender badge
+        const channelMax = Math.max(1, ...stats.channelTotals.map((r) => Number(r.totalMessages) || 0));
         const channelRows = stats.channelTotals.length > 0
             ? stats.channelTotals.map((row) => {
                 const width = Math.max(4, Math.round(((Number(row.totalMessages) || 0) / channelMax) * 100));
                 const theme = getChannelTheme(`${row.channelHash ?? ''}:${row.channelName ?? ''}`);
                 const color = theme.badgeBg ?? theme.ring ?? '#8fb3c9';
                 const keyLabel = row.channelHash ? row.channelHash.slice(0, 10) : `ID ${row.channelId}`;
+                const msgs = Number(row.totalMessages) || 0;
+                const senders = Number(row.uniqueSenders) || 0;
+                const msgRate = normalizedWindowHours > 0 ? (msgs / normalizedWindowHours).toFixed(1) : '—';
                 return `
                     <div class="collector-stats-compact-row">
                         <div class="collector-stats-head">
@@ -4589,12 +4661,15 @@ class MeshLog {
                                 <span class="collector-stats-name">${escapeXml(normalizeChannelName(row.channelName))}</span>
                                 <span class="collector-stats-key">${escapeXml(keyLabel)}</span>
                             </div>
-                            <span class="collector-stats-total">${renderCount(row.totalMessages)}</span>
+                            <div class="collector-stats-head-right">
+                                <span class="channel-sender-badge">${senders} sender${senders !== 1 ? 's' : ''}</span>
+                                <span class="collector-stats-total">${renderCount(msgs)}</span>
+                            </div>
                         </div>
-                        <div class="collector-stats-bar-line">
-                            <div class="collector-stats-bar"><span style="width:${width}%;background:${escapeXml(color)}"></span></div>
-                            <div class="collector-stats-breakdown">${renderCount(row.uniqueSenders)} senders</div>
+                        <div class="stats-segmented-bar-wrap">
+                            <div class="stats-segmented-bar" style="--bar-w:${width}%"><span style="width:100%;background:${escapeXml(color)}"></span></div>
                         </div>
+                        <div class="collector-stats-breakdown"><span class="coll-type-pill" style="color:rgba(205,220,238,0.7)">~${msgRate} msg/h</span></div>
                     </div>`;
             }).join('')
             : '';
@@ -4603,7 +4678,7 @@ class MeshLog {
             ? `<section class="settings-card general-stats-shell">
                 <div class="stats-section-head">
                     <span class="stats-section-title">Channels</span>
-                    <span class="general-stats-meta">last ${normalizedWindowHours}h</span>
+                    <span class="general-stats-meta">${stats.channelTotals.length} active · last ${normalizedWindowHours}h</span>
                 </div>
                 <div class="collector-stats-list">${channelRows}</div>
                </section>`
@@ -4617,8 +4692,8 @@ class MeshLog {
                         <span class="general-stats-meta">History: ${renderValue(stats.loadedSpanLabel)}</span>
                     </div>
                 </div>
-                <div class="stats-kpi-strip">${kpiHtml}</div>
-                ${routeHtml}
+                <div class="stats-kpi-grid">${kpiCards}</div>
+                ${routeBar ? `<div class="stats-route-breakdown">${routeBar}</div>` : ''}
                 <div class="${noteClassName}">${noteText}</div>
             </section>
             <section class="settings-card general-stats-shell">
@@ -4636,7 +4711,7 @@ class MeshLog {
             <section class="settings-card general-stats-shell">
                 <div class="stats-section-head">
                     <span class="stats-section-title">Collectors</span>
-                    <span class="general-stats-meta">last ${normalizedWindowHours}h</span>
+                    <span class="general-stats-meta">${stats.collectorTotals.length} active · last ${normalizedWindowHours}h</span>
                 </div>
                 <div class="collector-stats-list">${collectorRows}</div>
             </section>
