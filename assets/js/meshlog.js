@@ -1323,13 +1323,15 @@ class MeshLogContact extends MeshLogObject {
     getMarkerTooltip(options = {}) {
         const activeTab = options.tab ?? 'general';
         const statsWindowHours = Number(options.statsWindowHours ?? 24);
-        const generalActive = activeTab === 'general' ? ' device-popup-tab-active' : '';
-        const statsActive   = activeTab === 'stats'   ? ' device-popup-tab-active' : '';
-        const healthActive  = activeTab === 'health'  ? ' device-popup-tab-active' : '';
+        const showHealthTab = this._meshlog.hasContactHealthData(this.data.id);
+        const normalizedTab = (activeTab === 'health' && !showHealthTab) ? 'general' : activeTab;
+        const generalActive = normalizedTab === 'general' ? ' device-popup-tab-active' : '';
+        const statsActive   = normalizedTab === 'stats'   ? ' device-popup-tab-active' : '';
+        const healthActive  = normalizedTab === 'health'  ? ' device-popup-tab-active' : '';
         let bodyHtml;
-        if (activeTab === 'stats') {
+        if (normalizedTab === 'stats') {
             bodyHtml = this.getDevicePopupStatsHtml(statsWindowHours);
-        } else if (activeTab === 'health') {
+        } else if (normalizedTab === 'health') {
             bodyHtml = this._meshlog.getDevicePopupHealthHtml(this.data.id);
         } else {
             bodyHtml = this.getDevicePopupGeneralHtml();
@@ -1348,7 +1350,7 @@ class MeshLogContact extends MeshLogObject {
                 <div class="device-popup-tabs" data-contact-id="${this.data.id}">
                     <button type="button" class="device-popup-tab${generalActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="general">General</button>
                     <button type="button" class="device-popup-tab${statsActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="stats">Stats</button>
-                    <button type="button" class="device-popup-tab${healthActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="health">Health</button>
+                    ${showHealthTab ? `<button type="button" class="device-popup-tab${healthActive}" data-contact-id="${this.data.id}" data-popup-action="tab" data-popup-value="health">Health</button>` : ''}
                 </div>
                 <div class="device-popup-panel">${bodyHtml}</div>
             </div>
@@ -3761,6 +3763,7 @@ class MeshLog {
     openContactPopup(contact) {
         if (!contact?.adv) return;
         this.activePopupContactId = Number(contact.data.id);
+        this._loadContactHealth(Number(contact.data.id));
         const latLng = [Number(contact.adv.data.lat), Number(contact.adv.data.lon)];
         this._destroyActiveContactTrailMap();
         if (!this.activeContactPopup) {
@@ -4447,7 +4450,7 @@ class MeshLog {
                     fetchedAt: Date.now(),
                     data: { ...normalized, isLoading: false },
                 });
-                if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'health') {
+                if (this.selectedMarkerId === numericContactId || this.activePopupContactId === numericContactId) {
                     this.updateSelectedContactPopup();
                 }
             },
@@ -4457,7 +4460,7 @@ class MeshLog {
                     fetchedAt: Date.now(),
                     data: this._getEmptyContactHealth({ hasError: true, note: 'Failed to load health data.' }),
                 });
-                if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'health') {
+                if (this.selectedMarkerId === numericContactId || this.activePopupContactId === numericContactId) {
                     this.updateSelectedContactPopup();
                 }
             }
@@ -4471,6 +4474,12 @@ class MeshLog {
         if (cached?.status === 'ready' && (Date.now() - cached.fetchedAt) < cacheTtlMs) return cached.data;
         if (!cached || cached?.status !== 'loading') this._loadContactHealth(contactId);
         return cached?.data ?? this._getEmptyContactHealth({ isLoading: true });
+    }
+
+    hasContactHealthData(contactId) {
+        const key = `health:${Number(contactId)}`;
+        const cached = this.contactHealthCache.get(key) ?? null;
+        return Boolean(cached?.data?.hasData);
     }
 
     _buildHealthSparkline(values, color = '#60b7ff', unitLabel = '', yMin = null) {
