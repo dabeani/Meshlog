@@ -5043,7 +5043,7 @@ class MeshLog {
             { value: renderCount(devices),     label: 'Active devices',   sub: `${renderCount(advs)} advertisements`,  color: '#60b7ff' },
             { value: renderCount(total),        label: 'Total reports',    sub: `~${rate}/h avg rate`,                  color: '#78c8a8' },
             { value: renderCount(cols),         label: 'Collectors',       sub: `${renderCount(chans)} channels`,       color: '#c890e8' },
-            { value: renderCount(direct),       label: 'Direct links',     sub: `${pct(direct)} of reports`,            color: '#4db8ff' },
+            { value: renderCount(direct),       label: 'Direct links',     sub: `${pct(direct)} of reports`,            color: '#5ab4e4' },
         ].map((card) => `
             <div class="stats-kpi-card">
                 <div class="stats-kpi-card-value" style="color:${card.color}">${card.value}</div>
@@ -5054,9 +5054,9 @@ class MeshLog {
         // Route breakdown — stacked proportional bar
         const routeBar = total > 0 ? (() => {
             const segments = [
-                { count: direct, color: '#4db8ff', label: 'Direct' },
-                { count: flood,  color: '#2ecc71', label: 'Flood' },
-                { count: relay,  color: '#ffcc00', label: 'Relay-hop' },
+                { count: direct, color: '#00ccff', label: 'Direct' },
+                { count: flood,  color: '#00ff33', label: 'Flood' },
+                { count: relay,  color: '#ff7700', label: 'Relay-hop' },
                 { count: legacy, color: 'rgba(200,220,240,0.22)', label: 'Legacy' },
             ].filter(s => s.count > 0);
             const bars = segments.map(s =>
@@ -5077,7 +5077,7 @@ class MeshLog {
         const noteText = stats.isLoading && !stats.hasData ? 'Loading statistics…' : renderValue(stats.note);
 
         // Collector rows — segmented type bar + SNR badge
-        const pkTypeColors = { adv:'#4db8ff', dir:'#2ecc71', pub:'#ff6eb4', tel:'#ffcc00', sys:'#ff7f3f', ctrl:'#e05555', raw:'rgba(200,220,238,0.28)' };
+        const pkTypeColors = { adv:'#60b7ff', dir:'#78c8a8', pub:'#c890e8', tel:'#f0c060', sys:'#7abcdc', ctrl:'#e07060', raw:'rgba(200,220,238,0.35)' };
         const collectorMax = Math.max(1, ...stats.collectorTotals.map((r) => Number(r.totalPackets) || 0));
         const collectorRows = stats.collectorTotals.length > 0
             ? stats.collectorTotals.map((row) => {
