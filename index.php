@@ -373,8 +373,11 @@ function mkMapHelpBtn(topic) {
     btn.textContent = '?';
     btn.dataset.help = topic;
     btn.title = 'Help';
-    // stopPropagation prevents the map from receiving the click.
-    L.DomEvent.on(btn, 'click', function(e) { L.DomEvent.stopPropagation(e); });
+    L.DomEvent.on(btn, 'click', function(e) {
+        L.DomEvent.stopPropagation(e);
+        // Must call directly — stopPropagation prevents the delegated document listener from firing.
+        if (window.openAppHelp) window.openAppHelp(topic);
+    });
     return btn;
 }
 
@@ -613,7 +616,12 @@ if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
             bodyEl.innerHTML  = topic.html;
         } else {
             titleEl.innerText = topicOrTitle;
-            bodyEl.innerHTML  = htmlBody || '';
+            // Legacy callers pass plain text with \n line breaks — escape and convert.
+            bodyEl.innerHTML  = (htmlBody || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\n/g, '<br>');
         }
         modal.hidden = false;
     };
