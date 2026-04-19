@@ -5171,7 +5171,10 @@ class MeshLog {
             ? `<section class="settings-card general-stats-shell">
                 <div class="stats-section-head">
                     <span class="stats-section-title">Channels</span>
-                    <span class="general-stats-meta">${stats.channelTotals.length} active · last ${normalizedWindowHours}h</span>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <span class="general-stats-meta">${stats.channelTotals.length} active · last ${normalizedWindowHours}h</span>
+                        <button type="button" class="settings-help-btn" data-help="stats" title="About Channels">?</button>
+                    </div>
                 </div>
                 <div class="collector-stats-list">${channelRows}</div>
                </section>`
@@ -5183,6 +5186,7 @@ class MeshLog {
                     <div class="general-stats-range-group">${windowButtons}</div>
                     <div class="general-stats-toolbar-right">
                         <span class="general-stats-meta">History: ${renderValue(stats.loadedSpanLabel)}</span>
+                        <button type="button" class="settings-help-btn" data-help="stats" title="About Stats">?</button>
                     </div>
                 </div>
                 <div class="stats-kpi-grid">${kpiCards}</div>
@@ -5204,7 +5208,10 @@ class MeshLog {
             <section class="settings-card general-stats-shell">
                 <div class="stats-section-head">
                     <span class="stats-section-title">Collectors</span>
-                    <span class="general-stats-meta">${stats.collectorTotals.length} active · last ${normalizedWindowHours}h</span>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <span class="general-stats-meta">${stats.collectorTotals.length} active · last ${normalizedWindowHours}h</span>
+                        <button type="button" class="settings-help-btn" data-help="stats" title="About Collectors">?</button>
+                    </div>
                 </div>
                 <div class="collector-stats-list">${collectorRows}</div>
             </section>

@@ -55,7 +55,7 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
     </div>
     <div id="tab-devices" class="sidebar-tab-panel" hidden>
         <section class="settings-panel">
-            <div class="settings-panel-title">Device List</div>
+            <div class="settings-panel-title">Device List <button type="button" class="settings-help-btn" data-help="devices" title="About Device List">?</button></div>
             <div class="settings-panel-subtitle">Configure sorting and visibility in the Devices tab list.</div>
             <div class="settings" id="settings-contacts"></div>
         </section>
@@ -366,6 +366,18 @@ function _setTileLayer(name) {
     });
 }
 
+// Creates a small "?" help button for map menu section titles.
+function mkMapHelpBtn(topic) {
+    var btn = L.DomUtil.create('button', 'map-menu-help-btn');
+    btn.type = 'button';
+    btn.textContent = '?';
+    btn.dataset.help = topic;
+    btn.title = 'Help';
+    // stopPropagation prevents the map from receiving the click.
+    L.DomEvent.on(btn, 'click', function(e) { L.DomEvent.stopPropagation(e); });
+    return btn;
+}
+
 var _UnifiedMapMenu = L.Control.extend({
     options: { position: 'topright' },
     onAdd: function() {
@@ -393,9 +405,12 @@ var _UnifiedMapMenu = L.Control.extend({
 
         // Layer selection section
         var layerSection = L.DomUtil.create('div', 'map-menu-section');
+        var layerTitleRow = L.DomUtil.create('div', 'map-menu-title-row');
         var layerTitle = L.DomUtil.create('span', 'map-menu-title');
         layerTitle.textContent = 'Map Layer';
-        layerSection.appendChild(layerTitle);
+        layerTitleRow.appendChild(layerTitle);
+        layerTitleRow.appendChild(mkMapHelpBtn('map-layer'));
+        layerSection.appendChild(layerTitleRow);
 
         var layerButtons = L.DomUtil.create('div', 'map-menu-layer-buttons');
         ['dark', 'light', 'topo'].forEach(function(layer) {
@@ -410,9 +425,12 @@ var _UnifiedMapMenu = L.Control.extend({
 
         // Heatmap section
         var heatmapSection = L.DomUtil.create('div', 'map-menu-section');
+        var heatmapTitleRow = L.DomUtil.create('div', 'map-menu-title-row');
         var heatmapTitleEl = L.DomUtil.create('span', 'map-menu-title');
         heatmapTitleEl.textContent = 'Heatmap';
-        heatmapSection.appendChild(heatmapTitleEl);
+        heatmapTitleRow.appendChild(heatmapTitleEl);
+        heatmapTitleRow.appendChild(mkMapHelpBtn('heatmap'));
+        heatmapSection.appendChild(heatmapTitleRow);
 
         var heatmapCtrlRow = L.DomUtil.create('div', 'map-menu-heatmap-ctrl');
         var heatmapToggleBtn = L.DomUtil.create('button', 'map-menu-heatmap-toggle');
@@ -443,9 +461,12 @@ var _UnifiedMapMenu = L.Control.extend({
 
         // Coverage spot overlay section
         var coverageSection = L.DomUtil.create('div', 'map-menu-section');
+        var coverageTitleRow = L.DomUtil.create('div', 'map-menu-title-row');
         var coverageTitleEl = L.DomUtil.create('span', 'map-menu-title');
         coverageTitleEl.textContent = 'Coverage';
-        coverageSection.appendChild(coverageTitleEl);
+        coverageTitleRow.appendChild(coverageTitleEl);
+        coverageTitleRow.appendChild(mkMapHelpBtn('coverage'));
+        coverageSection.appendChild(coverageTitleRow);
 
         var coverageCtrlRow = L.DomUtil.create('div', 'map-menu-heatmap-ctrl');
         var coverageToggleBtn = L.DomUtil.create('button', 'map-menu-coverage-toggle');
@@ -558,18 +579,58 @@ if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
 
 // App help dialog
 (function() {
-    const modal = document.getElementById('app-help-modal');
+    var HELP_TOPICS = {
+        'map-layer': {
+            title: 'Map Layer',
+            html:  'Choose the background map tile style.<br><br><strong>Dark</strong> — low-glare CartoCDN basemap, best at night or indoors.<br><strong>Light</strong> — standard OpenStreetMap tiles.<br><strong>Topo</strong> — topographic map with elevation contours, useful for assessing RF line-of-sight.'
+        },
+        'heatmap': {
+            title: 'Activity Heatmap',
+            html:  'Shows <strong>network activity density</strong> — warmer/brighter areas received more packets in the selected window.<br><br>Weight comes from all packet types: advertisements, messages, telemetry and raw packets.<br><br><strong>1 h</strong> — near-real-time &nbsp;<strong>24 h</strong> — typical daily picture &nbsp;<strong>36 h</strong> — broader historical window'
+        },
+        'coverage': {
+            title: 'SNR Coverage',
+            html:  'Shows <strong>where packets were received</strong>, coloured by average Signal-to-Noise Ratio (SNR).<br><br><span style="color:#4caf50">■</span>&nbsp;<strong>≥ 5 dB</strong> — strong signal<br><span style="color:#8bc34a">■</span>&nbsp;<strong>≥ 0 dB</strong> — good signal<br><span style="color:#ffeb3b">■</span>&nbsp;<strong>≥ −5 dB</strong> — fair signal<br><span style="color:#ff9800">■</span>&nbsp;<strong>≥ −10 dB</strong> — weak signal<br><span style="color:#f44336">■</span>&nbsp;<strong>&lt; −10 dB</strong> — poor signal<br><br>Spot size grows with report count. Each cell covers approximately 111 m.'
+        },
+        'devices': {
+            title: 'Device List',
+            html:  'Lists all known nodes heard by your collectors.<br><br>Sort by <strong>Name</strong>, <strong>Last heard</strong> (most recent first), or <strong>Signal</strong> quality. Click a device name to jump to it on the map and open its detail card.<br><br><strong>Hide</strong> removes a node from the list without deleting it — useful for filtering out fixed infrastructure nodes.'
+        },
+        'stats': {
+            title: 'Stats',
+            html:  'Summarises packet traffic for the selected time window (1 h / 24 h / 36 h).<br><br><strong>KPI cards</strong> — active devices, total reports, collector count and direct-linked nodes.<br><strong>Route breakdown</strong> — direct vs flood vs relay-hop vs legacy traffic share.<br><strong>Collectors</strong> — per-gateway packet count with SNR quality badge and type distribution bar.<br><strong>Channels</strong> — active channel activity and unique sender counts.'
+        }
+    };
+
+    const modal   = document.getElementById('app-help-modal');
     const titleEl = document.getElementById('app-help-title');
     const bodyEl  = document.getElementById('app-help-body');
-    window.openAppHelp = function(title, body) {
-        titleEl.innerText = title;
-        bodyEl.innerText  = body;
+
+    window.openAppHelp = function(topicOrTitle, htmlBody) {
+        const topic = HELP_TOPICS[topicOrTitle];
+        if (topic) {
+            titleEl.innerText = topic.title;
+            bodyEl.innerHTML  = topic.html;
+        } else {
+            titleEl.innerText = topicOrTitle;
+            bodyEl.innerHTML  = htmlBody || '';
+        }
         modal.hidden = false;
     };
+
     function close() { modal.hidden = true; }
     document.getElementById('app-help-close').addEventListener('click', close);
     modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) close(); });
+
+    // Delegated handler — any element with data-help="topic-key" triggers the overlay.
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-help]');
+        if (btn && window.openAppHelp) {
+            e.stopPropagation();
+            window.openAppHelp(btn.dataset.help);
+        }
+    });
 })();
 
 </script>
