@@ -22,6 +22,7 @@
     include 'migrations/017_add_stats_rollups.php';
     include 'migrations/018_add_reporter_format_and_iata.php';
     include 'migrations/019_add_contact_hidden.php';
+    include 'migrations/020_add_reporter_pending.php';
 
     // Must be in order!
     $migrationClasses = array(
@@ -45,6 +46,7 @@
         'Migration_017',
         'Migration_018',
         'Migration_019',
+        'Migration_020',
     );
 
     session_start();

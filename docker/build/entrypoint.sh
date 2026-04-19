@@ -47,4 +47,7 @@ $out = "<?php\n\n\$config = " . var_export($config, true) . ";\n\n?>\n";
 file_put_contents($cfgFile, $out);
 '
 
+echo "[entrypoint] Running database migrations..."
+php "$APP_ROOT/tools/run_migrations.php" || { echo "[entrypoint] Migration failed — aborting"; exit 1; }
+
 exec "$@"
