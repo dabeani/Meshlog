@@ -3998,7 +3998,7 @@ class MeshLog {
         return [1, 24, 36].includes(Number(windowHours)) ? Number(windowHours) : 24;
     }
 
-    _buildStatsChartSvg(buckets, windowHours = 24, unitLabel = 'pkts') {
+    _buildStatsChartSvg(buckets, windowHours = 24, unitLabel = 'pkts', barColor = '#60b7ff') {
         const safeBuckets = Array.isArray(buckets) && buckets.length > 0
             ? buckets
             : new Array(this._getStatsBucketCount(windowHours)).fill(0);
@@ -4033,7 +4033,7 @@ class MeshLog {
         }).join('');
 
         return `
-            <div class="device-popup-chart-wrap">
+            <div class="device-popup-chart-wrap" style="--chart-bar-color:${escapeXml(barColor)}">
                 <svg class="device-popup-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="xMidYMid meet" aria-label="Packet activity chart">
                     <line x1="${yAxisWidth}" y1="${barsTop}" x2="${yAxisWidth}" y2="${barsBottom + 0.5}" class="device-popup-chart-axis"></line>
                     <line x1="${yAxisWidth}" y1="${barsBottom + 0.5}" x2="${chartWidth}" y2="${barsBottom + 0.5}" class="device-popup-chart-axis"></line>
@@ -4660,7 +4660,7 @@ class MeshLog {
             newestLabel: overrides.newestLabel ?? '-',
             oldestLabel: overrides.oldestLabel ?? '-',
             packetMixLabel: overrides.packetMixLabel ?? 'No packets recorded',
-            chartSvg: this._buildStatsChartSvg(buckets, windowHours),
+            chartSvg: this._buildStatsChartSvg(buckets, windowHours, 'pkts', '#ff8a1f'),
             sourceLabel: overrides.sourceLabel ?? 'Database',
             note: overrides.note ?? '',
             reporterId: overrides.reporterId ?? null,
@@ -4822,8 +4822,8 @@ class MeshLog {
             loadedSpanLabel: overrides.loadedSpanLabel ?? 'No advertisement reports recorded',
             newestLabel: overrides.newestLabel ?? '-',
             oldestLabel: overrides.oldestLabel ?? '-',
-            chartSvg: this._buildStatsChartSvg(buckets, normalizedWindowHours, 'adv'),
-            uniqueDeviceChartSvg: this._buildStatsChartSvg(uniqueDeviceBuckets, normalizedWindowHours, 'dev'),
+            chartSvg: this._buildStatsChartSvg(buckets, normalizedWindowHours, 'adv', '#ff8a1f'),
+            uniqueDeviceChartSvg: this._buildStatsChartSvg(uniqueDeviceBuckets, normalizedWindowHours, 'dev', '#19d38a'),
             collectorTotals: Array.isArray(overrides.collectorTotals) ? overrides.collectorTotals : [],
             channelTotals: Array.isArray(overrides.channelTotals) ? overrides.channelTotals : [],
             note: overrides.note ?? 'Counts advertisement report receptions in the selected time window.',
