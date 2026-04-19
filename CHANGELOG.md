@@ -4,22 +4,12 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ---
 
-## [Unreleased] (2026-04-19)
+## [v1.0.5] — Map/Live Feed UI (2026-04-07)
 
 ### Frontend — New Features
 
 - **Map heatmap overlay** — toggleable heatmap layer on the main map showing node advertisement position density weighted by report count; state is persisted across sessions and auto-reloads when the time window changes.
 - **Statistics page redesign** — compact KPI strip (devices · reports · collectors · channels in one line), side-by-side charts, 2-line collector and channel rows, and a route-type breakdown row; removes several hundred pixels of wasted vertical space.
-
-### Backend — Security & Fixes
-
-- **Input data no longer leaks into HTTP responses on validation failure** — validation error messages in packet entity classes now go to server error log only, not to the HTTP response body.
-- **Channel name and hash are now properly escaped before storage** — admin channel create/edit operations now apply output escaping to name inputs, preventing XSS via stored channel names.
-- **Contact enabled flag stored with correct database type** — the contact enabled column is now bound as an integer to the database, matching the underlying column type and preventing silent type coercion.
-
----
-
-## [v1.0.5] — Map/Live Feed UI (2026-04-07)
 
 ### WebUI — Fixes & Improvements
 
@@ -30,6 +20,11 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Device activity indicator glow** — Device bubbles on an active packet path now smoothly pulse with a cyan glow effect while the animated route is displayed, providing visual feedback for receive/forward/send activity. Glow automatically resets to allow re-triggering on new packets.
 - **Map control overlap fix** — Removed duplicate search control from top-right that was overlapping with the unified menu since search is now integrated into the unified panel.
 
+### Backend — Security & Fixes
+
+- **Input data no longer leaks into HTTP responses on validation failure** — validation error messages in packet entity classes now go to server error log only, not to the HTTP response body.
+- **Channel name and hash are now properly escaped before storage** — admin channel create/edit operations now apply output escaping to name inputs, preventing XSS via stored channel names.
+- **Contact enabled flag stored with correct database type** — the contact enabled column is now bound as an integer to the database, matching the underlying column type and preventing silent type coercion.
 
 ---
 
