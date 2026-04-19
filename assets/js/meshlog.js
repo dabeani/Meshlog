@@ -3185,6 +3185,7 @@ class MeshLog {
         this._boundPopupControlPointerHandler = (event) => this._handlePopupControlPointer(event);
         document.addEventListener('pointerdown', this._boundPopupControlPointerHandler, true);
         document.addEventListener('click', this._boundPopupControlPointerHandler, true);
+        this._initChartBarTooltip();
         this._popupStatsRefreshTimer = setInterval(() => {
             if (this.selectedMarkerId && this.popupUiState?.tab === 'stats') {
                 this.updateSelectedContactPopup();
@@ -3363,6 +3364,40 @@ class MeshLog {
             return;
         }
 
+    }
+
+    _initChartBarTooltip() {
+        const tip = document.createElement('div');
+        tip.id = 'chart-bar-tooltip';
+        tip.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(tip);
+        this._chartBarTooltipEl = tip;
+
+        document.addEventListener('pointermove', (event) => {
+            if (!(event.target instanceof Element)) return;
+            const hit = event.target.closest('[data-chart-tooltip]');
+            if (hit) {
+                tip.textContent = hit.dataset.chartTooltip;
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                let left = event.clientX + 14;
+                let top  = event.clientY - 32;
+                // After making visible, clamp to viewport
+                tip.style.display = '';
+                const tw = tip.offsetWidth;
+                const th = tip.offsetHeight;
+                if (left + tw > vw - 6) left = event.clientX - tw - 14;
+                if (top < 6) top = event.clientY + 20;
+                if (top + th > vh - 6) top = event.clientY - th - 6;
+                tip.style.left = left + 'px';
+                tip.style.top  = top + 'px';
+            } else {
+                tip.style.display = 'none';
+            }
+        }, { passive: true });
+
+        // Hide when pointer leaves the document (e.g. moves to browser chrome)
+        document.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
     }
 
     handlePopupAction(contactId, action, value) {
@@ -3746,7 +3781,8 @@ class MeshLog {
                 : `-${hoursAgoStart.toFixed(hoursAgoStart % 1 === 0 ? 0 : 1)}h → -${hoursAgoEnd.toFixed(hoursAgoEnd % 1 === 0 ? 0 : 1)}h`;
             const tooltipText = `${timeLabel}: ${count} ${unitLabel}`;
             // Always render a full-height transparent hit area so empty bars are also hoverable.
-            const hitRect = `<rect x="${x}" y="${barsTop}" width="${barWidth}" height="${barsHeight}" fill="transparent"><title>${tooltipText}</title></rect>`;
+            const escapedTooltip = tooltipText.replace(/"/g, '&quot;');
+            const hitRect = `<rect x="${x}" y="${barsTop}" width="${barWidth}" height="${barsHeight}" fill="transparent" data-chart-tooltip="${escapedTooltip}"></rect>`;
             const barRect = height > 0 ? `<rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="2" ry="2"></rect>` : '';
             return hitRect + barRect;
         }).join('');

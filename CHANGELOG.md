@@ -4,7 +4,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ---
 
-## [v1.0.5] — Map/Live Feed UI (2026-04-07)
+## [v1.0.5] — Map/Live Feed UI (2026-04-19)
 
 ### Frontend — New Features
 
@@ -19,12 +19,21 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Unified map menu (top-right)** — The map layer switcher (Dark/Light/Topo) has been integrated with the device search field and a legend into a single collapsible menu panel in the top-right corner. Includes device color key, active route indicator, and GPS trail legend. Menu can be toggled to a semi-transparent collapsed state.
 - **Device activity indicator glow** — Device bubbles on an active packet path now smoothly pulse with a cyan glow effect while the animated route is displayed, providing visual feedback for receive/forward/send activity. Glow automatically resets to allow re-triggering on new packets.
 - **Map control overlap fix** — Removed duplicate search control from top-right that was overlapping with the unified menu since search is now integrated into the unified panel.
+- **Chart bar tooltip** — Hovering over a bar in the device activity chart now shows a styled floating tooltip with the time range and packet count, replacing the plain unstyled browser-native tooltip.
 
 ### Backend — Security & Fixes
 
 - **Input data no longer leaks into HTTP responses on validation failure** — validation error messages in packet entity classes now go to server error log only, not to the HTTP response body.
 - **Channel name and hash are now properly escaped before storage** — admin channel create/edit operations now apply output escaping to name inputs, preventing XSS via stored channel names.
 - **Contact enabled flag stored with correct database type** — the contact enabled column is now bound as an integer to the database, matching the underlying column type and preventing silent type coercion.
+- **Migrations run automatically at container boot** — The Docker entrypoint now applies any pending schema migrations before starting services, eliminating the need for a manual setup run after deployment.
+- **Device packet stats include relayed traffic** — The per-device packet count on the device detail popup previously only counted packets where the device was the sender. It now also counts all packets the device forwarded as a collector (reporter), giving an accurate total of activity seen for that node.
+
+### Admin — New Features
+
+- **Pending reporter auto-registration** — Unknown reporters seen over MQTT are automatically registered as pending instead of being silently dropped. Admins can approve or dismiss them directly from the Reporter Devices list without manual DB edits.
+- **Channel hash auto-computed** — The PSK hash for a channel is now computed server-side on save; the hash input field has been removed from the channel create/edit form.
+- **Reporter hash-size column removed from UI** — The technical `hash_size` field is no longer shown in the Reporter Devices admin table.
 
 ---
 

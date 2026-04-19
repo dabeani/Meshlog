@@ -1140,6 +1140,7 @@ h2 {
 }
 
 .device-popup-chart-wrap {
+    position: relative;
     margin-top: 8px;
     padding: 8px 8px 4px;
     border-radius: 8px;
@@ -1167,6 +1168,22 @@ h2 {
 .device-popup-chart-label {
     fill: rgba(255,255,255,0.58);
     font-size: 10px;
+}
+
+#chart-bar-tooltip {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    padding: 5px 10px;
+    background: rgba(14, 20, 30, 0.92);
+    border: 1px solid rgba(96, 183, 255, 0.38);
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-family: inherit;
+    color: #c8dff0;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    display: none;
 }
 
 @media (max-width: 640px) {
