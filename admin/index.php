@@ -610,10 +610,6 @@ if ($user && $meshlog->updateAvailable()) {
             min-width: 180px;
         }
 
-        .admin-devices-table select.hash-size-select {
-            min-width: 96px;
-        }
-
         .admin-devices-table select.report-format-select {
             min-width: 122px;
         }
@@ -703,6 +699,14 @@ if ($user && $meshlog->updateAvailable()) {
             color: #ef9c8c;
             border: 1px solid rgba(190, 105, 85, 0.32);
         }
+
+        .device-status.pending {
+            background: rgba(255, 160, 0, 0.15);
+            color: #ffaa00;
+            border: 1px solid rgba(255, 160, 0, 0.35);
+        }
+
+        .reporter-row-pending td { opacity: 0.9; }
 
         .device-status-note {
             font-size: 0.78rem;
@@ -808,7 +812,7 @@ if ($user && $meshlog->updateAvailable()) {
             <section class="admin-section">
                 <div class="section-title">
                     <span>Reporter Devices</span>
-                    <span class="section-kicker">Authorization, MQTT format selection, optional IATA binding, location, style, and hash-byte configuration per device</span>
+                    <span class="section-kicker">Authorization, MQTT format selection, optional IATA binding, location and style per device. Unknown devices seen on MQTT appear as <em>Pending</em> for approval.</span>
                 </div>
                 <div class="section-body">
                     <table class="admin-table admin-devices-table">
@@ -819,7 +823,6 @@ if ($user && $meshlog->updateAvailable()) {
                                 <th><span class="help-inline">Public Key <button type="button" class="help-trigger" data-help-title="Reporter Public Key" data-help-body="Must match the key used by the logger firmware or the MQTT topic. MeshLog uses it to authorize and associate incoming packets with this device.">?</button></span></th>
                                 <th><span class="help-inline">MQTT Format <button type="button" class="help-trigger" data-help-title="MQTT Format" data-help-body="Select how this reporter publishes MQTT payloads. MeshLog is the default format; LetsMesh enables alternate payload field mapping.">?</button></span></th>
                                 <th><span class="help-inline">IATA <button type="button" class="help-trigger" data-help-title="Reporter IATA" data-help-body="Optional MQTT topic region code binding (2-8 alphanumeric). If set, incoming packets must match this IATA from topic/payload.">?</button></span></th>
-                                <th><span class="help-inline">Hash Bytes <button type="button" class="help-trigger" data-help-title="Reporter Hash Bytes" data-help-body="Routing hash prefix width configured on this node: 1, 2, or 3 bytes. Stored as metadata — used for display and hash-size detection when the packet field is absent.">?</button></span></th>
                                 <th>Lat</th>
                                 <th>Lon</th>
                                 <th><span class="help-inline">Auth Token <button type="button" class="help-trigger" data-help-title="Auth Token" data-help-body="Bearer token for the HTTP firmware ingest path. Leave empty for MQTT-only reporters.">?</button></span></th>
@@ -857,7 +860,7 @@ if ($user && $meshlog->updateAvailable()) {
                         <thead>
                             <tr>
                                 <th>#</th>
-                                <th><span class="help-inline">Hash <button type="button" class="help-trigger" data-help-title="Channel Hash" data-help-body="Plaintext first-byte identifier that matches incoming GRP_TXT packets to this channel. Visible even when packet payload is encrypted.">?</button></span></th>
+                                <th><span class="help-inline">Hash <button type="button" class="help-trigger" data-help-title="Channel Hash" data-help-body="Auto-computed first-byte identifier derived from the PSK or channel name. Matches incoming GRP_TXT packets to this channel.">?</button></span></th>
                                 <th>Name</th>
                                 <th><span class="help-inline">PSK (hex or base64) <button type="button" class="help-trigger" data-help-title="Channel PSK" data-help-body="Optional pre-shared key used to decrypt AES-128 GRP_TXT/GRP_DATA packets. Enter as 32/64 hex chars (16/32 bytes) — the format shown in LetsMesh and MeshCore apps — or as base64. Leave empty for #hashtag channels (key is auto-derived from the name) or to store packets as raw.">?</button></span></th>
                                 <th><span class="help-inline">Enabled <button type="button" class="help-trigger" data-help-title="Channel Enabled" data-help-body="Disabled channels are hidden from the live feed and their messages are not shown to users. Historic data is preserved.">?</button></span></th>
@@ -1178,6 +1181,17 @@ if ($user && $meshlog->updateAvailable()) {
 
         function renderReporterStatusCell(cell, reporter) {
             cell.innerHTML = '';
+            if (intval(reporter.reporter_pending)) {
+                const badge = document.createElement('span');
+                badge.className = 'device-status pending';
+                badge.innerText = 'Pending approval';
+                cell.append(badge);
+                const note = document.createElement('div');
+                note.className = 'device-status-note';
+                note.innerText = 'Seen on MQTT — approve to accept packets';
+                cell.append(note);
+                return;
+            }
             const state = reporter.connection_state ?? 'never-seen';
             const badge = document.createElement('span');
             badge.className = `device-status ${state}`;
@@ -1191,6 +1205,8 @@ if ($user && $meshlog->updateAvailable()) {
                 cell.append(note);
             }
         }
+
+        function intval(v) { return parseInt(v) || 0; }
 
         function formatSyncDuration(ms) {
             const totalMs = Math.abs(Number(ms) || 0);
@@ -1311,7 +1327,7 @@ if ($user && $meshlog->updateAvailable()) {
                 addReporterRow({
                     id: 'Add', name: 'New Logger', public_key: '',
                     report_format: 'meshlog', iata_code: '',
-                    hash_size: 1, auth: '', lat: '0.00000', lon: '0.00000',
+                    auth: '', lat: '0.00000', lon: '0.00000',
                     authorized: 1, style: '{"color":"#ff0000"}',
                     isAddRow: true
                 });
@@ -1337,8 +1353,6 @@ if ($user && $meshlog->updateAvailable()) {
             const reportFormat = makeReporterFormatInput(row, reporter.report_format ?? 'meshlog');
             const iataCode  = makeInputCell(row, reporter.iata_code ?? '');
             iataCode.classList.add('reporter-iata');
-            const hashSize  = makeHashSizeInput(row, reporter.hash_size ?? 1);
-            hashSize.classList.add('hash-size-select');
             const lat       = makeInputCell(row, reporter.lat);
             const lon       = makeInputCell(row, reporter.lon);
             lat.classList.add('coord-input');
@@ -1369,7 +1383,6 @@ if ($user && $meshlog->updateAvailable()) {
                 public_key: publicKey.value,
                 report_format: reportFormat.value,
                 iata_code: iataCode.value,
-                hash_size: hashSize.value,
                 lat: lat.value,
                 lon: lon.value,
                 auth: auth.value,
@@ -1392,6 +1405,21 @@ if ($user && $meshlog->updateAvailable()) {
                 return;
             }
 
+            // Pending reporter: show Approve button prominently.
+            if (intval(reporter.reporter_pending)) {
+                row.classList.add('reporter-row-pending');
+                const approveBtn = document.createElement('button');
+                approveBtn.className = 'button-primary';
+                approveBtn.innerText = 'Approve';
+                approveBtn.onclick = () => approveReporter(collectReporter());
+                const deleteBtn2 = document.createElement('button');
+                deleteBtn2.innerText = 'Dismiss';
+                deleteBtn2.className = 'button-danger';
+                deleteBtn2.onclick = () => deleteReporter(reporter.id);
+                actionsCell.append(approveBtn, deleteBtn2);
+                return;
+            }
+
             const saveBtn   = document.createElement('button');
             const deleteBtn = document.createElement('button');
             saveBtn.innerText   = 'Save';
@@ -1408,7 +1436,6 @@ if ($user && $meshlog->updateAvailable()) {
                 public_key: reporter.public_key,
                 report_format: reporter.report_format,
                 iata_code: reporter.iata_code,
-                hash_size: reporter.hash_size,
                 lat: reporter.lat,
                 lon: reporter.lon,
                 auth: reporter.auth,
@@ -1445,6 +1472,30 @@ if ($user && $meshlog->updateAvailable()) {
                 if (getError(result)) { alert(getError(result)); return; }
                 reporters.querySelector(`tr[data-id="${id}"]`)?.remove();
                 if (adminMarkers[id]) { adminMarkers[id].marker.remove(); delete adminMarkers[id]; }
+            });
+        }
+
+        function approveReporter(reporter) {
+            const body = {
+                approve: 1,
+                id: reporter.id,
+                name: reporter.name,
+                report_format: reporter.report_format,
+                iata_code: reporter.iata_code,
+                lat: reporter.lat,
+                lon: reporter.lon,
+                auth: reporter.auth,
+                style: reporter.style,
+            };
+            fetch('api/reporters/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams(body)
+            })
+            .then(r => r.json())
+            .then(result => {
+                if (getError(result)) { alert(getError(result)); return; }
+                location.reload(true);
             });
         }
 
@@ -1588,11 +1639,10 @@ if ($user && $meshlog->updateAvailable()) {
             row.insertCell().innerText = channel.isAddRow ? '' : channel.id;
 
             const hashCell = row.insertCell();
-            const hash = document.createElement('input');
-            hash.type = 'text'; hash.value = channel.hash ?? '';
-            hash.className = 'channel-hash';
-            hash.oninput = () => { hash.style.color = '#1976D2'; };
-            hashCell.append(hash);
+            const hashDisplay = document.createElement('code');
+            hashDisplay.style.cssText = 'font-size:0.85rem;color:var(--admin-muted);font-family:monospace';
+            hashDisplay.textContent = channel.isAddRow ? 'auto' : (channel.hash ?? '');
+            hashCell.append(hashDisplay);
 
             const nameCell = row.insertCell();
             const name = document.createElement('input');
@@ -1616,7 +1666,7 @@ if ($user && $meshlog->updateAvailable()) {
 
             const actionsCell = row.insertCell();
             const collectChannel = () => ({
-                id: channel.id, hash: hash.value, name: name.value,
+                id: channel.id, name: name.value,
                 psk: psk.value, enabled: enabled.checked ? 1 : 0,
             });
 
@@ -1629,7 +1679,7 @@ if ($user && $meshlog->updateAvailable()) {
                     fetch('api/channels/', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: new URLSearchParams({ add: 1, hash: d.hash, name: d.name, psk: d.psk, enabled: d.enabled })
+                        body: new URLSearchParams({ add: 1, name: d.name, psk: d.psk, enabled: d.enabled })
                     })
                     .then(r => r.json())
                     .then(result => {
@@ -1652,7 +1702,7 @@ if ($user && $meshlog->updateAvailable()) {
                 fetch('api/channels/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ edit: 1, id: d.id, hash: d.hash, name: d.name, psk: d.psk, enabled: d.enabled })
+                    body: new URLSearchParams({ edit: 1, id: d.id, name: d.name, psk: d.psk, enabled: d.enabled })
                 })
                 .then(r => r.json())
                 .then(result => {

@@ -316,6 +316,9 @@ class MeshLog {
             true
         );
         if (!$reporter) {
+            // Auto-register unknown key as a pending (unauthorized) reporter so it
+            // appears in the admin panel for approval without accepting any packets.
+            MeshLogReporter::autoRegister($attemptedReporter, $this);
             $error = $this->repError("invalid or unauthorized reporter");
             $mqttMeta['attempted_reporter'] = $attemptedReporter;
             $error['_mqtt'] = $mqttMeta;

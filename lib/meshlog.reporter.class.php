@@ -17,6 +17,7 @@ class MeshLogReporter extends MeshLogEntity {
     public $hash_size = 1;
     public $report_format = self::FORMAT_MESHLOG;
     public $iata_code = '';
+    public $reporter_pending = 0;
 
     public static function normalizeFormat($value) {
         $format = strtolower(trim(strval($value ?? '')));
@@ -51,6 +52,7 @@ class MeshLogReporter extends MeshLogEntity {
         $m->hash_size = intval($data['hash_size'] ?? 1);
         $m->report_format = static::normalizeFormat($data['report_format'] ?? static::FORMAT_MESHLOG);
         $m->iata_code = static::normalizeIataCode($data['iata_code'] ?? '');
+        $m->reporter_pending = intval($data['reporter_pending'] ?? 0);
 
         return $m;
     }
@@ -67,6 +69,7 @@ class MeshLogReporter extends MeshLogEntity {
             'hash_size' => intval($this->hash_size ?? 1),
             'report_format' => static::normalizeFormat($this->report_format ?? static::FORMAT_MESHLOG),
             'iata_code' => static::normalizeIataCode($this->iata_code ?? ''),
+            'reporter_pending' => intval($this->reporter_pending ?? 0),
         );
 
         if ($secret) {
@@ -94,10 +97,6 @@ class MeshLogReporter extends MeshLogEntity {
     public function isValid() {
         if ($this->public_key == null) { $this->error = "Missing Public Key"; return false; };
         if ($this->name == null) { $this->error = "Missing Name"; return false; };
-        if (!in_array(intval($this->hash_size), array(1, 2, 3), true)) {
-            $this->error = "Hash size must be 1, 2, or 3 bytes";
-            return false;
-        }
         if (!in_array(
             static::normalizeFormat($this->report_format ?? static::FORMAT_MESHLOG),
             array(static::FORMAT_MESHLOG, static::FORMAT_LETSMESH),
@@ -124,11 +123,34 @@ class MeshLogReporter extends MeshLogEntity {
             "lon" => array($this->lon, PDO::PARAM_STR),
             "style" => array($this->style, PDO::PARAM_STR),
             "color" => array("", PDO::PARAM_STR),
-            "auth" => array($this->auth, PDO::PARAM_STR),
+            "auth" => array($this->auth ?? '', PDO::PARAM_STR),
             "hash_size" => array(intval($this->hash_size ?? 1), PDO::PARAM_INT),
             "report_format" => array(static::normalizeFormat($this->report_format ?? static::FORMAT_MESHLOG), PDO::PARAM_STR),
             "iata_code" => array(static::normalizeIataCode($this->iata_code ?? ''), PDO::PARAM_STR),
+            "reporter_pending" => array(intval($this->reporter_pending ?? 0), PDO::PARAM_INT),
         );
+    }
+
+    /**
+     * Create a pending (unauthorized) reporter record for an unknown MQTT public key.
+     * The reporter is stored with authorized=0, reporter_pending=1 so it appears in
+     * the admin panel for approval without accepting any packets yet.
+     */
+    public static function autoRegister($publicKey, $meshlog) {
+        $existing = static::findBy('public_key', $publicKey, $meshlog, array(), false, true);
+        if ($existing) return; // already exists (authorized or pending)
+
+        $r = new MeshLogReporter($meshlog);
+        $r->public_key = strtoupper(preg_replace('/[^0-9A-Fa-f]/', '', $publicKey));
+        if (!$r->public_key || strlen($r->public_key) < 4) return;
+        $r->name = 'Pending ' . strtolower(substr($r->public_key, 0, 8));
+        $r->authorized = 0;
+        $r->reporter_pending = 1;
+        $r->auth = '';
+        $r->style = '{"color":"#888888"}';
+        $r->lat = 0;
+        $r->lon = 0;
+        $r->save($meshlog);
     }
     
 }

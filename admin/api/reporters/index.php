@@ -37,13 +37,13 @@
         return array(
             'name' => $reporter->name,
             'public_key' => $reporter->public_key,
-            'hash_size' => intval($reporter->hash_size ?? 1),
             'report_format' => MeshLogReporter::normalizeFormat($reporter->report_format ?? MeshLogReporter::FORMAT_MESHLOG),
             'iata_code' => MeshLogReporter::normalizeIataCode($reporter->iata_code ?? ''),
             'lat' => strval($reporter->lat),
             'lon' => strval($reporter->lon),
             'auth' => $reporter->auth,
             'authorized' => intval($reporter->authorized ?? 0),
+            'reporter_pending' => intval($reporter->reporter_pending ?? 0),
             'style' => $reporter->style,
         );
     }
@@ -90,7 +90,34 @@
         return $row;
     }
 
-    if (isset($_POST['add']) || isset($_POST['edit'])) {
+    if (isset($_POST['approve'])) {
+        $id = intval($_POST['id'] ?? 0);
+        $reporter = MeshLogReporter::findById($id, $meshlog);
+        if (!$reporter || !intval($reporter->reporter_pending ?? 0)) {
+            $errors[] = 'Reporter not found or not pending';
+        } else {
+            $reporter->authorized = 1;
+            $reporter->reporter_pending = 0;
+            $reporter->name = htmlspecialchars(trim($_POST['name'] ?? $reporter->name ?? ''), ENT_QUOTES, 'UTF-8');
+            $reporter->auth = trim($_POST['auth'] ?? '');
+            $reporter->style = trim($_POST['style'] ?? '{"color":"#4ea4c4"}');
+            $reporter->report_format = MeshLogReporter::normalizeFormat($_POST['report_format'] ?? MeshLogReporter::FORMAT_MESHLOG);
+            $reporter->iata_code = MeshLogReporter::normalizeIataCode($_POST['iata_code'] ?? '');
+            $reporter->lat = floatval($_POST['lat'] ?? 0);
+            $reporter->lon = floatval($_POST['lon'] ?? 0);
+            if ($reporter->save($meshlog)) {
+                $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
+                $meshlog->auditLog(
+                    \MeshLogAuditLog::EVENT_REPORTER_SAVE,
+                    $actor,
+                    'approved reporter ' . ($reporter->name ?? '') . ' [' . ($reporter->public_key ?? '') . ']'
+                );
+                $results = array('status' => 'OK', 'reporter' => $reporter->asArray());
+            } else {
+                $errors[] = 'Failed to approve: ' . $reporter->getError();
+            }
+        }
+    } else if (isset($_POST['add']) || isset($_POST['edit'])) {
         $isAdd = isset($_POST['add']);
         $reporter = new MeshLogReporter($meshlog);
         $before = array();
@@ -113,15 +140,16 @@
         $reporter->lat = floatval($_POST['lat'] ?? 0);
         $reporter->lon = floatval($_POST['lon'] ?? 0);
         $reporter->auth = htmlspecialchars($_POST['auth'] ?? '', ENT_QUOTES, 'UTF-8');
-        if (!$reporter->auth) $errors[] = 'Missing auth key';
+        if (!$reporter->auth && !intval($reporter->reporter_pending ?? 0)) $errors[] = 'Missing auth key';
         
         $reporter->authorized = intval($_POST['authorized'] ?? 0);
         $reporter->style = $_POST['style'] ?? '';
-        if (!$reporter->style) $errors[] = 'Missing style';
+        if (!$reporter->style && !intval($reporter->reporter_pending ?? 0)) $errors[] = 'Missing style';
+        if (!$reporter->style) $reporter->style = '{"color":"#888888"}';
         
-        $reporter->hash_size = intval($_POST['hash_size'] ?? 1);
         $reporter->report_format = MeshLogReporter::normalizeFormat($_POST['report_format'] ?? MeshLogReporter::FORMAT_MESHLOG);
         $reporter->iata_code = MeshLogReporter::normalizeIataCode($_POST['iata_code'] ?? '');
+        $reporter->reporter_pending = intval($_POST['reporter_pending'] ?? 0);
 
         if (!sizeof($errors)) {
             // save
@@ -169,6 +197,16 @@
         }
     } else {
         $results = MeshLogReporter::getAll($meshlog, array('secret' => true, 'order' => 'ASC'));
+        // Include pending reporters (authorized=0, reporter_pending=1) by re-querying all
+        $pendingStmt = $meshlog->pdo->query("SELECT * FROM reporters WHERE reporter_pending = 1 ORDER BY id ASC");
+        $pendingRows = $pendingStmt ? $pendingStmt->fetchAll(PDO::FETCH_ASSOC) : array();
+        $existingIds = array_column($results['objects'] ?? array(), 'id');
+        foreach ($pendingRows as $pendingRow) {
+            if (!in_array($pendingRow['id'], $existingIds)) {
+                $pr = MeshLogReporter::fromDb($pendingRow, $meshlog);
+                if ($pr) $results['objects'][] = $pr->asArray(true);
+            }
+        }
         $publicKeys = array();
         foreach (($results['objects'] ?? array()) as $row) {
             if (!empty($row['public_key'])) {
