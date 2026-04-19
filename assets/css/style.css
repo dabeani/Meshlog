@@ -1304,8 +1304,12 @@ h2 {
     stroke-width: 1;
 }
 
-.device-popup-chart-bars rect {
+.device-popup-chart-bars rect.chart-bar {
     fill: var(--chart-bar-color);
+}
+
+.device-popup-chart-bars rect.chart-hit {
+    fill: transparent;
 }
 
 .device-popup-chart-label {

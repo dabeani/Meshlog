@@ -4043,8 +4043,8 @@ class MeshLog {
             const tooltipText = `${timeLabel}: ${count} ${unitLabel}`;
             // Always render a full-height transparent hit area so empty bars are also hoverable.
             const escapedTooltip = tooltipText.replace(/"/g, '&quot;');
-            const hitRect = `<rect x="${x}" y="${barsTop}" width="${barWidth}" height="${barsHeight}" fill="transparent" data-chart-tooltip="${escapedTooltip}"></rect>`;
-            const barRect = height > 0 ? `<rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="2" ry="2"></rect>` : '';
+            const hitRect = `<rect class="chart-hit" x="${x}" y="${barsTop}" width="${barWidth}" height="${barsHeight}" fill="transparent" data-chart-tooltip="${escapedTooltip}"></rect>`;
+            const barRect = height > 0 ? `<rect class="chart-bar" x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="2" ry="2"></rect>` : '';
             return hitRect + barRect;
         }).join('');
 
