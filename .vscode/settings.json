@@ -17,6 +17,10 @@
             "approve": true,
             "matchCommandLine": true
         },
-        "env": true
+        "env": true,
+        "/^php -r 'require \"lib/meshlog\\.entity\\.class\\.php\"; require \"lib/meshlog\\.reporter\\.class\\.php\"; require \"lib/meshlog\\.mqtt_decoder\\.class\\.php\"; \\$empty=\\[\"type\"=>\"PACKET\",\"len\"=>\"0\",\"payload_len\"=>\"0\",\"raw\"=>\"\"\\]; \\$nonEmpty=\\[\"type\"=>\"PACKET\",\"len\"=>\"1\",\"payload_len\"=>\"0\",\"raw\"=>\"\"\\]; echo \"empty=\"\\.\\(MeshLogMqttDecoder::isIgnorablePacketEnvelope\\(\\$empty\\)\\?\"yes\":\"no\"\\)\\.PHP_EOL; echo \"nonEmpty=\"\\.\\(MeshLogMqttDecoder::isIgnorablePacketEnvelope\\(\\$nonEmpty\\)\\?\"yes\":\"no\"\\)\\.PHP_EOL;'$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }

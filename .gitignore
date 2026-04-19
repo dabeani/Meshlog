@@ -10,3 +10,4 @@ Package.swift
 test.txt
 package.json
 tools/
+.vscode/settings.json
