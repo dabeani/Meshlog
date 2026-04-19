@@ -6,7 +6,7 @@
         $user = $_SESSION['user'];
     } else {
         header("HTTP/1.1 401 Unauthorized");
-        echo json_encode(array('error' => 'unauthoried'), JSON_PRETTY_PRINT);
+        echo json_encode(array('error' => 'unauthorized'), JSON_PRETTY_PRINT);
         exit;
     }
 

@@ -82,7 +82,7 @@ class MeshLogRawPacket extends MeshLogEntity {
     function isValid() {
         if ($this->reporter_id == null) return false;
 
-        if ($this->payload == null) { echo '[raw] Missing payload'; return false; }
+        if ($this->payload == null) { error_log('RawPacket isValid: Missing payload'); return false; }
 
         return true;
     }

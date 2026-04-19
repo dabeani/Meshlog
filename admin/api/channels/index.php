@@ -36,7 +36,7 @@
         if (!isset($_POST['name']) || trim($_POST['name']) === '') {
             $errors[] = 'Missing name';
         } else {
-            $channel->name = trim($_POST['name']);
+            $channel->name = htmlspecialchars(trim($_POST['name']), ENT_QUOTES, 'UTF-8');
         }
         $channel->psk = trim($_POST['psk'] ?? '');
         $channel->enabled = isset($_POST['enabled']) ? intval($_POST['enabled']) : 1;
@@ -67,7 +67,7 @@
             if (isset($_POST['hash']) && trim($_POST['hash']) !== '') {
                 $channel->hash = trim($_POST['hash']);
             }
-            $channel->name = $_POST['name'] ?? $channel->name;
+            $channel->name = htmlspecialchars(trim($_POST['name'] ?? $channel->name ?? ''), ENT_QUOTES, 'UTF-8');
             $channel->psk  = trim($_POST['psk'] ?? $channel->psk ?? '');
             $channel->enabled = isset($_POST['enabled']) ? intval($_POST['enabled']) : $channel->enabled;
 

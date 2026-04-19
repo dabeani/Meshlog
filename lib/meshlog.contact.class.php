@@ -61,7 +61,7 @@ class MeshLogContact extends MeshLogEntity {
             "name" => array($this->name, PDO::PARAM_STR),
             "hash_size" => array($this->hash_size, PDO::PARAM_INT),
             "hidden" => array(intval($this->hidden ?? 0), PDO::PARAM_INT),
-            "enabled" => array($this->enabled, PDO::PARAM_STR),
+            "enabled" => array(intval($this->enabled ?? 1), PDO::PARAM_INT),
         );
     }
 

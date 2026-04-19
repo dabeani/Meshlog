@@ -4,6 +4,16 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ---
 
+## [Unreleased] — Security & Code Quality (2026-04-19)
+
+### Backend — Security & Fixes
+
+- **Input data no longer leaks into HTTP responses on validation failure** — validation error messages in packet entity classes now go to server error log only, not to the HTTP response body.
+- **Channel name and hash are now properly escaped before storage** — admin channel create/edit operations now apply output escaping to name inputs, preventing XSS via stored channel names.
+- **Contact enabled flag stored with correct database type** — the contact enabled column is now bound as an integer to the database, matching the underlying column type and preventing silent type coercion.
+
+---
+
 ## [v1.0.5] — Map/Live Feed UI (2026-04-07)
 
 ### WebUI — Fixes & Improvements

@@ -52,9 +52,9 @@ class MeshLogDirectMessage extends MeshLogEntity {
     function isValid() {
         if ($this->contact_ref == null) return false;
 
-        if ($this->hash == null) { echo 'Missing hash'; return false; }
-        if ($this->message == null) { echo 'Missing message'; return false; }
-        if ($this->sent_at == null) { echo 'Missing sent_at'; return false; }
+        if ($this->hash == null) { error_log('DM isValid: Missing hash'); return false; }
+        if ($this->message == null) { error_log('DM isValid: Missing message'); return false; }
+        if ($this->sent_at == null) { error_log('DM isValid: Missing sent_at'); return false; }
 
         return true;
     }

@@ -17,6 +17,15 @@ foreach (array('reporter','origin_id','public_key','pubkey') as $k) {
     if (isset($data[$k]) && is_scalar($data[$k]) && trim($data[$k]) !== '') { $reporter = trim(strval($data[$k])); break; }
 }
 
+// Validate reporter key: hex-only, min 4 chars (per MeshLogMqttDecoder::MIN_REPORTER_KEY_LENGTH)
+if ($reporter !== '') {
+    $validated = preg_replace('/[^0-9A-Fa-f]/', '', $reporter);
+    if (strlen($validated) < 4) {
+        $reporter = '';
+        dockerLog('WARN', 'Reporter key too short or invalid: ' . htmlspecialchars($reporter, ENT_QUOTES, 'UTF-8'));
+    }
+}
+
 $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
 $maskedAuth = $auth !== '' ? (substr($auth, 0, 16) . '...') : '';
 dockerLog('INFO', "HTTP ingest received reporter={$reporter} auth={$maskedAuth} payload_len=" . strlen($raw));

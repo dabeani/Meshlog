@@ -79,7 +79,8 @@
         return array("error" => "", "pdo" => $pdo);
     }
 
-    // TODO: do admin only setup
+    // Setup flow: 1) config validation, 2) DB connect, 3) run migrations, 4) create initial admin user (if needed)
+    // Note: Setup page is accessible without auth until initial admin is created (see auth check below)
     $hasConfig = false;
     $hasAdmin = false;
     $hasMigrated = true;

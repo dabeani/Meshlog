@@ -16,171 +16,189 @@ function makePdo() {
 function migrate($pdo, $src, $dst, $idcol) {
     $limit = 1000;
     $offset = 0;
+    $MAX_TIME = 180; // 3 min time window for dedup
+    $MAX_BATCH_SIZE = 500; // Max rows per INSERT (safety for max_allowed_packet)
 
     $bucket = array();
-    $bucketout = array();
-    $bucketrm = array();
-    // hash => (first_time, first_id, flush, [list])
+    $delete_queue = array();
+    
+    try {
+        $pdo->beginTransaction();
+        
+        while (true) {
+            $stmt = $pdo->prepare("SELECT * FROM `$src` LIMIT :limit OFFSET :offset");
+            $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $offset += $limit;
 
-    while (true) {
-        $MAX_TIME = 180; // 3 min from first.
-
-        $stmt = $pdo->prepare("SELECT * FROM $src LIMIT :limit OFFSET :offset");
-        $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
-        $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
-        $stmt->execute();
-        $offset += $limit;
-
-        echo "----- $offset\n";
-
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // 4. Display results
-        foreach ($rows as $row) {
-            $hash = $row['hash'];
-            if (!$hash) continue;  // unrecoverable
-
-            $time = strtotime($row['created_at']);
-            $id = $row['id'];
-            $obj = array(
-                $row['reporter_id'],
-                $row['path'],
-                $row['snr'] ?? 0,
-                $row['received_at'],
-                $row['created_at'],
-            );
-
-            $create = true;
-            if (array_key_exists($hash, $bucket)) {
-                $tdelta = $time - $bucket[$hash][0];
-                if ($tdelta < $MAX_TIME) {
-                    $create = false;
-                    $bucket[$hash][3] = false; // celar flush flag
-                    $bucket[$hash][4][] = $obj;
-                    $bucketrm[] = intval($row['id']);
-                } else {
-                    $bucketout[] = $bucket[$hash];
-                    unset($bucket[$hash]);
-                    $create = true;
-                }
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($rows)) {
+                // Flush remaining bucket at end of data
+                flush_bucket($pdo, $bucket, $delete_queue, $dst, $idcol, $MAX_BATCH_SIZE);
+                break;
             }
-            
-            if ($create) {
-                $bucket[$hash] = array(
-                    $time, // first created_at
-                    $hash, // first hash
-                    intval($id),   // first adv id
-                    false, // flush
-                    array($obj) // list of reports
-                );
-            }
-        }
 
-        // send uncahnged to out queue
-        foreach ($bucket as $hash => $obj) {
-            if ($obj[3]) {
-                $bucketout[] = $obj;
-                unset($bucket[$hash]);
-            } else {
-                $bucket[$hash][3] = true; // set flush flag
-            }
-        }
+            // Accumulate rows by hash within time window
+            foreach ($rows as $row) {
+                $hash = $row['hash'];
+                if (!$hash) continue;  // skip unrecoverable rows
 
-        // TODO: seems like only first one is migrated
+                $time = strtotime($row['created_at']);
+                $id = intval($row['id']);
 
-        // iterate and flush uncahnged
-        if (sizeof($bucketout) > 0) {
-            try {
-                // Build the SQL dynamically
-                $placeholders = [];
-                $values = [];
-
-                $obj = array(
-                    $row['reporter_id'],
-                    $row['path'],
-                    $row['snr'] ?? 0,
-                    $row['received_at'],
-                    $row['created_at'],
+                $report_data = array(
+                    intval($row['reporter_id']),
+                    strval($row['path'] ?? ''),
+                    intval($row['snr'] ?? 0),
+                    strval($row['received_at']),
+                    strval($row['created_at']),
                 );
 
-                $values = [];
+                // Check if we already have this hash in bucket
+                if (isset($bucket[$hash])) {
+                    $tdelta = $time - $bucket[$hash]['first_time'];
+                    if ($tdelta < $MAX_TIME) {
+                        // Within time window: add to existing bucket
+                        $bucket[$hash]['reports'][] = $report_data;
+                        $delete_queue[] = $id;
+                    } else {
+                        // Time window expired: flush old bucket, start new one
+                        flush_bucket($pdo, array($hash => $bucket[$hash]), $delete_queue, $dst, $idcol, $MAX_BATCH_SIZE);
+                        $delete_queue = array();
+                        unset($bucket[$hash]);
 
-                foreach ($bucketout as $obj) {
-                    $rel_id = $obj[2];
-                    foreach ($obj[4] as $out) {
-                        $placeholders[] = "(?, ?, ?, ?, ?, ?)";
-                        $outrow = array(
-                            $rel_id,
-                            $out[0],
-                            $out[1],
-                            $out[2],
-                            $out[3],
-                            $out[4]
+                        // Start new bucket for this hash
+                        $bucket[$hash] = array(
+                            'first_time' => $time,
+                            'first_id' => $id,
+                            'first_hash' => $hash,
+                            'reports' => array($report_data)
                         );
-                        $values = array_merge($values, $outrow);
                     }
+                } else {
+                    // New hash: create bucket
+                    $bucket[$hash] = array(
+                        'first_time' => $time,
+                        'first_id' => $id,
+                        'first_hash' => $hash,
+                        'reports' => array($report_data)
+                    );
                 }
 
-                $sql = "INSERT INTO $dst ($idcol, reporter_id, path, snr, received_at, created_at) VALUES ";
-                $sql .= implode(", ", $placeholders);
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute($values);
-
-                echo "Inserted " . $stmt->rowCount() . " rows successfully!\n";
-            } catch (PDOException $e) {
-                echo "Error: " . $e->getMessage();
+                // Flush if batch size limit approaching
+                if (count_total_reports($bucket) > $MAX_BATCH_SIZE) {
+                    flush_bucket($pdo, $bucket, $delete_queue, $dst, $idcol, $MAX_BATCH_SIZE);
+                    $bucket = array();
+                    $delete_queue = array();
+                }
             }
+
+            echo "--- Processed offset: $offset\n";
         }
-        $bucketout = [];
 
-        $removed = 0;
-        if (sizeof($bucketrm) > 0) {
-            // Build placeholders dynamically
-            $placeholders = rtrim(str_repeat('?,', count($bucketrm)), ',');
+        $pdo->commit();
+        echo "Migration completed successfully.\n";
+        
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo "FATAL: Migration failed: " . $e->getMessage() . "\n";
+        throw $e;
+    }
+}
 
-            $sql = "DELETE FROM $src WHERE id IN ($placeholders)";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($bucketrm);
+function count_total_reports($bucket) {
+    $total = 0;
+    foreach ($bucket as $entry) {
+        $total += count($entry['reports'] ?? array());
+    }
+    return $total;
+}
 
-            $removed = $stmt->rowCount();
-            $offset -= $removed;
-            echo "Deleted " . $stmt->rowCount() . " rows.\n";
+function flush_bucket($pdo, $bucket, $delete_queue, $dst, $idcol, $max_batch_size) {
+    if (empty($bucket)) return;
+
+    $values = array();
+    $placeholders = array();
+    $row_count = 0;
+
+    // Build INSERT values, respecting batch size limit
+    foreach ($bucket as $entry) {
+        foreach ($entry['reports'] as $report) {
+            if ($row_count >= $max_batch_size) break 2;
+
+            $placeholders[] = "(?, ?, ?, ?, ?, ?)";
+            $values[] = $entry['first_id'];        // $idcol (e.g., advertisement_id)
+            $values[] = $report[0];                 // reporter_id
+            $values[] = $report[1];                 // path
+            $values[] = $report[2];                 // snr
+            $values[] = $report[3];                 // received_at
+            $values[] = $report[4];                 // created_at
+            $row_count++;
         }
-        $bucketrm = [];
+    }
 
-        if (sizeof($rows) < 1) break;
+    if (!empty($placeholders)) {
+        $sql = "INSERT INTO `$dst` (`$idcol`, `reporter_id`, `path`, `snr`, `received_at`, `created_at`) VALUES ";
+        $sql .= implode(", ", $placeholders);
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($values);
+        echo "  Inserted " . $stmt->rowCount() . " report rows.\n";
+    }
+
+    // Delete original rows from source table
+    if (!empty($delete_queue)) {
+        $placeholders = rtrim(str_repeat('?,', count($delete_queue)), ',');
+        $sql = "DELETE FROM `$src` WHERE id IN ($placeholders)";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($delete_queue);
+        echo "  Deleted " . $stmt->rowCount() . " source rows.\n";
     }
 }
 
 function deleteCols($pdo, $src, $cols) {
-    $sql  = "SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME ";
-    $sql .= "FROM information_schema.KEY_COLUMN_USAGE ";
-    $sql .= "WHERE TABLE_NAME = '$src' AND COLUMN_NAME = 'reporter_id' AND TABLE_SCHEMA = DATABASE()";
+    try {
+        // Drop foreign key constraints on reporter_id
+        $sql = "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE ";
+        $sql .= "WHERE TABLE_NAME = ? AND COLUMN_NAME = 'reporter_id' AND TABLE_SCHEMA = DATABASE()";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(array($src));
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $stmt = $pdo->query($sql);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($rows as $row) {
-        $name = $row['CONSTRAINT_NAME'];
-        $sql = "ALTER TABLE $src DROP FOREIGN KEY $name";
-        $pdo->exec($sql);
-    }
-
-    $sql = "ALTER TABLE $src DROP INDEX reporter_id";
-    $pdo->exec($sql);
-
-    if (sizeof($cols) > 0) {
-        $drops = array();
-        foreach ($cols as $c) {
-            $drops[] = " DROP COLUMN $c";
+        foreach ($rows as $row) {
+            $name = $row['CONSTRAINT_NAME'];
+            $sql = "ALTER TABLE `$src` DROP FOREIGN KEY `$name`";
+            $pdo->exec($sql);
+            echo "  Dropped foreign key: $name\n";
         }
 
-        $sql = "ALTER TABLE $src " . implode(",", $drops);
+        // Drop index on reporter_id
+        $sql = "ALTER TABLE `$src` DROP INDEX reporter_id";
         $pdo->exec($sql);
+        echo "  Dropped index: reporter_id\n";
+
+        // Drop obsolete columns
+        if (!empty($cols)) {
+            $drops = array();
+            foreach ($cols as $c) {
+                $drops[] = "DROP COLUMN `$c`";
+            }
+
+            $sql = "ALTER TABLE `$src` " . implode(", ", $drops);
+            $pdo->exec($sql);
+            echo "  Dropped columns: " . implode(", ", $cols) . "\n";
+        }
+    } catch (Exception $e) {
+        echo "WARNING: Error dropping columns from $src: " . $e->getMessage() . "\n";
+        // Don't throw; allow migration to continue (some indexes may not exist)
     }
 }
 
-// TODO: maybe add some flag and run async? Then client js runs checks
+// Note: Migration runs synchronously with no timeout (see set_time_limit(0) below); for very large DBs may take significant time
+// Future: consider adding async flag and progress tracking endpoint for client polling
 
 // DB Operations will take a while
 set_time_limit(0); // 0 = unlimited

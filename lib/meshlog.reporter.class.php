@@ -119,7 +119,7 @@ class MeshLogReporter extends MeshLogEntity {
         return array(
             "name" => array($this->name, PDO::PARAM_STR),
             "public_key" => array($this->public_key, PDO::PARAM_STR),
-            "authorized" => array($this->authorized, PDO::PARAM_STR),
+            "authorized" => array(intval($this->authorized ?? 0), PDO::PARAM_INT),
             "lat" => array($this->lat, PDO::PARAM_STR),
             "lon" => array($this->lon, PDO::PARAM_STR),
             "style" => array($this->style, PDO::PARAM_STR),

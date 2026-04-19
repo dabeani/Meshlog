@@ -100,13 +100,25 @@
             $before = reporterSnapshot($reporter);
         }
 
-        $reporter->name = $_POST['name'] ?? $errors[] = 'Missing name';
-        $reporter->public_key = $_POST['public_key'] ?? $errors[] = 'Missing public key';
-        $reporter->lat = $_POST['lat'] ?? 0;
-        $reporter->lon = $_POST['lon'] ?? 0;
-        $reporter->auth = $_POST['auth'] ?? $errors[] = 'Missing auth key';
-        $reporter->authorized = $_POST['authorized'] ?? true;
-        $reporter->style = $_POST['style'] ?? $errors[] = 'Missing style';
+        $reporter->name = htmlspecialchars($_POST['name'] ?? '', ENT_QUOTES, 'UTF-8');
+        if (!$reporter->name) $errors[] = 'Missing name';
+        
+        $reporter->public_key = strtoupper(preg_replace('/[^0-9A-Fa-f]/', '', $_POST['public_key'] ?? ''));
+        if (!$reporter->public_key) $errors[] = 'Missing or invalid public key';
+        if ($reporter->public_key && strlen($reporter->public_key) < 4) {
+            $errors[] = 'Public key must be at least 4 hex characters';
+            $reporter->public_key = '';
+        }
+        
+        $reporter->lat = floatval($_POST['lat'] ?? 0);
+        $reporter->lon = floatval($_POST['lon'] ?? 0);
+        $reporter->auth = htmlspecialchars($_POST['auth'] ?? '', ENT_QUOTES, 'UTF-8');
+        if (!$reporter->auth) $errors[] = 'Missing auth key';
+        
+        $reporter->authorized = intval($_POST['authorized'] ?? 0);
+        $reporter->style = $_POST['style'] ?? '';
+        if (!$reporter->style) $errors[] = 'Missing style';
+        
         $reporter->hash_size = intval($_POST['hash_size'] ?? 1);
         $reporter->report_format = MeshLogReporter::normalizeFormat($_POST['report_format'] ?? MeshLogReporter::FORMAT_MESHLOG);
         $reporter->iata_code = MeshLogReporter::normalizeIataCode($_POST['iata_code'] ?? '');

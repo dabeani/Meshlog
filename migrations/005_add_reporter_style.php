@@ -6,10 +6,10 @@ class Migration_005 extends Migration {
     }
 
     function migrate($pdo) {
-        // add style col
+        // Add style column to migrate color field from legacy column
         $pdo->exec("ALTER TABLE reporters ADD COLUMN IF NOT EXISTS style VARCHAR(500) NOT NULL DEFAULT '{}' AFTER color;");
 
-        // Copy color to style field
+        // Copy color to style field; note: color column remains in DB for backward compat (not dropped per migration-005-rollback concerns)
         $limit = 1000;
         $offset = 0;
 
