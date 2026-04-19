@@ -4003,10 +4003,15 @@ class MeshLog {
 
     _buildStatsChartSvg(buckets, windowHours = 24, unitLabel = 'pkts', barColor = '#60b7ff') {
         const safeBuckets = Array.isArray(buckets) && buckets.length > 0
-            ? buckets
+            ? buckets.map((v) => Math.max(0, Number(v) || 0))
             : new Array(this._getStatsBucketCount(windowHours)).fill(0);
         const bucketCount = safeBuckets.length;
         const maxBucket = Math.max(1, ...safeBuckets);
+        const nonZeroBuckets = safeBuckets.filter((v) => v > 0);
+        const minNonZeroBucket = nonZeroBuckets.length > 0 ? Math.min(...nonZeroBuckets) : 0;
+        const spread = maxBucket - minNonZeroBucket;
+        // When values are tightly clustered, switch to relative scaling so differences stay visible.
+        const useRelativeScale = nonZeroBuckets.length >= 3 && spread > 0 && (spread / maxBucket) < 0.45;
         const chartWidth = 284;
         const chartHeight = 110;
         const yAxisWidth = 30;   // left margin for Y-axis labels
@@ -4018,7 +4023,15 @@ class MeshLog {
         const barWidth = Math.max(4, Math.floor((barsWidth - ((bucketCount - 1) * barGap)) / bucketCount));
         const bucketHours = windowHours / bucketCount;
         const barsSvg = safeBuckets.map((count, index) => {
-            const height = Math.max(count > 0 ? 4 : 0, Math.round((count / maxBucket) * barsHeight));
+            let height = 0;
+            if (count > 0) {
+                if (useRelativeScale) {
+                    const rel = (count - minNonZeroBucket) / spread;
+                    height = Math.max(3, Math.round(3 + rel * (barsHeight - 3)));
+                } else {
+                    height = Math.max(2, Math.round((count / maxBucket) * barsHeight));
+                }
+            }
             const x = yAxisWidth + index * (barWidth + barGap);
             const y = barsBottom - height;
             // Time range for this bar: index 0 is oldest, last index is newest (now)
@@ -4042,7 +4055,7 @@ class MeshLog {
                     <line x1="${yAxisWidth}" y1="${barsBottom + 0.5}" x2="${chartWidth}" y2="${barsBottom + 0.5}" class="device-popup-chart-axis"></line>
                     <g class="device-popup-chart-bars">${barsSvg}</g>
                     <text x="${yAxisWidth - 4}" y="${barsTop + 5}" text-anchor="end" class="device-popup-chart-label">${maxBucket}</text>
-                    <text x="${yAxisWidth - 4}" y="${barsBottom}" text-anchor="end" class="device-popup-chart-label">0</text>
+                    <text x="${yAxisWidth - 4}" y="${barsBottom}" text-anchor="end" class="device-popup-chart-label">${useRelativeScale ? minNonZeroBucket : 0}</text>
                     <text x="${yAxisWidth - 4}" y="102" text-anchor="end" class="device-popup-chart-label">${unitLabel}</text>
                     <text x="${yAxisWidth}" y="102" class="device-popup-chart-label">-${windowHours}h</text>
                     <text x="${chartWidth}" y="102" text-anchor="end" class="device-popup-chart-label">now</text>
