@@ -3348,43 +3348,150 @@ class MeshLog {
     }
 
     _initMapMenuSearch() {
-        // Wire up the unified map menu search input if it exists
         const menuSearchInput = document.getElementById('map-menu-search-input');
         if (!menuSearchInput) return;
-        
-        // Create a mock search object for the menu input
-        const resultsContainer = document.createElement('div');
-        resultsContainer.style.display = 'none';
-        
-        this._mapMenuSearch = { input: menuSearchInput, results: resultsContainer };
-        
+
+        // Build the dropdown anchored to the search-row container
+        const searchRow = menuSearchInput.closest('.map-menu-search-row') ?? menuSearchInput.parentElement;
+        searchRow.style.position = 'relative';
+
+        const results = document.createElement('div');
+        results.className = 'map-search-results map-menu-search-dropdown';
+        results.hidden = true;
+        searchRow.appendChild(results);
+
+        this._mapMenuSearch = { input: menuSearchInput, results, activeIndex: -1 };
+
+        const hide = () => {
+            results.hidden = true;
+            results.innerHTML = '';
+            this._mapMenuSearch.activeIndex = -1;
+        };
+
+        const pickContact = (contact) => {
+            this.focusContact(contact);
+            menuSearchInput.value = '';
+            hide();
+        };
+
         menuSearchInput.addEventListener('input', () => {
             this._renderMapSearchResultsInMenu(menuSearchInput.value);
         });
-        
+
+        menuSearchInput.addEventListener('focus', () => {
+            if (menuSearchInput.value.trim()) {
+                this._renderMapSearchResultsInMenu(menuSearchInput.value);
+            }
+        });
+
         menuSearchInput.addEventListener('keydown', (e) => {
+            const items = results.querySelectorAll('.map-search-result');
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                this._mapMenuSearch.activeIndex = Math.min(
+                    this._mapMenuSearch.activeIndex + 1, items.length - 1
+                );
+                this._updateMenuSearchActiveItem(items);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                this._mapMenuSearch.activeIndex = Math.max(
+                    this._mapMenuSearch.activeIndex - 1, -1
+                );
+                this._updateMenuSearchActiveItem(items);
+                return;
+            }
             if (e.key === 'Enter') {
                 e.preventDefault();
-                const items = this._getSearchableContacts(menuSearchInput.value);
-                if (items.length > 0) {
-                    this.focusContact(items[0]);
-                    menuSearchInput.value = '';
-                }
-            } else if (e.key === 'Escape') {
-                menuSearchInput.value = '';
+                const idx = this._mapMenuSearch.activeIndex;
+                const contactId = idx >= 0 && items[idx]
+                    ? Number(items[idx].dataset.contactId)
+                    : Number(items[0]?.dataset.contactId ?? NaN);
+                const contact = Number.isFinite(contactId) ? (this.contacts[contactId] ?? null) : null;
+                if (contact) pickContact(contact);
+                return;
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                hide();
                 menuSearchInput.blur();
             }
         });
+
+        // Close on click outside
+        document.addEventListener('pointerdown', (e) => {
+            if (!menuSearchInput.contains(e.target) && !results.contains(e.target)) {
+                hide();
+            }
+        }, { capture: true });
+
+        this._mapMenuSearchPick = pickContact;
     }
-    
+
+    _updateMenuSearchActiveItem(items) {
+        items.forEach((el, i) => {
+            el.classList.toggle('map-search-result-active', i === this._mapMenuSearch.activeIndex);
+            if (i === this._mapMenuSearch.activeIndex) {
+                el.scrollIntoView({ block: 'nearest' });
+            }
+        });
+    }
+
     _renderMapSearchResultsInMenu(query) {
+        const s = this._mapMenuSearch;
+        if (!s?.results) return;
+
         const needle = this._normalizeSearchText(query);
-        if (!needle) return;
-        
-        const items = this._getSearchableContacts(query);
-        // On successful search, automatically focus the first result
-        if (items.length === 1) {
-            this.focusContact(items[0]);
+        if (!needle) {
+            s.results.hidden = true;
+            s.results.innerHTML = '';
+            s.activeIndex = -1;
+            return;
+        }
+
+        const MAX_RESULTS = 8;
+        const items = this._getSearchableContacts(query).slice(0, MAX_RESULTS);
+
+        if (items.length === 0) {
+            s.results.hidden = true;
+            s.results.innerHTML = '';
+            s.activeIndex = -1;
+            return;
+        }
+
+        s.activeIndex = -1;
+        s.results.innerHTML = '';
+        s.results.hidden = false;
+
+        for (const contact of items) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'map-search-result';
+            btn.dataset.contactId = String(contact.data.id);
+
+            const name = document.createElement('span');
+            name.className = 'map-search-result-name';
+            name.textContent = contact.adv?.data?.name ?? contact.data.public_key ?? '—';
+
+            const meta = document.createElement('span');
+            meta.className = 'map-search-result-meta';
+            const parts = [];
+            if (contact.hash) parts.push(contact.hash);
+            const lat = Number(contact.adv?.data?.lat);
+            const lon = Number(contact.adv?.data?.lon);
+            if (Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0)) {
+                parts.push(`${lat.toFixed(3)}, ${lon.toFixed(3)}`);
+            }
+            meta.textContent = parts.join(' · ');
+
+            btn.append(name, meta);
+            btn.addEventListener('pointerdown', (e) => {
+                e.preventDefault(); // keep input focused until pick
+                if (this._mapMenuSearchPick) this._mapMenuSearchPick(contact);
+            });
+            s.results.appendChild(btn);
         }
     }
 

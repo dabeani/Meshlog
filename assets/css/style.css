@@ -859,7 +859,8 @@ h2 {
 }
 
 .map-search-result:hover,
-.map-search-result:focus {
+.map-search-result:focus,
+.map-search-result-active {
     background: rgba(255,255,255,0.08);
     outline: none;
 }
@@ -874,6 +875,16 @@ h2 {
     font-size: 0.68rem;
     color: rgba(255,255,255,0.66);
     line-height: 1.1;
+}
+
+/* Dropdown anchored below the map menu search field */
+.map-menu-search-dropdown {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    margin-top: 0;
 }
 
 .leaflet-popup.compact-marker-popup,
