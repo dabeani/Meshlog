@@ -4473,7 +4473,7 @@ class MeshLog {
         return cached?.data ?? this._getEmptyContactHealth({ isLoading: true });
     }
 
-    _buildHealthSparkline(values, color = '#60b7ff', unitLabel = '', yMin = null) {
+    _buildHealthSparkline(values, color = '#0099ff', unitLabel = '', yMin = null) {
         if (!values || values.length < 2) return '';
         const valid = values.filter(v => v != null && Number.isFinite(Number(v))).map(Number);
         if (valid.length < 2) return '';
@@ -4571,7 +4571,7 @@ class MeshLog {
 
         const rssiSparkline   = this._buildHealthSparkline(rssiSeries, rssiColor(latestRssi), ' dBm');
         const heapSparkline   = this._buildHealthSparkline(heapFreeSeries, heapColor(latestHeapPct), '%', 0);
-        const uptimeSparkline = this._buildHealthSparkline(uptimeSeries, '#c890e8', 's');
+        const uptimeSparkline = this._buildHealthSparkline(uptimeSeries, '#cc33ff', 's');
 
         const metricRow = (label, value, color, sparkline) => value != null
             ? `<div class="health-metric-row">
@@ -4589,7 +4589,7 @@ class MeshLog {
         const metricsHtml = [
             metricRow('RSSI',      rssiLabel,  rssiColor(latestRssi),    rssiSparkline),
             metricRow('Heap free', heapLabel,  heapColor(latestHeapPct), heapSparkline),
-            latestUptime ? metricRow('Uptime', latestUptime, '#c890e8', uptimeSparkline) : '',
+            latestUptime ? metricRow('Uptime', latestUptime, '#cc33ff', uptimeSparkline) : '',
         ].join('');
 
         const versionBadge = latestVersion
@@ -5040,10 +5040,10 @@ class MeshLog {
         const rate = normalizedWindowHours > 0 ? (total / normalizedWindowHours).toFixed(1) : '—';
 
         const kpiCards = [
-            { value: renderCount(devices),     label: 'Active devices',   sub: `${renderCount(advs)} advertisements`,  color: '#60b7ff' },
-            { value: renderCount(total),        label: 'Total reports',    sub: `~${rate}/h avg rate`,                  color: '#78c8a8' },
-            { value: renderCount(cols),         label: 'Collectors',       sub: `${renderCount(chans)} channels`,       color: '#c890e8' },
-            { value: renderCount(direct),       label: 'Direct links',     sub: `${pct(direct)} of reports`,            color: '#5ab4e4' },
+            { value: renderCount(devices),     label: 'Active devices',   sub: `${renderCount(advs)} advertisements`,  color: '#0099ff' },
+            { value: renderCount(total),        label: 'Total reports',    sub: `~${rate}/h avg rate`,                  color: '#00ff33' },
+            { value: renderCount(cols),         label: 'Collectors',       sub: `${renderCount(chans)} channels`,       color: '#cc33ff' },
+            { value: renderCount(direct),       label: 'Direct links',     sub: `${pct(direct)} of reports`,            color: '#00ccff' },
         ].map((card) => `
             <div class="stats-kpi-card">
                 <div class="stats-kpi-card-value" style="color:${card.color}">${card.value}</div>
@@ -5077,7 +5077,7 @@ class MeshLog {
         const noteText = stats.isLoading && !stats.hasData ? 'Loading statistics…' : renderValue(stats.note);
 
         // Collector rows — segmented type bar + SNR badge
-        const pkTypeColors = { adv:'#60b7ff', dir:'#78c8a8', pub:'#c890e8', tel:'#f0c060', sys:'#7abcdc', ctrl:'#e07060', raw:'rgba(200,220,238,0.35)' };
+        const pkTypeColors = { adv:'#0099ff', dir:'#00ff33', pub:'#cc33ff', tel:'#ffdd00', sys:'#ff7700', ctrl:'#ff3333', raw:'rgba(200,220,238,0.35)' };
         const collectorMax = Math.max(1, ...stats.collectorTotals.map((r) => Number(r.totalPackets) || 0));
         const collectorRows = stats.collectorTotals.length > 0
             ? stats.collectorTotals.map((row) => {
