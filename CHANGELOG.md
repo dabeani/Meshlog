@@ -57,6 +57,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 - **Live-feed scope decoding now works without admin session** — Scope name lookup was moved to a public API (`api/v1/scopes/`) so scoped packets decode reliably in the live feed for non-admin users as well.
 - **Live-feed scope-name replacement now uses saved Admin Scope mappings end-to-end** — Scope mapping now resolves by both stored and MeshCore-derived scope numbers from scope names, so known scope numbers in incoming packets are replaced with the real names configured in Admin → Scopes.
+- **Scope interpretation now matches MeshCore transport-code semantics** — Incoming packet scope is now resolved by recomputing the MeshCore transport code (HMAC-SHA256 over payload-type+payload using the scope-name-derived key) against saved Admin scopes, instead of relying on transport byte shortcuts.
 
 ### Backend — Fixes
 

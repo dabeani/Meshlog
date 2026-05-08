@@ -41,12 +41,12 @@ class MeshLogScope extends MeshLogEntity {
         if ($name === '') return '';
 
         $prefix = substr($name, 0, 1);
-        if ($prefix === '$') {
+        if ($prefix === '$' || $name === '*') {
             // Private regions use stored keys in MeshCore and cannot be auto-derived.
             return null;
         }
 
-        if ($name === '*' || $prefix === '#') {
+        if ($prefix === '#') {
             return $name;
         }
 

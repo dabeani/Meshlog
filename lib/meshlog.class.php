@@ -15,6 +15,7 @@ require_once 'meshlog.report.class.php';
 require_once 'meshlog.raw_packet.class.php';
 require_once 'meshlog.system_report.class.php';
 require_once 'meshlog.mqtt_decoder.class.php';
+require_once 'meshlog.scope.class.php';
 require_once 'meshlog.audit_log.class.php';
 
 define("MAX_COUNT", 2500);
@@ -47,6 +48,8 @@ class MeshLog {
         MeshlogSetting::KEY_LAST_PURGE_AT => 0,
         MeshlogSetting::KEY_TIME_SYNC_WARNING_THRESHOLD => 300,
     );
+    private $scopeDecodeCache = array();
+    private $scopeDecodeCacheLoadedAt = 0;
 
     private function buildDbHostCandidates($host) {
         $candidates = array();
@@ -410,6 +413,7 @@ class MeshLog {
                 'mqtt_meta' => $mqttMeta,
                 'forced_reporter' => $reporter->public_key,
                 'format' => MeshLogReporter::normalizeFormat($reporter->report_format ?? MeshLogReporter::FORMAT_MESHLOG),
+                'scopes' => $this->getScopeEntriesForDecoder(),
             )
         );
         if (!$data || !isset($data['reporter'])) {
@@ -439,6 +443,36 @@ class MeshLog {
             $wrapped['error'] = 'failed to insert packet';
         }
         return $wrapped;
+    }
+
+    private function getScopeEntriesForDecoder($ttlSeconds = 30) {
+        $ttl = max(5, intval($ttlSeconds));
+        $now = time();
+
+        if (($now - intval($this->scopeDecodeCacheLoadedAt)) < $ttl && is_array($this->scopeDecodeCache)) {
+            return $this->scopeDecodeCache;
+        }
+
+        $entries = array();
+        $scopes = MeshLogScope::getAll($this);
+
+        foreach ($scopes as $scope) {
+            $rawName = (string)($scope->name ?? '');
+            $name = trim(html_entity_decode($rawName, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            if ($name === '') continue;
+
+            $number = intval($scope->number ?? -1);
+            if ($number < 0 || $number > 255) continue;
+
+            $entries[] = array(
+                'name' => $name,
+                'number' => $number,
+            );
+        }
+
+        $this->scopeDecodeCache = $entries;
+        $this->scopeDecodeCacheLoadedAt = $now;
+        return $entries;
     }
 
     private function insertForReporter($data, $reporter) {

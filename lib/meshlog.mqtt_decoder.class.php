@@ -70,10 +70,16 @@ class MeshLogMqttDecoder {
             $packet = static::extractPacket($bytes);
             $path = $packet['path'] ?? static::decodePath($data['path'] ?? '');
             $hashSize = $packet['hash_size'] ?? static::decodeHashSize($path);
-            $scope = static::normalizeScope($packet['scope'] ?? null);
             $routeType = static::normalizeRouteType($packet['route_type'] ?? null);
             $packetType = intval($data['packet_type'] ?? 0);
             $snr = intval($data['SNR'] ?? 0);
+
+            $scope = static::resolveScopeFromKnownScopes(
+                $packet,
+                $packetType,
+                $options['scopes'] ?? array(),
+                static::normalizeScope($packet['scope'] ?? null)
+            );
 
             $timestamp = static::normalizeTimestampMs(
                 $data['timestamp'] ?? null,
@@ -681,6 +687,7 @@ class MeshLogMqttDecoder {
             'path' => static::decodePathBytes(substr($bytes, $layout['path_offset'], $layout['path_byte_len']), $layout['hash_size']),
             'payload' => strtoupper(bin2hex(substr($bytes, $layout['payload_offset']))),
             'hash_size' => $layout['hash_size'],
+            'transport_code' => static::decodeTransportCode($layout['transport_codes'] ?? null, 0),
             'scope' => static::decodeTransportScope($layout['transport_codes'] ?? null),
         );
     }
@@ -752,6 +759,123 @@ class MeshLogMqttDecoder {
         if (!is_array($transportCodes) || !array_key_exists(0, $transportCodes)) return null;
 
         return static::normalizeScope($transportCodes[0]);
+    }
+
+    private static function decodeTransportCode($transportCodes, $index) {
+        if (!is_array($transportCodes)) return null;
+
+        $offset = intval($index) * 2;
+        if (!array_key_exists($offset, $transportCodes) || !array_key_exists($offset + 1, $transportCodes)) {
+            return null;
+        }
+
+        $low = intval($transportCodes[$offset]) & 0xFF;
+        $high = intval($transportCodes[$offset + 1]) & 0xFF;
+
+        return ($high << 8) | $low;
+    }
+
+    private static function resolveScopeFromKnownScopes($packet, $packetType, $scopes, $fallbackScope) {
+        $fallback = static::normalizeScope($fallbackScope);
+
+        if (!is_array($packet)) return $fallback;
+
+        $routeType = static::normalizeRouteType($packet['route_type'] ?? null);
+        if ($routeType !== static::ROUTE_TYPE_TRANSPORT_FLOOD &&
+            $routeType !== static::ROUTE_TYPE_TRANSPORT_DIRECT) {
+            return $fallback;
+        }
+
+        $transportCode = $packet['transport_code'] ?? null;
+        if ($transportCode === null) return $fallback;
+
+        $resolvedPacketType = intval($packetType);
+        if ($resolvedPacketType < 0 || $resolvedPacketType > static::PAYLOAD_TYPE_RAW_CUSTOM) {
+            $resolvedPacketType = (intval($packet['header'] ?? 0) >> 2) & 0x0F;
+        }
+
+        if (!is_array($scopes) || count($scopes) === 0) return $fallback;
+
+        $payloadHex = strtoupper(strval($packet['payload'] ?? ''));
+        foreach ($scopes as $scope) {
+            if (!is_array($scope)) continue;
+
+            $name = trim(strval($scope['name'] ?? ''));
+            if ($name === '') continue;
+
+            $candidateCode = static::deriveTransportCodeForScopeName($name, $resolvedPacketType, $payloadHex);
+            if ($candidateCode === null) continue;
+
+            if (intval($candidateCode) === intval($transportCode)) {
+                $storedNumber = static::normalizeScope($scope['number'] ?? null);
+                if ($storedNumber !== null) return $storedNumber;
+
+                $derivedNumber = static::deriveScopeNumberFromName($name);
+                if ($derivedNumber !== null) return $derivedNumber;
+            }
+        }
+
+        return $fallback;
+    }
+
+    private static function deriveTransportCodeForScopeName($scopeName, $packetType, $payloadHex) {
+        $key = static::deriveTransportKeyFromName($scopeName);
+        if ($key === null) return null;
+
+        $cleanHex = preg_replace('/[^0-9A-Fa-f]/', '', strtoupper(strval($payloadHex)));
+        if ($cleanHex === null || (strlen($cleanHex) % 2) !== 0) return null;
+
+        $payload = hex2bin($cleanHex);
+        if ($payload === false) return null;
+
+        $typeByte = chr(intval($packetType) & 0x0F);
+        $mac = hash_hmac('sha256', $typeByte . $payload, $key, true);
+        if (!is_string($mac) || strlen($mac) < 2) return null;
+
+        $code = (ord($mac[1]) << 8) | ord($mac[0]);
+        if ($code === 0) {
+            $code = 1;
+        } else if ($code === 0xFFFF) {
+            $code = 0xFFFE;
+        }
+
+        return $code;
+    }
+
+    private static function deriveTransportKeyFromName($scopeName) {
+        $normalized = static::normalizeScopeNameForTransportKey($scopeName);
+        if ($normalized === null || $normalized === '') return null;
+
+        $hash = hash('sha256', $normalized, true);
+        if (!is_string($hash) || strlen($hash) < 16) return null;
+
+        return substr($hash, 0, 16);
+    }
+
+    private static function normalizeScopeNameForTransportKey($scopeName) {
+        $name = trim(strval($scopeName));
+        if ($name === '') return '';
+
+        $prefix = substr($name, 0, 1);
+        if ($prefix === '$' || $name === '*') {
+            return null;
+        }
+
+        if ($prefix === '#') {
+            return $name;
+        }
+
+        return '#' . $name;
+    }
+
+    private static function deriveScopeNumberFromName($scopeName) {
+        $normalized = static::normalizeScopeNameForTransportKey($scopeName);
+        if ($normalized === null || $normalized === '') return null;
+
+        $hash = hash('sha256', $normalized, true);
+        if (!is_string($hash) || strlen($hash) < 1) return null;
+
+        return ord($hash[0]);
     }
 
     private static function normalizeScope($scope) {
