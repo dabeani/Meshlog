@@ -15,3 +15,9 @@
 
     $config = meshlogLoadConfig(__DIR__);
     $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
+    $err = $meshlog->getError();
+    if ($err) {
+        header("HTTP/1.1 503 Service Unavailable");
+        echo json_encode(array('error' => $err), JSON_PRETTY_PRINT);
+        exit;
+    }

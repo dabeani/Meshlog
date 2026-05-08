@@ -8,9 +8,11 @@ if (php_sapi_name() !== 'cli') {
 
 const MQTT_RECONNECT_DELAY_SECONDS = 1;
 
-require_once "config.php";
-require_once "lib/meshlog.class.php";
-require_once "lib/meshlog.mqtt_client.class.php";
+require_once __DIR__ . "/api/v1/utils.php";
+require_once __DIR__ . "/lib/meshlog.class.php";
+require_once __DIR__ . "/lib/meshlog.mqtt_client.class.php";
+
+$config = meshlogLoadConfig(__DIR__);
 
 if (!isset($config['db']) || !is_array($config['db'])) {
     fwrite(STDERR, "Invalid config.php: missing db configuration\n");
@@ -50,6 +52,10 @@ while (true) {
         // the first query, and a new MeshLog here ensures the next cycle starts
         // with a healthy connection instead of looping in a permanent error state.
         $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
+        $meshlogErr = $meshlog->getError();
+        if ($meshlogErr) {
+            throw new RuntimeException($meshlogErr);
+        }
         $client = new MeshLogMqttClient($mqttConfig);
         mqttLog(
             "INFO",

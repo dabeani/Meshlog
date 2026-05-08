@@ -1,6 +1,8 @@
 <?php
-require_once "config.php";
-include "lib/meshlog.class.php";
+require_once __DIR__ . "/api/v1/utils.php";
+require_once __DIR__ . "/lib/meshlog.class.php";
+
+$config = meshlogLoadConfig(__DIR__);
 
 function dockerLog($level, $message) {
     $ts = date('c');
@@ -34,6 +36,14 @@ $systime = floor(microtime(true) * 1000);
 $data["time"]["server"] = $systime;
 
 $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
+$meshlogErr = $meshlog->getError();
+if ($meshlogErr) {
+    http_response_code(503);
+    dockerLog('ERROR', 'MeshLog unavailable: ' . $meshlogErr);
+    echo $meshlogErr;
+    exit;
+}
+
 $response = $meshlog->insert($data);
 $meshlog->maybeAutoPurge();
 if (is_array($response) && array_key_exists("error", $response)) {

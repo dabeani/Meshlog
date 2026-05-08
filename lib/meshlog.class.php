@@ -21,7 +21,7 @@ define("MAX_COUNT", 2500);
 define("DEFAULT_COUNT", 500);
 
 class MeshLog {
-    private $pdo = null;
+    public $pdo = null;
     private $error = '';
     private $version = 21;
     private $ntpConfig = array(
