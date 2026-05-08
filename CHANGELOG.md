@@ -51,6 +51,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Scope numbers now auto-generate in Admin add row** — Admin → Scopes now auto-assigns the next free scope number (0–255) when creating a new scope, and disables adding when all numbers are already used.
 - **Scope names now auto-fill from scope number** — In Admin → Scopes, entering only the scope number now auto-generates the name (`Local` for `0`, `Mesh` for `1`, otherwise `Scope N`) so manual name entry is no longer required.
 - **Scope deletion workflow hardened** — Admin scope delete now validates IDs and reports clear not-found/database errors instead of silently succeeding.
+- **Scope number generation aligned with MeshCore key derivation** — Admin → Scopes now derives the scope number from scope name using MeshCore-style auto-key normalization (`#name` for plain names) and SHA-256 first-byte mapping, replacing incorrect sequential auto-numbering.
 
 ### WebUI / API — Fixes & Improvements
 

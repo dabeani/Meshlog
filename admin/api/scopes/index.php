@@ -35,45 +35,68 @@
         return htmlspecialchars($decoded, ENT_QUOTES, 'UTF-8');
     }
 
-    function getNextAvailableScopeNumber($meshlog) {
-        $used = array();
-        $scopes = MeshLogScope::getAll($meshlog);
-        foreach ($scopes as $scope) {
-            $candidate = intval($scope->number ?? -1);
-            if ($candidate >= 0 && $candidate <= 255) {
-                $used[$candidate] = true;
-            }
+    function normalizeScopeNameForKey($name) {
+        $name = trim((string)$name);
+        if ($name === '') return '';
+
+        $prefix = substr($name, 0, 1);
+        if ($prefix === '$') {
+            // Private regions in MeshCore use stored transport keys, not auto keys.
+            return null;
         }
 
-        for ($i = 0; $i <= 255; $i++) {
-            if (!isset($used[$i])) {
-                return $i;
-            }
+        if ($name === '*' || $prefix === '#') {
+            return $name;
         }
 
-        return null;
+        // MeshCore treats plain names as implicit hashtag regions.
+        return '#' . $name;
+    }
+
+    function deriveScopeNumberFromName($name) {
+        $normalized = normalizeScopeNameForKey($name);
+        if ($normalized === null || $normalized === '') {
+            return null;
+        }
+
+        $hash = hash('sha256', $normalized, true);
+        return ord($hash[0]);
     }
 
     if (isset($_POST['add'])) {
         $scope = new MeshLogScope($meshlog);
 
-        if (!isset($_POST['number']) || $_POST['number'] === '') {
-            $generatedNumber = getNextAvailableScopeNumber($meshlog);
-            if ($generatedNumber === null) {
-                $errors[] = 'No available scope numbers (0-255)';
-            } else {
-                $scope->number = $generatedNumber;
-            }
-        } else {
+        $rawName = trim((string)($_POST['name'] ?? ''));
+
+        if ($rawName === '') {
+            $errors[] = 'Missing scope name';
+        }
+
+        $scope->name = normalizeScopeName($scope->number ?? 0, $rawName);
+
+        $numberProvided = isset($_POST['number']) && $_POST['number'] !== '';
+        if ($numberProvided) {
             $number = intval($_POST['number']);
             if ($number < 0 || $number > 255) {
                 $errors[] = 'Scope number must be between 0-255';
             } else {
                 $scope->number = $number;
             }
+        } else {
+            $generatedNumber = deriveScopeNumberFromName($rawName);
+            if ($generatedNumber === null) {
+                $errors[] = 'Unable to auto-generate scope number from name';
+            } else {
+                $scope->number = $generatedNumber;
+            }
         }
 
-        $scope->name = normalizeScopeName($scope->number ?? 0, $_POST['name'] ?? '');
+        if (!sizeof($errors)) {
+            $existing = MeshLogScope::getByNumber($meshlog, $scope->number);
+            if ($existing) {
+                $errors[] = 'Scope number already exists: ' . intval($scope->number);
+            }
+        }
 
         $scope->description = htmlspecialchars(trim($_POST['description'] ?? ''), ENT_QUOTES, 'UTF-8');
 
@@ -100,13 +123,24 @@
             $errors[] = 'Scope not found';
         } else {
             $before = scopeSnapshot($scope);
+            $numberTouched = false;
+            $rawName = trim((string)($_POST['name'] ?? $scope->name));
 
             if (isset($_POST['number'])) {
+                $numberTouched = true;
                 $number = intval($_POST['number']);
                 if ($number < 0 || $number > 255) {
                     $errors[] = 'Scope number must be between 0-255';
                 } else {
                     $scope->number = $number;
+                }
+            } else if (isset($_POST['name'])) {
+                $generatedNumber = deriveScopeNumberFromName($rawName);
+                if ($generatedNumber === null) {
+                    $errors[] = 'Unable to auto-generate scope number from name';
+                } else {
+                    $scope->number = $generatedNumber;
+                    $numberTouched = true;
                 }
             }
 
@@ -115,6 +149,13 @@
             } else if (isset($_POST['number'])) {
                 // Keep name in sync when only number is changed.
                 $scope->name = normalizeScopeName($scope->number ?? 0, '');
+            }
+
+            if ($numberTouched && !sizeof($errors)) {
+                $existing = MeshLogScope::getByNumber($meshlog, $scope->number);
+                if ($existing && intval($existing->getId()) !== intval($scope->getId())) {
+                    $errors[] = 'Scope number already exists: ' . intval($scope->number);
+                }
             }
 
             if (isset($_POST['description'])) {
