@@ -4,8 +4,8 @@
  * GET /api/v1/config
  * Returns public app configuration for iOS app
  */
-require_once "../../../lib/meshlog.class.php";
-include "../utils.php";
+require_once __DIR__ . "/../../../lib/meshlog.class.php";
+require_once __DIR__ . "/../utils.php";
 
 header('Content-Type: application/json; charset=utf-8');
 

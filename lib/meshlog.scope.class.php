@@ -91,7 +91,7 @@ class MeshLogScope extends MeshLogEntity {
     /**
      * Get all scopes
      */
-    public static function getAll($meshlog) {
+    public static function getAll($meshlog, $params = array()) {
         $scopes = array();
         try {
             $stmt = $meshlog->pdo->prepare("SELECT * FROM scopes ORDER BY number ASC");

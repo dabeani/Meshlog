@@ -4,9 +4,9 @@
  * GET /api/v1/live?since_ms=1234567890&type=ADV,MSG,PUB
  * Returns only packets since the given timestamp for efficient polling
  */
-require_once "../../../lib/meshlog.class.php";
-include "../utils.php";
-include "helpers.php";
+require_once __DIR__ . "/../../../lib/meshlog.class.php";
+require_once __DIR__ . "/../utils.php";
+require_once __DIR__ . "/helpers.php";
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-cache, must-revalidate');
