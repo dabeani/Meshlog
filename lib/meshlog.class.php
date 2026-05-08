@@ -1593,7 +1593,8 @@ class MeshLog {
         $sql = "
             SELECT
                 $tfields,
-                JSON_ARRAYAGG(
+                (
+                    SELECT JSON_ARRAYAGG(
                         JSON_OBJECT(
                             'id', r.id,
                             'reporter_id', r.reporter_id,
@@ -1605,6 +1606,9 @@ class MeshLog {
                             'received_at', r.received_at,
                             'created_at', r.created_at
                         )
+                    )
+                    FROM $rtable r
+                    WHERE r.$rrefname = t.id
                 ) AS reports
             FROM (
                 SELECT t.* FROM $ttable t
@@ -1612,8 +1616,6 @@ class MeshLog {
                 ORDER BY t.id DESC
                 LIMIT :offset,:limit
             ) t
-            LEFT JOIN $rtable r ON r.$rrefname = t.id
-            GROUP BY t.id, t.contact_id, t.hash, t.name, t.lat, t.lon, t.type, t.flags, t.hash_size, t.sent_at, t.created_at
             ORDER BY t.id DESC
         ";
 
@@ -1675,7 +1677,10 @@ class MeshLog {
 
         $results = [];
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $reports = json_decode($row['reports'], true);
+            $reports = json_decode($row['reports'] ?? '[]', true);
+            if (!is_array($reports)) {
+                $reports = [];
+            }
             // Filter out NULL rows produced by LEFT JOIN when no reports exist
             $reports = array_values(array_filter($reports, function($r) { return !empty($r['id']); }));
 
