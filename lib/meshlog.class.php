@@ -1548,7 +1548,7 @@ class MeshLog {
                 LIMIT :offset,:limit
             ) t
             LEFT JOIN $rtable r ON r.$rrefname = t.id
-            GROUP BY t.id
+            GROUP BY t.id, t.contact_id, t.hash, t.name, t.lat, t.lon, t.type, t.flags, t.hash_size, t.sent_at, t.created_at
             ORDER BY t.id DESC
         ";
 

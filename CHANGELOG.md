@@ -28,7 +28,9 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Stats bar colors bold and distinct** — The route breakdown (Direct/Flood/Relay) and packet-type segmented bars in the Statistics tab now use bright, saturated, clearly distinguishable colors (#00ccff/#00ff33/#ff7700 for routes, #0099ff/#00ff33/#cc33ff/#ffdd00/#ff7700/#ff3333 for packet types) so users can easily see the difference between segments.
 - **Stats summary colors tuned for readability** — The Statistics summary cards and chart highlights now use a stronger green/orange/magenta/cyan palette so Active Devices, Total Reports, Collectors, and Direct Links are visually distinct at a glance.
 - **Health tab now appears only when data exists** — Device popup hides the Health tab by default and reveals it automatically once health/system data is available, keeping tabs focused and reducing empty states.
+- **Map legend now includes neighbor links** — Added missing blue dashed (RX/incoming) and red dashed (TX/outgoing) neighbor link legend items. The "Show Neighbors" feature draws these links but they were not documented in the legend. Color codes standardized from CSS names ('red'/'blue') to hex (#ff0000/#0000ff) for consistency.
 - **Stats chart bars now show subtle differences better** — ADV reports and unique-device history charts now use adaptive bar scaling when values are close together so small but real changes are visible instead of appearing flat.
+- **API /all/ endpoint HTTP 500 fixed** — The endpoint was failing with MySQL ONLY_FULL_GROUP_BY error due to non-aggregated columns in GROUP BY clause. Fixed by including all selected columns in GROUP BY. Affects advertisement_reports, direct_message_reports, channel_message_reports, and telemetry endpoints.
 
 ### Backend — New Features
 

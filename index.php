@@ -510,7 +510,9 @@ var _UnifiedMapMenu = L.Control.extend({
             { marker: '#d87dff', text: 'Highlighted' },
             { line: '#4ea4c4', text: 'Static route' },
             { line: '#00d9e9', text: 'Active route' },
-            { line: '#ff3030', text: 'GPS trail' }
+            { line: '#ff3030', text: 'GPS trail' },
+            { line: '#ff0000', dashed: true, text: 'Neighbor TX (outgoing)' },
+            { line: '#0000ff', dashed: true, text: 'Neighbor RX (incoming)' }
         ];
 
         legendItems.forEach(function(item) {
@@ -522,6 +524,10 @@ var _UnifiedMapMenu = L.Control.extend({
             } else if (item.line) {
                 var line = L.DomUtil.create('div', 'map-legend-line');
                 line.style.backgroundColor = item.line;
+                if (item.dashed) {
+                    line.style.backgroundImage = 'repeating-linear-gradient(90deg, ' + item.line + ' 0px, ' + item.line + ' 4px, transparent 4px, transparent 8px)';
+                    line.style.backgroundColor = 'transparent';
+                }
                 div.appendChild(line);
             }
             var text = L.DomUtil.create('span');

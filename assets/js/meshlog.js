@@ -638,7 +638,7 @@ class MeshLogContact extends MeshLogObject {
                             },
                             getStyle: () => {
                                 return {
-                                    color: isTx ? 'red' : 'blue',
+                                    color: isTx ? '#ff0000' : '#0000ff',
                                     strokeColor: 'white',
                                     strokeWeight: '1px'
                                 };
