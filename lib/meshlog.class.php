@@ -8,7 +8,6 @@ require_once 'meshlog.direct_message.class.php';
 require_once 'meshlog.channel_message.class.php';
 require_once 'meshlog.channel.class.php';
 require_once 'meshlog.reporter.class.php';
-require_once 'meshlog.scope.class.php';
 require_once 'meshlog.setting.class.php';
 require_once 'meshlog.telemetry.class.php';
 require_once 'meshlog.user.class.php';

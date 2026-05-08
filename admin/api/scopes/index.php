@@ -1,5 +1,6 @@
 <?php
     require_once __DIR__ . '/../loggedin.php';
+    require_once __DIR__ . '/../../../lib/meshlog.scope.class.php';
 
     $errors = array();
     $results = array('status' => 'unknown');
