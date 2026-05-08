@@ -48,11 +48,55 @@ class MeshLog {
         MeshlogSetting::KEY_TIME_SYNC_WARNING_THRESHOLD => 300,
     );
 
+    private function buildDbHostCandidates($host) {
+        $candidates = array();
+
+        if (is_array($host)) {
+            foreach ($host as $h) {
+                if (!is_string($h)) continue;
+                $h = trim($h);
+                if ($h !== '') $candidates[] = $h;
+            }
+        } else if (is_string($host)) {
+            $host = trim($host);
+            if ($host !== '') {
+                if (str_contains($host, ',')) {
+                    foreach (explode(',', $host) as $h) {
+                        $h = trim($h);
+                        if ($h !== '') $candidates[] = $h;
+                    }
+                } else {
+                    $candidates[] = $host;
+                }
+            }
+        }
+
+        if (count($candidates) === 0) {
+            $candidates[] = 'mariadb';
+        }
+
+        $primary = strtolower($candidates[0]);
+        if (in_array($primary, array('mariadb', 'mysql', 'db'), true)) {
+            $candidates[] = '127.0.0.1';
+            $candidates[] = 'localhost';
+        } else if ($primary === 'localhost') {
+            $candidates[] = '127.0.0.1';
+        } else if ($primary === '127.0.0.1') {
+            $candidates[] = 'localhost';
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
     function __construct($config) {
-        $host = $config['host'] ?? die("Invalid db config");
-        $name = $config['database'] ?? die("Invalid db config");
-        $user = $config['user'] ?? die("Invalid db config");
-        $pass = $config['password'] ?? die("Invalid db config");
+        $host = $config['host'] ?? null;
+        $name = $config['database'] ?? null;
+        $user = $config['user'] ?? null;
+        $pass = $config['password'] ?? null;
+        if (!is_string($name) || trim($name) === '' || !is_string($user)) {
+            $this->error = 'Invalid db config';
+            return;
+        }
         if (isset($config['ntp']) && is_array($config['ntp'])) {
             $this->ntpConfig = array_merge($this->ntpConfig, $config['ntp']);
         }
@@ -60,16 +104,32 @@ class MeshLog {
             0,
             intval($this->ntpConfig['warning_threshold_seconds'] ?? 300)
         );
-        try {
-            $this->pdo = new PDO("mysql:host=$host;dbname=$name;charset=utf8mb4", $user, $pass);
-            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $this->syncDatabaseSessionTimezone();
-            $this->loadSettings();
+        $lastError = null;
+        $hosts = $this->buildDbHostCandidates($host);
 
-            $this->error = $this->checkUpdates();
-        } catch (Throwable $e) {
-            $this->error = 'Database connection failed';
-            error_log('MeshLog DB connection failed: ' . $e->getMessage());
+        foreach ($hosts as $dbHost) {
+            try {
+                $this->pdo = new PDO(
+                    "mysql:host=$dbHost;dbname=$name;charset=utf8mb4",
+                    $user,
+                    $pass,
+                    array(PDO::ATTR_TIMEOUT => 3)
+                );
+                $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+                $this->syncDatabaseSessionTimezone();
+                $this->loadSettings();
+
+                $this->error = $this->checkUpdates();
+                return;
+            } catch (Throwable $e) {
+                $lastError = $e;
+                $this->pdo = null;
+            }
+        }
+
+        $this->error = 'Database connection failed';
+        if ($lastError) {
+            error_log('MeshLog DB connection failed (hosts: ' . implode(',', $hosts) . '): ' . $lastError->getMessage());
         }
     }
 

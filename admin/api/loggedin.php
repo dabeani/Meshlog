@@ -11,6 +11,7 @@
     }
 
     require_once __DIR__ . '/../../lib/meshlog.class.php';
-    require_once __DIR__ . '/../../config.php';
+    require_once __DIR__ . '/../../api/v1/utils.php';
 
+    $config = meshlogLoadConfig(__DIR__);
     $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));

@@ -6,6 +6,58 @@ function getParam($key, $fallback=null) {
     return $fallback;
 }
 
+function meshlogParseEnvFile($path) {
+    $env = array();
+    if (!is_readable($path)) {
+        return $env;
+    }
+
+    $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!is_array($lines)) {
+        return $env;
+    }
+
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#')) {
+            continue;
+        }
+
+        $eqPos = strpos($line, '=');
+        if ($eqPos === false) {
+            continue;
+        }
+
+        $key = trim(substr($line, 0, $eqPos));
+        $value = trim(substr($line, $eqPos + 1));
+        if ($key === '') {
+            continue;
+        }
+
+        if ((str_starts_with($value, '"') && str_ends_with($value, '"')) ||
+            (str_starts_with($value, "'") && str_ends_with($value, "'"))) {
+            $value = substr($value, 1, -1);
+        }
+
+        $env[$key] = $value;
+    }
+
+    return $env;
+}
+
+function meshlogPickValue($aliases, $envMap = array(), $fallback = null) {
+    foreach ($aliases as $key) {
+        $val = getenv($key);
+        if ($val !== false && $val !== null && $val !== '') {
+            return $val;
+        }
+        if (isset($envMap[$key]) && $envMap[$key] !== '') {
+            return $envMap[$key];
+        }
+    }
+    return $fallback;
+}
+
 function meshlogFindProjectRoot($baseDir = __DIR__) {
     $dir = realpath($baseDir);
     if ($dir === false) {
@@ -39,12 +91,22 @@ function meshlogLoadConfig($baseDir = __DIR__) {
         $config = array();
     }
 
+    $envMap = array();
+    foreach (array($rootDir . '/.env', $rootDir . '/docker/.env') as $envFile) {
+        $envMap = array_merge($envMap, meshlogParseEnvFile($envFile));
+    }
+
     $db = isset($config['db']) && is_array($config['db']) ? $config['db'] : array();
+    $resolvedHost = $db['host'] ?? meshlogPickValue(array('DB_HOST', 'MYSQL_HOST', 'MARIADB_HOST', 'DBHOST'), $envMap, 'mariadb');
+    $resolvedDb = $db['database'] ?? meshlogPickValue(array('DB_NAME', 'MYSQL_DATABASE', 'MARIADB_DATABASE'), $envMap, 'meshcore');
+    $resolvedUser = $db['user'] ?? meshlogPickValue(array('DB_USER', 'MYSQL_USER', 'MARIADB_USER'), $envMap, 'meshcore');
+    $resolvedPass = $db['password'] ?? meshlogPickValue(array('DB_PASS', 'DB_PASSWORD', 'MYSQL_PASSWORD', 'MARIADB_PASSWORD'), $envMap, 'meshcore');
+
     $config['db'] = array(
-        'host' => $db['host'] ?? (getenv('DB_HOST') ?: 'mariadb'),
-        'database' => $db['database'] ?? (getenv('DB_NAME') ?: 'meshcore'),
-        'user' => $db['user'] ?? (getenv('DB_USER') ?: 'meshcore'),
-        'password' => $db['password'] ?? (getenv('DB_PASS') ?: 'meshcore'),
+        'host' => $resolvedHost,
+        'database' => $resolvedDb,
+        'user' => $resolvedUser,
+        'password' => $resolvedPass,
     );
 
     if (!isset($config['map']) || !is_array($config['map'])) {

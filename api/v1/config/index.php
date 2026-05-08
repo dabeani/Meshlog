@@ -10,15 +10,6 @@ require_once __DIR__ . "/../utils.php";
 header('Content-Type: application/json; charset=utf-8');
 
 $config = meshlogLoadConfig(__DIR__);
-$meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
-$err = $meshlog->getError();
-
-if ($err) {
-    http_response_code(500);
-    echo json_encode(['error' => $err]);
-    exit;
-}
-
 $mapConfig = $config['map'] ?? array();
 
 echo json_encode([
