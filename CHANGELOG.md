@@ -48,6 +48,12 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 ### Admin — New Features
 
 - **Scopes (region) management in admin panel** — New Scopes section in admin UI allows defining human-readable names for MeshCore transport scope codes (0–255). Scope names are automatically decoded and displayed in the live feed instead of raw numbers. Falls back to numeric code if no name is defined. Includes audit log tracking for scope changes.
+- **Scope names now auto-fill from scope number** — In Admin → Scopes, entering only the scope number now auto-generates the name (`Local` for `0`, `Mesh` for `1`, otherwise `Scope N`) so manual name entry is no longer required.
+- **Scope deletion workflow hardened** — Admin scope delete now validates IDs and reports clear not-found/database errors instead of silently succeeding.
+
+### WebUI / API — Fixes & Improvements
+
+- **Live-feed scope decoding now works without admin session** — Scope name lookup was moved to a public API (`api/v1/scopes/`) so scoped packets decode reliably in the live feed for non-admin users as well.
 
 ### Backend — Fixes
 

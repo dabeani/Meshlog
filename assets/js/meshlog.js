@@ -2160,11 +2160,11 @@ class MeshLogReportedObject extends MeshLogObject {
     getScopeBadgeText() {
         const scope = this.resolveScope();
         if (scope === null || scope <= 0) return '*';
-        // Try to resolve scope name from meshlog scopes table
-        if (this._meshlog && this._meshlog.scopes && this._meshlog.scopes[scope]) {
-            return this._meshlog.scopes[scope];
+        if (this._meshlog) {
+            const scopeName = this._meshlog.resolveScopeName(scope);
+            if (scopeName) return scopeName;
         }
-        return `${scope}`;
+        return `Scope ${scope}`;
     }
 
     getScopeBadgeTitle() {
@@ -2172,10 +2172,14 @@ class MeshLogReportedObject extends MeshLogObject {
         if (scope === null || scope <= 0) {
             return 'Region scope: * (not set or wildcard)';
         }
-        // Try to resolve scope name for tooltip
-        if (this._meshlog && this._meshlog.scopes && this._meshlog.scopes[scope]) {
-            return `Region scope: ${this._meshlog.scopes[scope]} (code: ${scope})`;
+
+        if (this._meshlog) {
+            const scopeName = this._meshlog.resolveScopeName(scope);
+            if (scopeName) {
+                return `Region scope: ${scopeName} (code: ${scope})`;
+            }
         }
+
         return `Region scope transport code: ${scope}`;
     }
 
@@ -2994,11 +2998,11 @@ class MeshLogRawPacket extends MeshLogObject {
     getScopeBadgeText() {
         const scope = this.resolveScope();
         if (scope === null || scope <= 0) return '*';
-        // Try to resolve scope name from meshlog scopes table
-        if (this._meshlog && this._meshlog.scopes && this._meshlog.scopes[scope]) {
-            return this._meshlog.scopes[scope];
+        if (this._meshlog) {
+            const scopeName = this._meshlog.resolveScopeName(scope);
+            if (scopeName) return scopeName;
         }
-        return `${scope}`;
+        return `Scope ${scope}`;
     }
 
     getScopeBadgeTitle() {
@@ -3006,10 +3010,14 @@ class MeshLogRawPacket extends MeshLogObject {
         if (scope === null || scope <= 0) {
             return 'Region scope: * (not set or wildcard)';
         }
-        // Try to resolve scope name for tooltip
-        if (this._meshlog && this._meshlog.scopes && this._meshlog.scopes[scope]) {
-            return `Region scope: ${this._meshlog.scopes[scope]} (code: ${scope})`;
+
+        if (this._meshlog) {
+            const scopeName = this._meshlog.resolveScopeName(scope);
+            if (scopeName) {
+                return `Region scope: ${scopeName} (code: ${scope})`;
+            }
         }
+
         return `Region scope transport code: ${scope}`;
     }
 
@@ -3200,6 +3208,10 @@ class MeshLog {
         this.contacts = {};
         this.channels = {};
         this.scopes = {}; // Map of scope number -> scope name
+        this.defaultScopes = {
+            0: 'Local',
+            1: 'Mesh',
+        };
 
         this.messages = {};
 
@@ -3223,6 +3235,7 @@ class MeshLog {
         this.timer = false;
         this.autorefresh = 0;
         this.decor = true;
+        this.scopeRefreshTimer = null;
 
         // epoch of newest object
         this.latest = 0;
@@ -3240,6 +3253,10 @@ class MeshLog {
          window.onblur = function () {
             self.window_active = false;
          };
+
+        this.scopeRefreshTimer = window.setInterval(() => {
+            this.loadScopes();
+        }, 30000);
          
 
         this.dom_settings_types = document.getElementById(stypesid);
@@ -6691,21 +6708,61 @@ class MeshLog {
     }
 
     loadScopes() {
-        // Load scopes from admin API for scope name lookup
-        fetch('admin/api/scopes/?all=1')
+        fetch('api/v1/scopes/?all=1')
             .then(r => r.json())
             .then(result => {
-                if (result.status === 'OK' && Array.isArray(result.scopes)) {
-                    this.scopes = {};
-                    result.scopes.forEach(scope => {
-                        this.scopes[scope.number] = scope.name;
+                if (!(result && result.status === 'OK')) return;
+
+                const loadedScopes = {};
+
+                if (result.map && typeof result.map === 'object') {
+                    Object.entries(result.map).forEach(([key, value]) => {
+                        const scopeNum = Number.parseInt(key, 10);
+                        if (!Number.isFinite(scopeNum) || scopeNum < 0 || scopeNum > 255) return;
+                        const scopeName = String(value ?? '').trim();
+                        if (!scopeName) return;
+                        loadedScopes[scopeNum] = scopeName;
                     });
-                    console.log(`${Object.keys(this.scopes).length} scopes loaded`);
+                } else if (Array.isArray(result.scopes)) {
+                    result.scopes.forEach(scope => {
+                        const scopeNum = Number.parseInt(scope?.number, 10);
+                        if (!Number.isFinite(scopeNum) || scopeNum < 0 || scopeNum > 255) return;
+                        const scopeName = String(scope?.name ?? '').trim();
+                        if (!scopeName) return;
+                        loadedScopes[scopeNum] = scopeName;
+                    });
                 }
+
+                this.scopes = loadedScopes;
+                this.refreshScopeBadges();
+                console.log(`${Object.keys(this.scopes).length} scopes loaded`);
             })
             .catch(err => {
-                console.log('Note: scopes API not available or no scopes defined');
+                console.log('Note: scopes API not available or no scopes defined', err);
             });
+    }
+
+    resolveScopeName(scope) {
+        const scopeNum = Number.parseInt(scope, 10);
+        if (!Number.isFinite(scopeNum) || scopeNum < 0 || scopeNum > 255) {
+            return null;
+        }
+
+        const customName = String(this.scopes?.[scopeNum] ?? '').trim();
+        if (customName) return customName;
+
+        const defaultName = String(this.defaultScopes?.[scopeNum] ?? '').trim();
+        if (defaultName) return defaultName;
+
+        return `Scope ${scopeNum}`;
+    }
+
+    refreshScopeBadges() {
+        Object.values(this.messages).forEach((msg) => {
+            if (msg && typeof msg.updateMetaIndicators === 'function') {
+                msg.updateMetaIndicators();
+            }
+        });
     }
 
     onLoadContacts() {

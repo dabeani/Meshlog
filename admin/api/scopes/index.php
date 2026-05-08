@@ -25,6 +25,16 @@
         return $changes;
     }
 
+    function normalizeScopeName($number, $name) {
+        $name = trim((string)$name);
+        if ($name !== '') {
+            return htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
+        }
+
+        $decoded = MeshLogScope::decodeName($number);
+        return htmlspecialchars($decoded, ENT_QUOTES, 'UTF-8');
+    }
+
     if (isset($_POST['add'])) {
         $scope = new MeshLogScope($meshlog);
 
@@ -39,11 +49,7 @@
             }
         }
 
-        if (!isset($_POST['name']) || trim($_POST['name']) === '') {
-            $errors[] = 'Missing scope name';
-        } else {
-            $scope->name = htmlspecialchars(trim($_POST['name']), ENT_QUOTES, 'UTF-8');
-        }
+        $scope->name = normalizeScopeName($scope->number ?? 0, $_POST['name'] ?? '');
 
         $scope->description = htmlspecialchars(trim($_POST['description'] ?? ''), ENT_QUOTES, 'UTF-8');
 
@@ -80,8 +86,11 @@
                 }
             }
 
-            if (isset($_POST['name']) && trim($_POST['name']) !== '') {
-                $scope->name = htmlspecialchars(trim($_POST['name']), ENT_QUOTES, 'UTF-8');
+            if (isset($_POST['name'])) {
+                $scope->name = normalizeScopeName($scope->number ?? 0, $_POST['name']);
+            } else if (isset($_POST['number'])) {
+                // Keep name in sync when only number is changed.
+                $scope->name = normalizeScopeName($scope->number ?? 0, '');
             }
 
             if (isset($_POST['description'])) {
@@ -111,7 +120,10 @@
         }
     } else if (isset($_POST['delete'])) {
         $id = intval($_POST['id'] ?? 0);
-        if (MeshLogScope::deleteById($meshlog, $id)) {
+        if ($id <= 0) {
+            $errors[] = 'Invalid scope id';
+        }
+        if (!sizeof($errors) && MeshLogScope::deleteById($meshlog, $id)) {
             $actor = is_object($user) ? $user->name : ($user['name'] ?? 'admin');
             $meshlog->auditLog(
                 \MeshLogAuditLog::EVENT_SCOPE_DELETE,
@@ -120,7 +132,9 @@
             );
             $results = array('status' => 'OK');
         } else {
-            $errors[] = 'Failed to delete scope';
+            if (!sizeof($errors)) {
+                $errors[] = 'Failed to delete scope (not found or database error)';
+            }
         }
     } else if (isset($_GET['all'])) {
         // Fetch all scopes for the admin UI

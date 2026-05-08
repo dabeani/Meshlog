@@ -3,6 +3,11 @@
 class MeshLogScope extends MeshLogEntity {
     protected static $table = "scopes";
 
+    protected static $defaultNames = array(
+        0 => 'Local',
+        1 => 'Mesh',
+    );
+
     public $number = null;
     public $name = null;
     public $description = null;
@@ -13,10 +18,22 @@ class MeshLogScope extends MeshLogEntity {
         $m = new MeshLogScope($meshlog);
 
         $m->number = intval($data['number'] ?? 0);
-        $m->name = trim($data['name'] ?? '');
+        $name = trim($data['name'] ?? '');
+        $m->name = ($name !== '') ? $name : static::decodeName($m->number);
         $m->description = trim($data['description'] ?? '');
 
         return $m;
+    }
+
+    public static function decodeName($number) {
+        $num = intval($number);
+        if ($num < 0 || $num > 255) return '';
+
+        if (array_key_exists($num, static::$defaultNames)) {
+            return static::$defaultNames[$num];
+        }
+
+        return 'Scope ' . $num;
     }
 
     public static function fromDb($data, $meshlog) {
@@ -113,9 +130,14 @@ class MeshLogScope extends MeshLogEntity {
      */
     public static function deleteById($meshlog, $id) {
         try {
+            $scopeId = intval($id);
+            if ($scopeId <= 0) {
+                return false;
+            }
+
             $stmt = $meshlog->pdo->prepare("DELETE FROM scopes WHERE id = :id");
-            $stmt->execute(array(':id' => intval($id)));
-            return true;
+            $stmt->execute(array(':id' => $scopeId));
+            return $stmt->rowCount() > 0;
         } catch (Exception $e) {
             error_log("Error deleting scope: " . $e->getMessage());
             return false;
