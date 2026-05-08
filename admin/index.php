@@ -1777,15 +1777,40 @@ if ($user && $meshlog->updateAvailable()) {
             return 'Scope ' + scopeNumber;
         }
 
+        function getNextAvailableScopeNumber(scopes) {
+            const used = new Set();
+
+            (Array.isArray(scopes) ? scopes : []).forEach((scope) => {
+                const candidate = Number.parseInt(scope?.number, 10);
+                if (Number.isFinite(candidate) && candidate >= 0 && candidate <= 255) {
+                    used.add(candidate);
+                }
+            });
+
+            for (let i = 0; i <= 255; i++) {
+                if (!used.has(i)) return i;
+            }
+
+            return null;
+        }
+
         function loadScopes() {
             fetch('api/scopes/?all=1', { method: 'GET' })
             .then(r => r.json())
             .then(result => {
                 scopesTable.innerHTML = '';
-                if (result.scopes && Array.isArray(result.scopes)) {
-                    result.scopes.forEach(obj => addScopeRow(obj));
-                }
-                addScopeRow({ id: 'Add', number: '', name: '', description: '', isAddRow: true });
+                const scopes = (result.scopes && Array.isArray(result.scopes)) ? result.scopes : [];
+                scopes.forEach(obj => addScopeRow(obj));
+
+                const nextNumber = getNextAvailableScopeNumber(scopes);
+                addScopeRow({
+                    id: 'Add',
+                    number: nextNumber ?? '',
+                    name: '',
+                    description: '',
+                    isAddRow: true,
+                    disabled: nextNumber === null,
+                });
             })
             .catch(err => {
                 scopesTable.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#d35a69;">Failed to load scopes</td></tr>';
@@ -1806,8 +1831,19 @@ if ($user && $meshlog->updateAvailable()) {
             number.min = '0';
             number.max = '255';
             number.value = scope.number ?? '';
-            number.placeholder = '0-255';
+            number.placeholder = 'Auto';
             number.oninput = () => { number.style.color = '#1976D2'; };
+
+            if (scope.isAddRow) {
+                number.readOnly = true;
+                number.title = 'Automatically assigned next free scope number';
+                if (scope.disabled) {
+                    number.disabled = true;
+                    number.placeholder = 'No free numbers';
+                    number.title = 'All scope numbers (0-255) are already in use';
+                }
+            }
+
             numberCell.append(number);
 
             const nameCell = row.insertCell();
@@ -1871,10 +1907,21 @@ if ($user && $meshlog->updateAvailable()) {
                 const addBtn = document.createElement('button');
                 addBtn.className = 'button-primary';
                 addBtn.innerText = 'Add';
+                if (scope.disabled) {
+                    addBtn.disabled = true;
+                    addBtn.title = 'All scope numbers are already assigned';
+                    name.disabled = true;
+                    desc.disabled = true;
+                }
                 addBtn.onclick = () => {
+                    if (scope.disabled) {
+                        alert('All scope numbers (0-255) are already assigned. Delete one to add a new scope.');
+                        return;
+                    }
+
                     const data = collectScope();
                     if (!Number.isFinite(data.number) || data.number < 0 || data.number > 255) {
-                        alert('Scope number must be between 0-255');
+                        alert('Could not generate a valid scope number automatically. Reload the page and try again.');
                         return;
                     }
                     if (!data.name) {

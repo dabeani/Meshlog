@@ -35,11 +35,35 @@
         return htmlspecialchars($decoded, ENT_QUOTES, 'UTF-8');
     }
 
+    function getNextAvailableScopeNumber($meshlog) {
+        $used = array();
+        $scopes = MeshLogScope::getAll($meshlog);
+        foreach ($scopes as $scope) {
+            $candidate = intval($scope->number ?? -1);
+            if ($candidate >= 0 && $candidate <= 255) {
+                $used[$candidate] = true;
+            }
+        }
+
+        for ($i = 0; $i <= 255; $i++) {
+            if (!isset($used[$i])) {
+                return $i;
+            }
+        }
+
+        return null;
+    }
+
     if (isset($_POST['add'])) {
         $scope = new MeshLogScope($meshlog);
 
         if (!isset($_POST['number']) || $_POST['number'] === '') {
-            $errors[] = 'Missing scope number';
+            $generatedNumber = getNextAvailableScopeNumber($meshlog);
+            if ($generatedNumber === null) {
+                $errors[] = 'No available scope numbers (0-255)';
+            } else {
+                $scope->number = $generatedNumber;
+            }
         } else {
             $number = intval($_POST['number']);
             if ($number < 0 || $number > 255) {
