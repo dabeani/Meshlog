@@ -809,7 +809,7 @@ if ($user && $meshlog->updateAvailable()) {
             <section class="admin-section">
                 <div class="section-title">
                     <span>Reporter Devices</span>
-                    <span class="section-kicker">Authorization, MQTT format selection, optional IATA binding, location and style per device. Unknown devices seen on MQTT appear as <em>Pending</em> for approval.</span>
+                    <span class="section-kicker">MQTT format selection, optional IATA binding, location and style per device. Unknown devices seen on MQTT appear as <em>Pending</em> for approval.</span>
                 </div>
                 <div class="section-body">
                     <table class="admin-table admin-devices-table">
@@ -1348,7 +1348,7 @@ if ($user && $meshlog->updateAvailable()) {
                 addReporterRow({
                     id: 'Add', name: 'New Logger', public_key: '',
                     report_format: 'meshlog', iata_code: '',
-                    auth: '', lat: '0.00000', lon: '0.00000',
+                    lat: '0.00000', lon: '0.00000',
                     authorized: 1, style: '{"color":"#ff0000"}',
                     isAddRow: true
                 });
@@ -1378,7 +1378,6 @@ if ($user && $meshlog->updateAvailable()) {
             const lon       = makeInputCell(row, reporter.lon);
             lat.classList.add('coord-input');
             lon.classList.add('coord-input');
-            const authToken = String(reporter.auth ?? '');
 
             const styleCell = row.insertCell();
             styleCell.classList.add('style-cell');
@@ -1405,7 +1404,6 @@ if ($user && $meshlog->updateAvailable()) {
                 iata_code: iataCode.value,
                 lat: lat.value,
                 lon: lon.value,
-                auth: authToken,
                 authorized: enabled.checked ? 1 : 0,
                 style: JSON.stringify({ color: colorPicker.value, stroke: strokePicker.value })
             });
@@ -1458,7 +1456,6 @@ if ($user && $meshlog->updateAvailable()) {
                 iata_code: reporter.iata_code,
                 lat: reporter.lat,
                 lon: reporter.lon,
-                auth: reporter.auth,
                 authorized: reporter.authorized,
                 style: reporter.style,
             };
@@ -1504,7 +1501,6 @@ if ($user && $meshlog->updateAvailable()) {
                 iata_code: reporter.iata_code,
                 lat: reporter.lat,
                 lon: reporter.lon,
-                auth: reporter.auth,
                 style: reporter.style,
             };
             fetch('api/reporters/', {

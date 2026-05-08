@@ -28,9 +28,7 @@ if ($reporter !== '') {
     }
 }
 
-$auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-$maskedAuth = $auth !== '' ? (substr($auth, 0, 16) . '...') : '';
-dockerLog('INFO', "HTTP ingest received reporter={$reporter} auth={$maskedAuth} payload_len=" . strlen($raw));
+dockerLog('INFO', "HTTP ingest received reporter={$reporter} payload_len=" . strlen($raw));
 
 $systime = floor(microtime(true) * 1000);
 $data["time"]["server"] = $systime;

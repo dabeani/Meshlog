@@ -41,7 +41,6 @@
             'iata_code' => MeshLogReporter::normalizeIataCode($reporter->iata_code ?? ''),
             'lat' => strval($reporter->lat),
             'lon' => strval($reporter->lon),
-            'auth' => $reporter->auth,
             'authorized' => intval($reporter->authorized ?? 0),
             'reporter_pending' => intval($reporter->reporter_pending ?? 0),
             'style' => $reporter->style,
@@ -99,7 +98,9 @@
             $reporter->authorized = 1;
             $reporter->reporter_pending = 0;
             $reporter->name = htmlspecialchars(trim($_POST['name'] ?? $reporter->name ?? ''), ENT_QUOTES, 'UTF-8');
-            $reporter->auth = trim($_POST['auth'] ?? '');
+            if (array_key_exists('auth', $_POST)) {
+                $reporter->auth = trim($_POST['auth']);
+            }
             $reporter->style = trim($_POST['style'] ?? '{"color":"#4ea4c4"}');
             $reporter->report_format = MeshLogReporter::normalizeFormat($_POST['report_format'] ?? MeshLogReporter::FORMAT_MESHLOG);
             $reporter->iata_code = MeshLogReporter::normalizeIataCode($_POST['iata_code'] ?? '');
@@ -139,8 +140,12 @@
         
         $reporter->lat = floatval($_POST['lat'] ?? 0);
         $reporter->lon = floatval($_POST['lon'] ?? 0);
-        $reporter->auth = htmlspecialchars($_POST['auth'] ?? '', ENT_QUOTES, 'UTF-8');
-        if (!$reporter->auth && !intval($reporter->reporter_pending ?? 0)) $errors[] = 'Missing auth key';
+
+        if (array_key_exists('auth', $_POST)) {
+            $reporter->auth = htmlspecialchars($_POST['auth'], ENT_QUOTES, 'UTF-8');
+        } else if ($isAdd) {
+            $reporter->auth = '';
+        }
         
         $reporter->authorized = intval($_POST['authorized'] ?? 0);
         $reporter->style = $_POST['style'] ?? '';
@@ -221,6 +226,7 @@
             if ($timeSync) {
                 $enriched['time_sync'] = $timeSync;
             }
+            unset($enriched['auth']);
             $objects[] = $enriched;
         }
         $results['objects'] = $objects;

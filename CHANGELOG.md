@@ -39,6 +39,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 ### Backend — Security & Fixes
 
 - **Input data no longer leaks into HTTP responses on validation failure** — validation error messages in packet entity classes now go to server error log only, not to the HTTP response body.
+- **Reporter auth tokens removed from admin/API exposure paths** — Admin Devices no longer reads or posts reporter auth tokens, reporter API responses no longer include auth token fields, and HTTP ingest logs no longer emit Authorization header fragments.
 - **Channel name and hash are now properly escaped before storage** — admin channel create/edit operations now apply output escaping to name inputs, preventing XSS via stored channel names.
 - **Contact enabled flag stored with correct database type** — the contact enabled column is now bound as an integer to the database, matching the underlying column type and preventing silent type coercion.
 - **Migrations run automatically at container boot** — The Docker entrypoint now applies any pending schema migrations before starting services, eliminating the need for a manual setup run after deployment.
