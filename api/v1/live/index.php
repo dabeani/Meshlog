@@ -5,13 +5,13 @@
  * Returns only packets since the given timestamp for efficient polling
  */
 require_once "../../../lib/meshlog.class.php";
-require_once "../../../config.php";
 include "../utils.php";
 include "helpers.php";
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-cache, must-revalidate');
 
+$config = meshlogLoadConfig(__DIR__);
 $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
 $err = $meshlog->getError();
 

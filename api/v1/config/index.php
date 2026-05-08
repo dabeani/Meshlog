@@ -5,10 +5,11 @@
  * Returns public app configuration for iOS app
  */
 require_once "../../../lib/meshlog.class.php";
-require_once "../../../config.php";
+include "../utils.php";
 
 header('Content-Type: application/json; charset=utf-8');
 
+$config = meshlogLoadConfig(__DIR__);
 $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
 $err = $meshlog->getError();
 

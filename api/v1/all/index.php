@@ -1,9 +1,9 @@
 <?php
 $start = microtime(true);
 require_once "../../../lib/meshlog.class.php";
-require_once "../../../config.php";
 include "../utils.php";
 
+$config = meshlogLoadConfig(__DIR__);
 $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
 $err = $meshlog->getError();
 

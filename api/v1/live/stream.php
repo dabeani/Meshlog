@@ -10,7 +10,6 @@
  *   data: {"packets": [...], "timestamp_ms": 123, "count": 4, "has_more": true}
  */
 require_once "../../../lib/meshlog.class.php";
-require_once "../../../config.php";
 include "../utils.php";
 include "helpers.php";
 
@@ -28,6 +27,7 @@ while (ob_get_level() > 0) {
 }
 ob_implicit_flush(true);
 
+$config = meshlogLoadConfig(__DIR__);
 $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));
 $err = $meshlog->getError();
 
