@@ -1,4 +1,4 @@
-name: MeshLog
+name: MeshLogAustria
 options:
   minimumXcodeGenVersion: 2.38.0
   deploymentTarget:
@@ -8,7 +8,7 @@ settings:
   base:
     SWIFT_VERSION: 5.9
     PRODUCT_BUNDLE_IDENTIFIER: com.meshlog.app
-    CURRENT_PROJECT_VERSION: 6
+    CURRENT_PROJECT_VERSION: 7
     MARKETING_VERSION: 1.0.3
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -16,7 +16,7 @@ settings:
     INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: Displaying mesh nodes on map
     INFOPLIST_KEY_NSLocalNetworkUsageDescription: Connect to your MeshLog server on local network
 targets:
-  MeshLog:
+  MeshLogAustria:
     type: application
     platform: iOS
     sources:
@@ -29,11 +29,12 @@ targets:
       - path: meshcore-austria_logo.jpg
     settings:
       base:
-        PRODUCT_NAME: MeshLog
+        PRODUCT_NAME: MeshLogAustria
+        INFOPLIST_KEY_CFBundleDisplayName: MeshLogAustria
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
     dependencies: []
-  MeshLog-tvOS:
+  MeshLogAustria-tvOS:
     type: application
     platform: tvOS
     sources:
@@ -46,26 +47,27 @@ targets:
       - path: meshcore-austria_logo.jpg
     settings:
       base:
-        PRODUCT_NAME: MeshLog
+        PRODUCT_NAME: MeshLogAustria
+        INFOPLIST_KEY_CFBundleDisplayName: MeshLogAustria
         PRODUCT_BUNDLE_IDENTIFIER: com.meshlog.app.tvos
         TARGETED_DEVICE_FAMILY: "3"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-tvOS
+        ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
     dependencies: []
 schemes:
-  MeshLog:
+  MeshLogAustria:
     build:
       targets:
-        MeshLog: all
+        MeshLogAustria: all
     run:
       config: Debug
     test:
       config: Debug
     archive:
       config: Release
-  MeshLog-tvOS:
+  MeshLogAustria-tvOS:
     build:
       targets:
-        MeshLog-tvOS: all
+        MeshLogAustria-tvOS: all
     run:
       config: Debug
     test:

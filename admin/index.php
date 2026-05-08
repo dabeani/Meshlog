@@ -796,6 +796,7 @@ if ($user && $meshlog->updateAvailable()) {
         <nav class="admin-nav">
             <button type="button" class="admin-nav-btn" data-page="devices">Devices</button>
             <button type="button" class="admin-nav-btn" data-page="channels">Channels</button>
+            <button type="button" class="admin-nav-btn" data-page="scopes">Scopes</button>
             <button type="button" class="admin-nav-btn" data-page="contacts">Contacts</button>
             <button type="button" class="admin-nav-btn" data-page="settings">Settings</button>
             <button type="button" class="admin-nav-btn" data-page="audit">Audit Log</button>
@@ -868,6 +869,30 @@ if ($user && $meshlog->updateAvailable()) {
                             </tr>
                         </thead>
                         <tbody id="channels"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- PAGE: Scopes -->
+        <div class="admin-page" id="page-scopes">
+            <section class="admin-section">
+                <div class="section-title">
+                    <span>Region Scopes</span>
+                    <span class="section-kicker">Define human-readable names for transport scope codes. Scope numbers are extracted from MeshCore packets (0-255) and decoded to names for display in the live feed.</span>
+                </div>
+                <div class="section-body">
+                    <table class="admin-table admin-scopes-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th><span class="help-inline">Scope Number <button type="button" class="help-trigger" data-help-title="Scope Number" data-help-body="Transport scope code (0-255). These values come from MeshCore packet headers. Scope 0 is typically local, other numbers represent different regions or transport scopes.">?</button></span></th>
+                                <th><span class="help-inline">Name <button type="button" class="help-trigger" data-help-title="Scope Name" data-help-body="Human-readable name for this scope. Displayed in the live-feed instead of the raw number.">?</button></span></th>
+                                <th><span class="help-inline">Description <button type="button" class="help-trigger" data-help-title="Description" data-help-body="Optional longer description of this scope for reference.">?</button></span></th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scopes"></tbody>
                     </table>
                 </div>
             </section>
@@ -1098,6 +1123,7 @@ if ($user && $meshlog->updateAvailable()) {
                 loadedPages.add(name);
                 if (name === 'devices')  loadReporters();
                 if (name === 'channels') loadChannels();
+                if (name === 'scopes')   loadScopes();
                 if (name === 'contacts') loadContacts();
                 if (name === 'settings') loadSettings();
                 if (name === 'audit')    loadAudit(0);
@@ -1735,6 +1761,164 @@ if ($user && $meshlog->updateAvailable()) {
             };
 
             actionsCell.append(saveBtn, deleteBtn);
+        }
+
+        /* ── Scopes ──────────────────────────────────────────────────── */
+        const scopesTable = document.getElementById('scopes');
+
+        function loadScopes() {
+            fetch('api/scopes/?all=1', { method: 'GET' })
+            .then(r => r.json())
+            .then(result => {
+                scopesTable.innerHTML = '';
+                if (result.scopes && Array.isArray(result.scopes)) {
+                    result.scopes.forEach(obj => addScopeRow(obj));
+                }
+                addScopeRow({ id: 'Add', number: '', name: '', description: '', isAddRow: true });
+            })
+            .catch(err => {
+                scopesTable.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#d35a69;">Failed to load scopes</td></tr>';
+                console.error('Error loading scopes:', err);
+            });
+        }
+
+        function addScopeRow(scope) {
+            const row = scopesTable.insertRow();
+            row.dataset.id = scope.id;
+            if (scope.isAddRow) row.classList.add('add-row');
+
+            row.insertCell().innerText = scope.isAddRow ? '' : scope.id;
+
+            const numberCell = row.insertCell();
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.min = '0';
+            number.max = '255';
+            number.value = scope.number ?? '';
+            number.placeholder = '0-255';
+            number.oninput = () => { number.style.color = '#1976D2'; };
+            numberCell.append(number);
+
+            const nameCell = row.insertCell();
+            const name = document.createElement('input');
+            name.type = 'text';
+            name.value = scope.name ?? '';
+            name.placeholder = 'Scope name (e.g., "Local", "Regional", "Global")';
+            name.oninput = () => { name.style.color = '#1976D2'; };
+            nameCell.append(name);
+
+            const descCell = row.insertCell();
+            const desc = document.createElement('input');
+            desc.type = 'text';
+            desc.value = scope.description ?? '';
+            desc.placeholder = 'Optional description';
+            desc.style.minWidth = '200px';
+            desc.oninput = () => { desc.style.color = '#1976D2'; };
+            descCell.append(desc);
+
+            const actionsCell = row.insertCell();
+            const collectScope = () => ({
+                id: scope.id,
+                number: parseInt(number.value, 10),
+                name: name.value,
+                description: desc.value,
+            });
+
+            if (scope.isAddRow) {
+                const addBtn = document.createElement('button');
+                addBtn.className = 'button-primary';
+                addBtn.innerText = 'Add';
+                addBtn.onclick = () => {
+                    const data = collectScope();
+                    if (!Number.isFinite(data.number) || data.number < 0 || data.number > 255) {
+                        alert('Scope number must be between 0-255');
+                        return;
+                    }
+                    if (!data.name.trim()) {
+                        alert('Scope name is required');
+                        return;
+                    }
+                    const formData = new FormData();
+                    formData.append('add', '1');
+                    formData.append('number', data.number);
+                    formData.append('name', data.name);
+                    formData.append('description', data.description);
+                    fetch('api/scopes/', { method: 'POST', body: formData })
+                    .then(r => r.json())
+                    .then(result => {
+                        if (result.status === 'OK') {
+                            loadScopes();
+                        } else {
+                            alert('Error: ' + (result.errors ? result.errors.join('; ') : 'Unknown error'));
+                        }
+                    })
+                    .catch(err => { alert('Network error: ' + err.message); });
+                };
+                actionsCell.append(addBtn);
+            } else {
+                const saveBtn = document.createElement('button');
+                saveBtn.innerText = 'Save';
+                saveBtn.style.display = 'none';
+                saveBtn.onclick = () => {
+                    const data = collectScope();
+                    if (!Number.isFinite(data.number) || data.number < 0 || data.number > 255) {
+                        alert('Scope number must be between 0-255');
+                        return;
+                    }
+                    if (!data.name.trim()) {
+                        alert('Scope name is required');
+                        return;
+                    }
+                    const formData = new FormData();
+                    formData.append('edit', '1');
+                    formData.append('id', data.id);
+                    formData.append('number', data.number);
+                    formData.append('name', data.name);
+                    formData.append('description', data.description);
+                    fetch('api/scopes/', { method: 'POST', body: formData })
+                    .then(r => r.json())
+                    .then(result => {
+                        if (result.status === 'OK') {
+                            loadScopes();
+                        } else {
+                            alert('Error: ' + (result.errors ? result.errors.join('; ') : 'Unknown error'));
+                        }
+                    })
+                    .catch(err => { alert('Network error: ' + err.message); });
+                };
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'button-secondary';
+                deleteBtn.innerText = 'Delete';
+                deleteBtn.onclick = () => {
+                    if (confirm('Delete scope "' + scope.name + '"?')) {
+                        const formData = new FormData();
+                        formData.append('delete', '1');
+                        formData.append('id', scope.id);
+                        fetch('api/scopes/', { method: 'POST', body: formData })
+                        .then(r => r.json())
+                        .then(result => {
+                            if (result.status === 'OK') {
+                                loadScopes();
+                            } else {
+                                alert('Error: ' + (result.errors ? result.errors.join('; ') : 'Unknown error'));
+                            }
+                        })
+                        .catch(err => { alert('Network error: ' + err.message); });
+                    }
+                };
+
+                const detectChanges = () => {
+                    const changed = number.style.color === '#1976D2' || name.style.color === '#1976D2' || desc.style.color === '#1976D2';
+                    saveBtn.style.display = changed ? 'inline' : 'none';
+                };
+
+                number.addEventListener('change', detectChanges);
+                name.addEventListener('change', detectChanges);
+                desc.addEventListener('change', detectChanges);
+
+                actionsCell.append(saveBtn, deleteBtn);
+            }
         }
 
         /* ── Contacts ───────────────────────────────────────────────── */

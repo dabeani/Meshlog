@@ -8,6 +8,7 @@ require_once 'meshlog.direct_message.class.php';
 require_once 'meshlog.channel_message.class.php';
 require_once 'meshlog.channel.class.php';
 require_once 'meshlog.reporter.class.php';
+require_once 'meshlog.scope.class.php';
 require_once 'meshlog.setting.class.php';
 require_once 'meshlog.telemetry.class.php';
 require_once 'meshlog.user.class.php';
@@ -22,7 +23,7 @@ define("DEFAULT_COUNT", 500);
 
 class MeshLog {
     private $error = '';
-    private $version = 20;
+    private $version = 21;
     private $ntpConfig = array(
         'enabled' => true,
         'host' => 'pool.ntp.org',
@@ -2386,19 +2387,19 @@ class MeshLog {
             // so forwarded ADVs, direct messages, channel messages, telemetry and raw packets
             // all contribute to the heatmap weight.
             $stmt = $this->pdo->prepare("
-                SELECT MAX(loc.lat) AS lat, MAX(loc.lon) AS lon, SUM(act.cnt) AS weight
-                                FROM (
-                                        SELECT contact_id, AVG(lat) AS lat, AVG(lon) AS lon
-                                        FROM advertisements
-                                        WHERE type = 2 AND lat IS NOT NULL AND lat != 0
-                                            AND lon IS NOT NULL AND lon != 0
-                                        GROUP BY contact_id
-                                ) loc
+                SELECT loc.contact_id, MAX(loc.lat) AS lat, MAX(loc.lon) AS lon, SUM(act.cnt) AS weight
+                FROM (
+                    SELECT contact_id, AVG(lat) AS lat, AVG(lon) AS lon
+                    FROM advertisements
+                    WHERE lat IS NOT NULL AND lat != 0
+                        AND lon IS NOT NULL AND lon != 0
+                    GROUP BY contact_id
+                ) loc
                 INNER JOIN (
                     SELECT a.contact_id, COUNT(*) AS cnt
                     FROM advertisement_reports ar
                     JOIN advertisements a ON a.id = ar.advertisement_id
-                    WHERE a.type = 2 AND ar.received_at >= NOW() - INTERVAL :w1 HOUR
+                    WHERE ar.received_at >= NOW() - INTERVAL :w1 HOUR
                     GROUP BY a.contact_id
                     UNION ALL
                     SELECT dm.contact_id, COUNT(*) AS cnt

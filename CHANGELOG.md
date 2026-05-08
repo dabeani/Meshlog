@@ -44,9 +44,13 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Health tab now falls back to reporter-linked history** — Device popup health data now also resolves through the matching reporter identity when older or reporter-side system reports and telemetry are not directly linked by contact ID, so collector nodes no longer appear empty just because their health rows were stored reporter-first.
 
 ### Admin — New Features
-- **Coverage API SQL syntax fix** — The coverage spot API endpoint previously caused 500 errors due to incorrect parameter binding syntax in the DATE_SUB INTERVAL clause. Fixed by using `NOW() - INTERVAL :value HOUR` syntax instead, which is the correct MySQL parameter binding pattern.
-- **Heatmap now shows repeaters only** — The heatmap layer now filters to display only repeater nodes (type = 2) instead of showing all device types. This provides clearer mesh topology visibility by highlighting key relay infrastructure.
 
+- **Scopes (region) management in admin panel** — New Scopes section in admin UI allows defining human-readable names for MeshCore transport scope codes (0–255). Scope names are automatically decoded and displayed in the live feed instead of raw numbers. Falls back to numeric code if no name is defined. Includes audit log tracking for scope changes.
+
+### Backend — Fixes
+
+- **Heatmap HTTP 500 error fixed** — The heatmap API previously returned HTTP 500 due to a MySQL GROUP BY clause referencing `loc.contact_id` without including it in the SELECT statement. Fixed by adding `loc.contact_id` to the SELECT, resolving ONLY_FULL_GROUP_BY constraint errors.
+- **Heatmap now shows all node types** — The heatmap layer previously filtered to repeaters only (type = 2), causing incomplete activity visualization. Now includes all node types (chat, repeater, room, sensor) for a complete network activity picture.
 - **Pending reporter auto-registration** — Unknown reporters seen over MQTT are automatically registered as pending instead of being silently dropped. Admins can approve or dismiss them directly from the Reporter Devices list without manual DB edits.
 - **Channel hash auto-computed** — The PSK hash for a channel is now computed server-side on save; the hash input field has been removed from the channel create/edit form.
 - **Reporter hash-size column removed from UI** — The technical `hash_size` field is no longer shown in the Reporter Devices admin table.

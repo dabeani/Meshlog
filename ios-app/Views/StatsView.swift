@@ -74,7 +74,8 @@ struct StatsView: View {
                                             ForEach(Array(stats.chartBuckets.enumerated()), id: \.offset) { idx, value in
                                                 BarMark(
                                                     x: .value("Bucket", idx),
-                                                    y: .value("Reports", value)
+                                                    y: .value("Reports", value),
+                                                    width: .fixed(10)
                                                 )
                                                 .foregroundStyle(Color.cyan.opacity(0.85))
                                             }

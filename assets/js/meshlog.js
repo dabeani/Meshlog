@@ -2160,6 +2160,10 @@ class MeshLogReportedObject extends MeshLogObject {
     getScopeBadgeText() {
         const scope = this.resolveScope();
         if (scope === null || scope <= 0) return '*';
+        // Try to resolve scope name from meshlog scopes table
+        if (this._meshlog && this._meshlog.scopes && this._meshlog.scopes[scope]) {
+            return this._meshlog.scopes[scope];
+        }
         return `${scope}`;
     }
 
@@ -2167,6 +2171,10 @@ class MeshLogReportedObject extends MeshLogObject {
         const scope = this.resolveScope();
         if (scope === null || scope <= 0) {
             return 'Region scope: * (not set or wildcard)';
+        }
+        // Try to resolve scope name for tooltip
+        if (this._meshlog && this._meshlog.scopes && this._meshlog.scopes[scope]) {
+            return `Region scope: ${this._meshlog.scopes[scope]} (code: ${scope})`;
         }
         return `Region scope transport code: ${scope}`;
     }
@@ -2417,37 +2425,47 @@ class MeshLogReportedObject extends MeshLogObject {
         spText.classList.add(...text.classList);
         spText.innerHTML = text.text.linkify();
 
+        // Create left and right containers for organized layout
+        let divLineLeft = document.createElement("div");
+        let divLineRight = document.createElement("div");
+        divLineLeft.classList.add('log-entry-info-left');
+        divLineRight.classList.add('log-entry-info-right');
+
         if (text.text) {
             // message (chat-like: direct or channel)
-            divLine1.append(spDate);
-            divLine1.append(spHashSize);
-            divLine1.append(spHops);
-            divLine1.append(spSnr);
-            divLine1.append(spReportCount);
-            divLine1.append(spPrefix);
+            // LEFT: date, name
+            divLineLeft.append(spDate);
+            divLineLeft.append(spName);
 
-            // Channel messages should show the scope next to the channel tag;
-            // direct messages show the scope in the info line as before.
+            // RIGHT: scope, hops, snr, hash-size
+            divLineRight.append(spScope);
+            divLineRight.append(spHops);
+            divLineRight.append(spSnr);
+            divLineRight.append(spHashSize);
+            divLineRight.append(spReportCount);
+
+            // Tag goes with the left part for messages
             if (this instanceof MeshLogChannelMessage) {
-                divLine1.append(spTag);
-                divLine1.append(spScope);
+                divLineLeft.append(spTag);
             } else {
-                divLine1.append(spScope);
-                divLine1.append(spTag);
+                divLineLeft.append(spTag);
             }
 
-            divLine2.append(spName);
+            divLine1.append(divLineLeft);
+            divLine1.append(divLineRight);
             divLine2.append(spText);
         } else {
-            // advert — do not show region scope in advert lines
-            divLine1.append(spDate);
-            divLine1.append(spHashSize);
-            divLine1.append(spHops);
-            divLine1.append(spSnr);
-            divLine1.append(spReportCount);
-            // divLine1.append(spPrefix);
-            // divLine1.append(spTag);
-            divLine1.append(spName);
+            // advert — simpler layout: DATE TIME DEVICENAME on left, HOPS SNR HASH on right
+            divLineLeft.append(spDate);
+            divLineLeft.append(spName);
+
+            divLineRight.append(spHops);
+            divLineRight.append(spSnr);
+            divLineRight.append(spHashSize);
+            divLineRight.append(spReportCount);
+
+            divLine1.append(divLineLeft);
+            divLine1.append(divLineRight);
         }
 
         // Right
@@ -2976,6 +2994,10 @@ class MeshLogRawPacket extends MeshLogObject {
     getScopeBadgeText() {
         const scope = this.resolveScope();
         if (scope === null || scope <= 0) return '*';
+        // Try to resolve scope name from meshlog scopes table
+        if (this._meshlog && this._meshlog.scopes && this._meshlog.scopes[scope]) {
+            return this._meshlog.scopes[scope];
+        }
         return `${scope}`;
     }
 
@@ -2983,6 +3005,10 @@ class MeshLogRawPacket extends MeshLogObject {
         const scope = this.resolveScope();
         if (scope === null || scope <= 0) {
             return 'Region scope: * (not set or wildcard)';
+        }
+        // Try to resolve scope name for tooltip
+        if (this._meshlog && this._meshlog.scopes && this._meshlog.scopes[scope]) {
+            return `Region scope: ${this._meshlog.scopes[scope]} (code: ${scope})`;
         }
         return `Region scope transport code: ${scope}`;
     }
@@ -3173,6 +3199,7 @@ class MeshLog {
         this.reporters = {};
         this.contacts = {};
         this.channels = {};
+        this.scopes = {}; // Map of scope number -> scope name
 
         this.messages = {};
 
@@ -6640,6 +6667,9 @@ class MeshLog {
             if (rep8.length) console.log(`${rep8.length} telemetry packets loaded`);
             if (rep9.length) console.log(`${rep9.length} system reports loaded`);
 
+            // Load scopes for scope name lookup in live-feed
+            this.loadScopes();
+
             this.__init_reporters();
             this.onLoadAll();
             this._initialLoad = false;
@@ -6658,6 +6688,24 @@ class MeshLog {
                 });
             }
         });
+    }
+
+    loadScopes() {
+        // Load scopes from admin API for scope name lookup
+        fetch('admin/api/scopes/?all=1')
+            .then(r => r.json())
+            .then(result => {
+                if (result.status === 'OK' && Array.isArray(result.scopes)) {
+                    this.scopes = {};
+                    result.scopes.forEach(scope => {
+                        this.scopes[scope.number] = scope.name;
+                    });
+                    console.log(`${Object.keys(this.scopes).length} scopes loaded`);
+                }
+            })
+            .catch(err => {
+                console.log('Note: scopes API not available or no scopes defined');
+            });
     }
 
     onLoadContacts() {

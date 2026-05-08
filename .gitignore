@@ -11,3 +11,6 @@ test.txt
 package.json
 tools/
 .vscode/settings.json
+ios-app/project.yml
+ios-app/Views/StatsView.swift
+debug.txt
