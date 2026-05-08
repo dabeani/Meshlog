@@ -60,12 +60,17 @@ class MeshLog {
             0,
             intval($this->ntpConfig['warning_threshold_seconds'] ?? 300)
         );
-        $this->pdo = new PDO("mysql:host=$host;dbname=$name;charset=utf8mb4", $user, $pass);
-        $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $this->syncDatabaseSessionTimezone();
-        $this->loadSettings();
+        try {
+            $this->pdo = new PDO("mysql:host=$host;dbname=$name;charset=utf8mb4", $user, $pass);
+            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $this->syncDatabaseSessionTimezone();
+            $this->loadSettings();
 
-        $this->error = $this->checkUpdates();
+            $this->error = $this->checkUpdates();
+        } catch (Throwable $e) {
+            $this->error = 'Database connection failed';
+            error_log('MeshLog DB connection failed: ' . $e->getMessage());
+        }
     }
 
     function __destruct() {

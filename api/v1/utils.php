@@ -6,11 +6,28 @@ function getParam($key, $fallback=null) {
     return $fallback;
 }
 
-function meshlogLoadConfig($baseDir = __DIR__) {
-    $rootDir = realpath($baseDir . '/../../');
-    if ($rootDir === false) {
-        $rootDir = dirname(__DIR__, 2);
+function meshlogFindProjectRoot($baseDir = __DIR__) {
+    $dir = realpath($baseDir);
+    if ($dir === false) {
+        $dir = $baseDir;
     }
+
+    while (is_string($dir) && strlen($dir) > 1) {
+        if (file_exists($dir . '/lib/meshlog.class.php')) {
+            return $dir;
+        }
+        $parent = dirname($dir);
+        if ($parent === $dir) {
+            break;
+        }
+        $dir = $parent;
+    }
+
+    return dirname(__DIR__, 2);
+}
+
+function meshlogLoadConfig($baseDir = __DIR__) {
+    $rootDir = meshlogFindProjectRoot($baseDir);
 
     $config = array();
     $configFile = $rootDir . '/config.php';
