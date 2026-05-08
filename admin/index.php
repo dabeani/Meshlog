@@ -606,10 +606,6 @@ if ($user && $meshlog->updateAvailable()) {
             max-width: 110px;
         }
 
-        .admin-devices-table input.auth-token-input {
-            min-width: 180px;
-        }
-
         .admin-devices-table select.report-format-select {
             min-width: 122px;
         }
@@ -826,7 +822,6 @@ if ($user && $meshlog->updateAvailable()) {
                                 <th><span class="help-inline">IATA <button type="button" class="help-trigger" data-help-title="Reporter IATA" data-help-body="Optional MQTT topic region code binding (2-8 alphanumeric). If set, incoming packets must match this IATA from topic/payload.">?</button></span></th>
                                 <th>Lat</th>
                                 <th>Lon</th>
-                                <th><span class="help-inline">Auth Token <button type="button" class="help-trigger" data-help-title="Auth Token" data-help-body="Bearer token for the HTTP firmware ingest path. Leave empty for MQTT-only reporters.">?</button></span></th>
                                 <th><span class="help-inline">Style <button type="button" class="help-trigger" data-help-title="Style Colors" data-help-body="Left color picker sets the fill/text color, right sets the border/stroke color. The label preview updates live.">?</button></span></th>
                                 <th><span class="help-inline">Enabled <button type="button" class="help-trigger" data-help-title="Reporter Enabled" data-help-body="Only enabled reporters are accepted for ingest. Disable a device without deleting its historic data.">?</button></span></th>
                                 <th>Status</th>
@@ -1383,8 +1378,7 @@ if ($user && $meshlog->updateAvailable()) {
             const lon       = makeInputCell(row, reporter.lon);
             lat.classList.add('coord-input');
             lon.classList.add('coord-input');
-            const auth      = makeInputCell(row, reporter.auth);
-            auth.classList.add('auth-token-input');
+            const authToken = String(reporter.auth ?? '');
 
             const styleCell = row.insertCell();
             styleCell.classList.add('style-cell');
@@ -1411,7 +1405,7 @@ if ($user && $meshlog->updateAvailable()) {
                 iata_code: iataCode.value,
                 lat: lat.value,
                 lon: lon.value,
-                auth: auth.value,
+                auth: authToken,
                 authorized: enabled.checked ? 1 : 0,
                 style: JSON.stringify({ color: colorPicker.value, stroke: strokePicker.value })
             });

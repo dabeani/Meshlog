@@ -255,6 +255,8 @@ h2 {
     margin: 0;
     display: flex;
     align-items: center;
+    width: 100%;
+    gap: 6px;
 }
 
 .log-entry-msg {
@@ -285,15 +287,18 @@ h2 {
 }
 
 .log-entry-cehckbox {
-    margin-left: auto;
+    margin-left: 8px;
     white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 .log-entry-info-left {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 0 1 auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .log-entry-info-right {
@@ -302,6 +307,16 @@ h2 {
     gap: 4px;
     margin-left: auto;
     flex: 0 0 auto;
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+
+.log-entry-info-left .t {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .dot {
