@@ -35,34 +35,6 @@
         return htmlspecialchars($decoded, ENT_QUOTES, 'UTF-8');
     }
 
-    function normalizeScopeNameForKey($name) {
-        $name = trim((string)$name);
-        if ($name === '') return '';
-
-        $prefix = substr($name, 0, 1);
-        if ($prefix === '$') {
-            // Private regions in MeshCore use stored transport keys, not auto keys.
-            return null;
-        }
-
-        if ($name === '*' || $prefix === '#') {
-            return $name;
-        }
-
-        // MeshCore treats plain names as implicit hashtag regions.
-        return '#' . $name;
-    }
-
-    function deriveScopeNumberFromName($name) {
-        $normalized = normalizeScopeNameForKey($name);
-        if ($normalized === null || $normalized === '') {
-            return null;
-        }
-
-        $hash = hash('sha256', $normalized, true);
-        return ord($hash[0]);
-    }
-
     if (isset($_POST['add'])) {
         $scope = new MeshLogScope($meshlog);
 
@@ -74,8 +46,10 @@
 
         $scope->name = normalizeScopeName($scope->number ?? 0, $rawName);
 
-        $numberProvided = isset($_POST['number']) && $_POST['number'] !== '';
-        if ($numberProvided) {
+        $generatedNumber = MeshLogScope::deriveNumberFromName($rawName);
+        if ($generatedNumber !== null) {
+            $scope->number = $generatedNumber;
+        } else if (isset($_POST['number']) && $_POST['number'] !== '') {
             $number = intval($_POST['number']);
             if ($number < 0 || $number > 255) {
                 $errors[] = 'Scope number must be between 0-255';
@@ -83,12 +57,7 @@
                 $scope->number = $number;
             }
         } else {
-            $generatedNumber = deriveScopeNumberFromName($rawName);
-            if ($generatedNumber === null) {
-                $errors[] = 'Unable to auto-generate scope number from name';
-            } else {
-                $scope->number = $generatedNumber;
-            }
+            $errors[] = 'Unable to auto-generate scope number from name';
         }
 
         if (!sizeof($errors)) {
@@ -125,8 +94,12 @@
             $before = scopeSnapshot($scope);
             $numberTouched = false;
             $rawName = trim((string)($_POST['name'] ?? $scope->name));
+            $derivedNumber = MeshLogScope::deriveNumberFromName($rawName);
 
-            if (isset($_POST['number'])) {
+            if ($derivedNumber !== null) {
+                $numberTouched = true;
+                $scope->number = $derivedNumber;
+            } else if (isset($_POST['number'])) {
                 $numberTouched = true;
                 $number = intval($_POST['number']);
                 if ($number < 0 || $number > 255) {
@@ -135,7 +108,7 @@
                     $scope->number = $number;
                 }
             } else if (isset($_POST['name'])) {
-                $generatedNumber = deriveScopeNumberFromName($rawName);
+                $generatedNumber = MeshLogScope::deriveNumberFromName($rawName);
                 if ($generatedNumber === null) {
                     $errors[] = 'Unable to auto-generate scope number from name';
                 } else {

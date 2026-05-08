@@ -18,18 +18,35 @@ $scopes = MeshLogScope::getAll($meshlog);
 $scopeList = array();
 $scopeMap = array();
 
+function putScopeMapEntry(&$scopeMap, $number, $name) {
+    $num = intval($number);
+    if ($num < 0 || $num > 255) return;
+
+    $key = (string)$num;
+    if (!isset($scopeMap[$key])) {
+        $scopeMap[$key] = $name;
+    }
+}
+
 foreach ($scopes as $scope) {
     $item = $scope->asArray();
-    $number = intval($item['number'] ?? 0);
+    $storedNumber = intval($item['number'] ?? 0);
     $name = trim((string)($item['name'] ?? ''));
     if ($name === '') {
-        $name = MeshLogScope::decodeName($number);
+        $name = MeshLogScope::decodeName($storedNumber);
     }
 
-    $item['number'] = $number;
+    $derivedNumber = MeshLogScope::deriveNumberFromName($name);
+
+    $item['number'] = $storedNumber;
+    $item['derived_number'] = ($derivedNumber !== null) ? intval($derivedNumber) : null;
     $item['name'] = $name;
     $scopeList[] = $item;
-    $scopeMap[(string)$number] = $name;
+
+    putScopeMapEntry($scopeMap, $storedNumber, $name);
+    if ($derivedNumber !== null) {
+        putScopeMapEntry($scopeMap, $derivedNumber, $name);
+    }
 }
 
 echo json_encode(array(

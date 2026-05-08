@@ -2159,17 +2159,20 @@ class MeshLogReportedObject extends MeshLogObject {
 
     getScopeBadgeText() {
         const scope = this.resolveScope();
-        if (scope === null || scope <= 0) return '*';
+        if (scope === null) return '*';
+
         if (this._meshlog) {
             const scopeName = this._meshlog.resolveScopeName(scope);
             if (scopeName) return scopeName;
         }
+
+        if (scope <= 0) return '*';
         return `Scope ${scope}`;
     }
 
     getScopeBadgeTitle() {
         const scope = this.resolveScope();
-        if (scope === null || scope <= 0) {
+        if (scope === null) {
             return 'Region scope: * (not set or wildcard)';
         }
 
@@ -2178,6 +2181,10 @@ class MeshLogReportedObject extends MeshLogObject {
             if (scopeName) {
                 return `Region scope: ${scopeName} (code: ${scope})`;
             }
+        }
+
+        if (scope <= 0) {
+            return 'Region scope: * (not set or wildcard)';
         }
 
         return `Region scope transport code: ${scope}`;
@@ -2997,17 +3004,20 @@ class MeshLogRawPacket extends MeshLogObject {
 
     getScopeBadgeText() {
         const scope = this.resolveScope();
-        if (scope === null || scope <= 0) return '*';
+        if (scope === null) return '*';
+
         if (this._meshlog) {
             const scopeName = this._meshlog.resolveScopeName(scope);
             if (scopeName) return scopeName;
         }
+
+        if (scope <= 0) return '*';
         return `Scope ${scope}`;
     }
 
     getScopeBadgeTitle() {
         const scope = this.resolveScope();
-        if (scope === null || scope <= 0) {
+        if (scope === null) {
             return 'Region scope: * (not set or wildcard)';
         }
 
@@ -3016,6 +3026,10 @@ class MeshLogRawPacket extends MeshLogObject {
             if (scopeName) {
                 return `Region scope: ${scopeName} (code: ${scope})`;
             }
+        }
+
+        if (scope <= 0) {
+            return 'Region scope: * (not set or wildcard)';
         }
 
         return `Region scope transport code: ${scope}`;

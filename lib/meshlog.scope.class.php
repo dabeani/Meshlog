@@ -36,6 +36,34 @@ class MeshLogScope extends MeshLogEntity {
         return 'Scope ' . $num;
     }
 
+    public static function normalizeNameForKey($name) {
+        $name = trim((string)$name);
+        if ($name === '') return '';
+
+        $prefix = substr($name, 0, 1);
+        if ($prefix === '$') {
+            // Private regions use stored keys in MeshCore and cannot be auto-derived.
+            return null;
+        }
+
+        if ($name === '*' || $prefix === '#') {
+            return $name;
+        }
+
+        // MeshCore treats plain names as implicit hashtag regions.
+        return '#' . $name;
+    }
+
+    public static function deriveNumberFromName($name) {
+        $normalized = static::normalizeNameForKey($name);
+        if ($normalized === null || $normalized === '') {
+            return null;
+        }
+
+        $hash = hash('sha256', $normalized, true);
+        return ord($hash[0]);
+    }
+
     public static function fromDb($data, $meshlog) {
         if (!$data) return null;
 
