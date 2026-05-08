@@ -1100,7 +1100,7 @@ if ($user && $meshlog->updateAvailable()) {
 
     <script>
         /* ── Tabs ────────────────────────────────────────────────────── */
-        const PAGES = ['devices', 'channels', 'contacts', 'settings', 'audit', 'stats'];
+        const PAGES = ['devices', 'channels', 'scopes', 'contacts', 'settings', 'audit', 'stats'];
         const loadedPages = new Set();
 
         function switchPage(name) {
