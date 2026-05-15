@@ -1688,7 +1688,7 @@ class MeshLog {
         $sqlWhere = "";
         if ($after_ms > 0) {
             $after_ms = floor($after_ms / 1000);
-            $sqlWhere = "t.created_at > FROM_UNIXTIME(:after_ms) ";
+            $sqlWhere = "t.created_at >= FROM_UNIXTIME(:after_ms) ";
             $binds[] = array(":after_ms", $after_ms, PDO::PARAM_INT);
         }
         if ($before_ms > 0) {

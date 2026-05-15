@@ -169,7 +169,7 @@ class MeshLogEntity {
 
         if ($after_ms > 0) {
             $after_ms = floor($after_ms / 1000);
-            $sqlWhere = 'WHERE t.created_at > FROM_UNIXTIME(:after_ms) ';
+            $sqlWhere = 'WHERE t.created_at >= FROM_UNIXTIME(:after_ms) ';
         }
         if ($before_ms > 0) {
             $before_ms = floor($before_ms / 1000);
