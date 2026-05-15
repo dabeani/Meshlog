@@ -6358,9 +6358,13 @@ class MeshLog {
 
     __buildAllQuery(params = {}) {
         const query = this.__prepareQuery(params);
-        query.include_raw_packets = this.__isOptionalFeedTypeEnabled('raw') ? 1 : 0;
-        query.include_telemetry = this.__isOptionalFeedTypeEnabled('telemetry') ? 1 : 0;
-        query.include_system_reports = this.__isOptionalFeedTypeEnabled('system') ? 1 : 0;
+        const isInitialBootstrap = this._initialLoad
+            && Number(query.after_ms ?? 0) <= 0
+            && Number(query.before_ms ?? 0) <= 0;
+
+        query.include_raw_packets = !isInitialBootstrap && this.__isOptionalFeedTypeEnabled('raw') ? 1 : 0;
+        query.include_telemetry = !isInitialBootstrap && this.__isOptionalFeedTypeEnabled('telemetry') ? 1 : 0;
+        query.include_system_reports = !isInitialBootstrap && this.__isOptionalFeedTypeEnabled('system') ? 1 : 0;
         return query;
     }
 
