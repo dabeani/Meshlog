@@ -6464,12 +6464,12 @@ class MeshLog {
         const types = this.__getEnabledLiveStreamTypes();
         if (types.length < 1) return null;
 
-        const wsUrl = new URL('/ws/live', window.location.href);
-        wsUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl.searchParams.set('since_ms', String(Math.max(0, Number(this.latest) || 0)));
-        wsUrl.searchParams.set('types', types.join(','));
-        wsUrl.searchParams.set('limit', '100');
-        return wsUrl.toString();
+        const scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const params = new URLSearchParams();
+        params.set('since_ms', String(Math.max(0, Number(this.latest) || 0)));
+        params.set('types', types.join(','));
+        params.set('limit', '100');
+        return `${scheme}${window.location.host}/ws/live?${params.toString()}`;
     }
 
     __applyLiveNotifications() {
@@ -6534,7 +6534,15 @@ class MeshLog {
             return;
         }
 
-        const stream = new WebSocket(streamUrl);
+        let stream;
+        try {
+            stream = new WebSocket(String(streamUrl));
+        } catch (error) {
+            console.error('live websocket creation failed', streamUrl, error);
+            this.showError('Live WebSocket connection failed to start.', 5000);
+            this.__scheduleLiveStreamReconnect();
+            return;
+        }
         this.liveStream = stream;
 
         stream.addEventListener('message', (event) => {

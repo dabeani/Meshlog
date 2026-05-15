@@ -41,6 +41,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Live-feed delta ingest now preserves real message objects and reconnect cursor state** — Browser-side incremental ingest now stores instantiated `MeshLog*` objects instead of raw JSON rows, updates merged packet reports correctly on stream reconnect, and advances the live cursor from delivered packet timestamps so SSE reconnects do not skip packets or throw `msg.createDom` errors.
 - **Live tab transport moved from HTTP polling/SSE to a real WebSocket daemon** — The container now runs a dedicated PHP WebSocket server behind nginx on `/ws/live`, and the WebUI live feed subscribes over native `ws`/`wss` instead of issuing recurring `/api/v1/all/?after_ms=...` refreshes.
 - **Docker stack now publishes the live WebSocket daemon port explicitly** — `docker-compose.yaml` now maps `LIVE_WS_PORT` (default `8081`) to the backend container so direct `ws://host:8081/ws/live` transport tests no longer fail with connection refused.
+- **WebUI now builds the live WebSocket URL explicitly for browser compatibility** — The browser client now constructs `ws://`/`wss://` live-feed URLs as plain strings instead of mutating a `URL` object in place, avoiding Safari-side connection failures that degraded into invalid plain `/ws/live` HTTP requests.
 
 ### Frontend — New Features
 
