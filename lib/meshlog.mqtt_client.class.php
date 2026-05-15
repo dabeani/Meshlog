@@ -11,6 +11,7 @@ class MeshLogMqttClient {
     private $websocket = false;
     private $timeout = 5;
     private $lastDisconnectReason = null;
+    private $lastSentAt = null;
 
     public function __construct($config) {
         $this->config = $config;
@@ -72,6 +73,7 @@ class MeshLogMqttClient {
         $this->readPacketPayload();
         $this->connected = true;
         $this->lastDisconnectReason = null;
+        $this->lastSentAt = microtime(true);
     }
 
     public function loop($onMessage) {
@@ -93,14 +95,16 @@ class MeshLogMqttClient {
             $headerByte = $this->readPacketHeaderByte(1);
             if ($headerByte === null) {
                 $elapsed = microtime(true) - $lastReceivedAt;
+                $outboundIdle = microtime(true) - floatval($this->lastSentAt ?? $lastReceivedAt);
                 // Deadline: sent PINGREQ but broker silent for another full
                 // keepalive interval → connection is dead.
                 if ($pingSent && $elapsed >= 2 * $keepalive) {
                     throw new RuntimeException("MQTT keepalive timeout: no response after PINGREQ");
                 }
-                // Send PINGREQ early on otherwise quiet links so short idle
-                // socket timeouts do not close a healthy MQTT session.
-                if (!$pingSent && $elapsed >= $idlePingInterval) {
+                // MQTT keepalive is based on client-to-broker traffic. Even if
+                // the broker is publishing regularly, a QoS0 subscriber may
+                // otherwise send nothing upstream for long enough to be closed.
+                if (!$pingSent && $outboundIdle >= $idlePingInterval) {
                     $this->sendRaw(chr(0xC0) . chr(0x00));
                     $pingSent = true;
                 }
@@ -348,6 +352,7 @@ class MeshLogMqttClient {
             }
             $offset += $written;
         }
+        $this->lastSentAt = microtime(true);
     }
 
     private function markDisconnected($reason) {
