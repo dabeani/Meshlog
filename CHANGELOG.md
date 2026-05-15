@@ -37,6 +37,8 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Live polling/SSE cursors now advance from delivered packet timestamps** — `/api/v1/live` and `/api/v1/live/stream.php` now return the newest delivered packet time instead of server wall-clock time, so long-poll and SSE clients do not skip packets that arrive while a live request is still in flight.
 - **WebUI live-feed cursor no longer advances on metadata refreshes** — Browser-side incremental polling now keeps its `after_ms` cursor tied to actual feed message rows only, so reporter/contact/channel refreshes cannot jump past newly arrived live-feed entries.
 - **Packet-flow route flash now stays above device bubbles** — The transient live packet-flow animation now draws its route line in the dedicated foreground overlay pane, so active flows remain clearly visible instead of disappearing behind map markers.
+- **Live tab now uses server-push SSE instead of snapshot polling** — The WebUI live feed now consumes the dedicated `/api/v1/live/stream.php` event stream directly and no longer depends on periodic `/api/v1/all/` refreshes for new live entries.
+- **Live-feed delta ingest now preserves real message objects and reconnect cursor state** — Browser-side incremental ingest now stores instantiated `MeshLog*` objects instead of raw JSON rows, updates merged packet reports correctly on stream reconnect, and advances the live cursor from delivered packet timestamps so SSE reconnects do not skip packets or throw `msg.createDom` errors.
 
 ### Frontend — New Features
 

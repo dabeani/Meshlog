@@ -114,3 +114,41 @@ function enrichPackets(array $packets, $pdo) {
 
     return $packets;
 }
+
+function packetTimestampMs($packet) {
+    if (!is_array($packet)) return null;
+
+    foreach (array('created_at', 'received_at', 'sent_at') as $field) {
+        if (empty($packet[$field])) continue;
+        $unix = strtotime(strval($packet[$field]));
+        if ($unix !== false && $unix > 0) {
+            return intval($unix * 1000);
+        }
+    }
+
+    return null;
+}
+
+function newestPacketTimestampMs(array $packets) {
+    $newest = null;
+    foreach ($packets as $packet) {
+        $timestamp = packetTimestampMs($packet);
+        if ($timestamp === null) continue;
+        if ($newest === null || $timestamp > $newest) {
+            $newest = $timestamp;
+        }
+    }
+    return $newest;
+}
+
+function oldestPacketTimestampMs(array $packets) {
+    $oldest = null;
+    foreach ($packets as $packet) {
+        $timestamp = packetTimestampMs($packet);
+        if ($timestamp === null) continue;
+        if ($oldest === null || $timestamp < $oldest) {
+            $oldest = $timestamp;
+        }
+    }
+    return $oldest;
+}

@@ -157,27 +157,20 @@ function buildCombinedPackets($meshlog, $sinceMs, $beforeMs, $types, $limit, $hi
     $combined = enrichPackets($combined, $meshlog->pdo);
 
     usort($combined, function($a, $b) {
-        $timeA = strtotime($a['received_at'] ?? ($a['sent_at'] ?? 0));
-        $timeB = strtotime($b['received_at'] ?? ($b['sent_at'] ?? 0));
-        return $timeB <=> $timeA;
+        return (packetTimestampMs($b) ?? 0) <=> (packetTimestampMs($a) ?? 0);
     });
 
     $hasMore = count($combined) > $limit;
     $packets = array_slice($combined, 0, $limit);
 
-    $oldestTimestampMs = null;
-    if (!empty($packets)) {
-        $last = $packets[count($packets) - 1];
-        $oldestUnix = strtotime($last['received_at'] ?? ($last['sent_at'] ?? 0));
-        if ($oldestUnix !== false && $oldestUnix > 0) {
-            $oldestTimestampMs = intval($oldestUnix * 1000);
-        }
-    }
+    $oldestTimestampMs = oldestPacketTimestampMs($packets);
+    $newestTimestampMs = newestPacketTimestampMs($packets);
 
     return array(
         'packets' => $packets,
         'has_more' => $hasMore,
         'oldest_timestamp_ms' => $oldestTimestampMs,
+        'newest_timestamp_ms' => $newestTimestampMs,
     );
 }
 
@@ -187,7 +180,7 @@ if ($historyMode) {
     $result = buildCombinedPackets($meshlog, $sinceMs, $beforeMs, $types, $limit, true);
     $payload = array(
         'packets' => $result['packets'],
-        'timestamp_ms' => intval(microtime(true) * 1000),
+        'timestamp_ms' => $result['newest_timestamp_ms'] ?? $sinceMs,
         'count' => count($result['packets']),
         'has_more' => $result['has_more'],
         'oldest_timestamp_ms' => $result['oldest_timestamp_ms'],
@@ -208,12 +201,12 @@ while (true) {
 
     $result = buildCombinedPackets($meshlog, $sinceMs, 0, $types, $limit, false);
     $packets = $result['packets'];
-    $nowMs = intval(microtime(true) * 1000);
 
     if (!empty($packets)) {
+        $cursorMs = $result['newest_timestamp_ms'] ?? $sinceMs;
         $payload = array(
             'packets' => $packets,
-            'timestamp_ms' => $nowMs,
+            'timestamp_ms' => $cursorMs,
             'count' => count($packets),
             'has_more' => $result['has_more'],
             'oldest_timestamp_ms' => $result['oldest_timestamp_ms'],
@@ -223,7 +216,7 @@ while (true) {
         echo "data: " . json_encode($payload, JSON_UNESCAPED_UNICODE) . "\n\n";
         flush();
 
-        $sinceMs = $nowMs;
+        $sinceMs = $cursorMs;
     } else {
         // SSE comment heartbeat keeps the connection alive through proxies.
         echo ": keepalive\n\n";

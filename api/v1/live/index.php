@@ -127,26 +127,18 @@ $combined = enrichPackets($combined, $meshlog->pdo);
 
 // Sort by received_at descending (newest first)
 usort($combined, function($a, $b) {
-    $timeA = strtotime($a['received_at'] ?? $a['sent_at'] ?? 0);
-    $timeB = strtotime($b['received_at'] ?? $b['sent_at'] ?? 0);
-    return $timeB <=> $timeA;
+    return (packetTimestampMs($b) ?? 0) <=> (packetTimestampMs($a) ?? 0);
 });
 
 $hasMore = count($combined) > $limit;
 $packets = array_slice($combined, 0, $limit);
 
-$oldestTimestampMs = null;
-if (!empty($packets)) {
-    $last = $packets[count($packets) - 1];
-    $oldestUnix = strtotime($last['received_at'] ?? ($last['sent_at'] ?? 0));
-    if ($oldestUnix !== false && $oldestUnix > 0) {
-        $oldestTimestampMs = intval($oldestUnix * 1000);
-    }
-}
+$oldestTimestampMs = oldestPacketTimestampMs($packets);
+$newestTimestampMs = newestPacketTimestampMs($packets);
 
 echo json_encode([
     'packets' => $packets,
-    'timestamp_ms' => intval(microtime(true) * 1000),
+    'timestamp_ms' => $newestTimestampMs ?? $since_ms ?? 0,
     'count' => count($packets),
     'has_more' => $hasMore,
     'oldest_timestamp_ms' => $oldestTimestampMs,

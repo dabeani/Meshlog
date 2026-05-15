@@ -3262,6 +3262,11 @@ class MeshLog {
             telemetry: false,
             system: false,
         };
+        this.liveStream = null;
+        this.liveStreamReconnectTimer = null;
+        this.liveStreamRequested = false;
+        this.liveStreamReconnectDelayMs = 1000;
+        this.liveStreamMaxDurationSec = 25;
 
         // epoch of newest object
         this.latest = 0;
@@ -5847,6 +5852,7 @@ class MeshLog {
 
     __onTypesChanged() {
         this.__ensureOptionalFeedDataForVisibleTypes();
+        this.__restartLiveStream();
         this.updateMessagesDom();
         this.updateMarkersForFilter();
     }
@@ -6266,7 +6272,11 @@ class MeshLog {
 
     __addObject(dataset, id, obj) {
         if (dataset.hasOwnProperty(id)) {
-            dataset[id].merge(obj.data);
+            const mergeData = {...obj.data};
+            if (Array.isArray(obj.reports)) {
+                mergeData.reports = obj.reports.map((report) => ({...report.data}));
+            }
+            dataset[id].merge(mergeData);
         } else {
             dataset[id] = obj;
         }
@@ -6349,6 +6359,212 @@ class MeshLog {
         this.__fetchJson(url, query, onResponse, onError);
     }
 
+    __getEnabledLiveStreamTypes() {
+        const types = [];
+
+        if (Settings.getBool('messageTypes.advertisements', true)) {
+            types.push('ADV');
+        }
+        if (Settings.getBool('messageTypes.channel', true)) {
+            types.push('PUB');
+        }
+        if (Settings.getBool('messageTypes.direct', false)) {
+            types.push('MSG');
+        }
+        if (Settings.getBool('messageTypes.raw', false)) {
+            types.push('RAW');
+        }
+        if (Settings.getBool('messageTypes.telemetry', false)) {
+            types.push('TEL');
+        }
+        if (Settings.getBool('messageTypes.system', false)) {
+            types.push('SYS');
+        }
+
+        return types;
+    }
+
+    __getLivePacketCursorMs(packet) {
+        if (!packet || typeof packet !== 'object') return NaN;
+
+        const createdAt = parseMeshlogTimestamp(packet.created_at);
+        if (Number.isFinite(createdAt) && createdAt > 0) {
+            return createdAt;
+        }
+
+        const receivedAt = parseMeshlogTimestamp(packet.received_at);
+        if (Number.isFinite(receivedAt) && receivedAt > 0) {
+            return receivedAt;
+        }
+
+        const sentAt = parseMeshlogTimestamp(packet.sent_at);
+        if (Number.isFinite(sentAt) && sentAt > 0) {
+            return sentAt;
+        }
+
+        return NaN;
+    }
+
+    __getLivePacketClass(packetType) {
+        switch (String(packetType ?? '').toUpperCase()) {
+            case 'ADV': return MeshLogAdvertisement;
+            case 'MSG': return MeshLogDirectMessage;
+            case 'PUB': return MeshLogChannelMessage;
+            case 'RAW': return MeshLogRawPacket;
+            case 'TEL': return MeshLogTelemetryMessage;
+            case 'SYS': return MeshLogSystemReportMessage;
+            default: return null;
+        }
+    }
+
+    __normalizeLivePacket(packet) {
+        const normalized = {...packet};
+
+        if (String(packet?.type ?? '').toUpperCase() === 'ADV') {
+            const nodeType = Number.parseInt(packet?.node_type ?? packet?.type, 10);
+            if (Number.isFinite(nodeType)) {
+                normalized.type = nodeType;
+            }
+        }
+
+        return normalized;
+    }
+
+    __ingestLivePackets(packets) {
+        const loaded = [];
+
+        for (let i = 0; i < packets.length; i++) {
+            const packet = packets[i];
+            const klass = this.__getLivePacketClass(packet?.type);
+            if (!klass) continue;
+
+            const normalized = this.__normalizeLivePacket(packet);
+            const objectId = normalized?.id;
+            if (!Number.isFinite(Number(objectId)) || Number(objectId) <= 0) continue;
+
+            const obj = new klass(this, normalized);
+            const id = `${klass.idPrefix}${normalized.id}`;
+            this.__addObject(this.messages, id, obj);
+
+            const stored = this.messages[id];
+            if (!stored) continue;
+
+            const cursorMs = this.__getLivePacketCursorMs(normalized);
+            if (Number.isFinite(cursorMs) && cursorMs > this.latest) {
+                this.latest = cursorMs;
+            }
+
+            loaded.push(stored);
+        }
+
+        return loaded;
+    }
+
+    __buildLiveStreamUrl() {
+        const types = this.__getEnabledLiveStreamTypes();
+        if (types.length < 1) return null;
+
+        const normalizedUrl = this.__normalizeApiUrl('api/v1/live/stream.php');
+        const urlparams = new URLSearchParams();
+        urlparams.set('since_ms', String(Math.max(0, Number(this.latest) || 0)));
+        urlparams.set('types', types.join(','));
+        urlparams.set('limit', '100');
+        urlparams.set('max_duration_sec', String(this.liveStreamMaxDurationSec));
+        return `${normalizedUrl}?${urlparams.toString()}`;
+    }
+
+    __applyLiveNotifications() {
+        const count = Object.keys(this.new_messages).length;
+        if (!count) return;
+
+        if (Settings.getBool('notifications.enabled', false)) {
+            new Audio('assets/audio/notif.mp3').play();
+        }
+
+        document.getElementById('favicon').setAttribute('href', 'assets/favicon/faviconr.ico');
+        document.title = `(${count}) MeshCore Log (forked)`;
+    }
+
+    __handleLiveStreamPayload(payload) {
+        const packets = Array.isArray(payload?.packets) ? payload.packets : [];
+        if (packets.length < 1) return;
+
+        const messages = this.__ingestLivePackets(packets);
+        if (messages.length < 1) return;
+
+        this.onLoadAll({messages, contacts: [], groups: []});
+        this.__applyLiveNotifications();
+        this.syncLiveMapEntities();
+    }
+
+    __scheduleLiveStreamReconnect() {
+        if (!this.liveStreamRequested) return;
+        if (this.liveStreamReconnectTimer) return;
+
+        this.liveStreamReconnectTimer = window.setTimeout(() => {
+            this.liveStreamReconnectTimer = null;
+            this.__restartLiveStream();
+        }, this.liveStreamReconnectDelayMs);
+    }
+
+    __stopLiveStream() {
+        if (this.liveStreamReconnectTimer) {
+            clearTimeout(this.liveStreamReconnectTimer);
+            this.liveStreamReconnectTimer = null;
+        }
+
+        if (this.liveStream) {
+            this.liveStream.close();
+            this.liveStream = null;
+        }
+    }
+
+    __restartLiveStream() {
+        this.__stopLiveStream();
+
+        if (!this.liveStreamRequested) {
+            return;
+        }
+
+        if (typeof EventSource !== 'function') {
+            this.showError('This browser does not support the live event stream.', 5000);
+            return;
+        }
+
+        const streamUrl = this.__buildLiveStreamUrl();
+        if (!streamUrl) {
+            return;
+        }
+
+        const stream = new EventSource(streamUrl);
+        this.liveStream = stream;
+
+        stream.addEventListener('packets', (event) => {
+            if (this.liveStream !== stream) return;
+
+            try {
+                const payload = JSON.parse(event.data);
+                this.__handleLiveStreamPayload(payload);
+            } catch (error) {
+                console.error('live stream payload parse failed', error);
+            }
+        });
+
+        stream.addEventListener('end', () => {
+            if (this.liveStream !== stream) return;
+            this.liveStream.close();
+            this.liveStream = null;
+            this.__scheduleLiveStreamReconnect();
+        });
+
+        stream.addEventListener('error', () => {
+            if (this.liveStream !== stream) return;
+            this.liveStream.close();
+            this.liveStream = null;
+            this.__scheduleLiveStreamReconnect();
+        });
+    }
+
     __isOptionalFeedTypeEnabled(type) {
         if (type === 'raw') return Settings.getBool('messageTypes.raw', false);
         if (type === 'telemetry') return Settings.getBool('messageTypes.telemetry', false);
@@ -6418,14 +6634,17 @@ class MeshLog {
     __loadObjects(dataset, data, klass, updateLatest = true) {
         if (data.error) {
             this.showError(data.error);
-            return 0;
+            return [];
         }
+
+        const loaded = [];
 
         for (let i=0;i<data.objects.length;i++) {
             const o = data.objects[i];
             const obj = new klass(this, o);
             const id = klass.idPrefix + o.id;
             this.__addObject(dataset, id, obj);
+            loaded.push(dataset[id]);
 
             if (updateLatest && o.created_at) {
                 const created_at = parseMeshlogTimestamp(o.created_at);
@@ -6435,7 +6654,7 @@ class MeshLog {
             }
         }
 
-        return data.objects;
+        return loaded;
     }
 
     _removeContactByKey(contactKey) {
@@ -7623,15 +7842,7 @@ class MeshLog {
         clearTimeout(this.timer);
         const self = this;
         this.loadNew((data) => {
-            const count = Object.keys(this.new_messages).length;
-            if (count) {
-                if (Settings.getBool('notifications.enabled', false)) {
-                    new Audio('assets/audio/notif.mp3').play();
-                }
-
-                document.getElementById('favicon').setAttribute('href','assets/favicon/faviconr.ico');
-                document.title = `(${count}) MeshCore Log (forked)`; 
-            }
+            this.__applyLiveNotifications();
 
             self.syncLiveMapEntities();
         });
@@ -7647,10 +7858,12 @@ class MeshLog {
 
         if (interval >= 5000) {
             this.interval = interval;
-            const self = this;
-            this.timer = setTimeout(() => { self.refresh(); }, interval);
+            this.liveStreamRequested = true;
+            this.__restartLiveStream();
         } else {
             this.interval = 0;
+            this.liveStreamRequested = false;
+            this.__stopLiveStream();
         }
     }
 
