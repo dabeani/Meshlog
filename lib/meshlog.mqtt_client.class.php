@@ -80,6 +80,7 @@ class MeshLogMqttClient {
         }
 
         $keepalive = max(1, intval($this->config['keepalive'] ?? 30));
+        $idlePingInterval = min($keepalive, 5);
         // $lastReceived tracks the last time any data arrived from the broker.
         // $pingSent is true once we have fired a PINGREQ and are waiting for a
         // PINGRESP (or any broker traffic).  If a full 2× keepalive interval
@@ -97,8 +98,9 @@ class MeshLogMqttClient {
                 if ($pingSent && $elapsed >= 2 * $keepalive) {
                     throw new RuntimeException("MQTT keepalive timeout: no response after PINGREQ");
                 }
-                // Send PINGREQ once after keepalive silence.
-                if (!$pingSent && $elapsed >= $keepalive) {
+                // Send PINGREQ early on otherwise quiet links so short idle
+                // socket timeouts do not close a healthy MQTT session.
+                if (!$pingSent && $elapsed >= $idlePingInterval) {
                     $this->sendRaw(chr(0xC0) . chr(0x00));
                     $pingSent = true;
                 }

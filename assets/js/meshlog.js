@@ -1198,12 +1198,14 @@ class MeshLogContact extends MeshLogObject {
     getAdvertisementTrailSectionHtml() {
         if (!this.isClient()) return '';
 
-        const trail = this._meshlog.getContactAdvertisementTrail(this.data.id);
+        const trail = this._meshlog.getContactAdvertisementTrail(this.data.id, { loadIfMissing: false });
         const mapId = `device-popup-adv-map-${this.data.id}`;
         const hasPoints = Array.isArray(trail.points) && trail.points.length > 0;
 
         let note = '';
-        if (trail.hasError) {
+        if (trail.notLoaded) {
+            note = 'Loading advertisement coordinates...';
+        } else if (trail.hasError) {
             note = 'Unable to load advertisement coordinates right now.';
         } else if (trail.isLoading && !hasPoints) {
             note = 'Loading advertisement coordinates...';
@@ -4132,6 +4134,7 @@ class MeshLog {
             note: overrides.note ?? 'All advertisements with stored GPS coordinates for this chat client.',
             isLoading: overrides.isLoading ?? false,
             hasError: overrides.hasError ?? false,
+            notLoaded: overrides.notLoaded ?? false,
         };
     }
 
@@ -4245,23 +4248,27 @@ class MeshLog {
         );
     }
 
-    getContactAdvertisementTrail(contactId) {
+    getContactAdvertisementTrail(contactId, options = {}) {
         const numericContactId = Number(contactId);
         const key = `${numericContactId}`;
         const cacheTtlMs = 10 * 60 * 1000;
+        const loadIfMissing = options.loadIfMissing !== false;
         const cached = this.contactAdvertisementTrailCache.get(key) ?? null;
 
         if (!cached) {
-            this._loadContactAdvertisementTrail(numericContactId);
-            return this._getEmptyContactAdvertisementTrail({ isLoading: true });
+            if (loadIfMissing) {
+                this._loadContactAdvertisementTrail(numericContactId);
+                return this._getEmptyContactAdvertisementTrail({ isLoading: true });
+            }
+            return this._getEmptyContactAdvertisementTrail({ notLoaded: true });
         }
 
-        if (cached.status === 'ready' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
+        if (loadIfMissing && cached.status === 'ready' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
             this._loadContactAdvertisementTrail(numericContactId, true);
             return { ...cached.data, isLoading: true };
         }
 
-        if (cached.status === 'error' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
+        if (loadIfMissing && cached.status === 'error' && (Date.now() - cached.fetchedAt) >= cacheTtlMs) {
             this._loadContactAdvertisementTrail(numericContactId, true);
         }
 
