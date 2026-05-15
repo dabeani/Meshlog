@@ -260,12 +260,12 @@ function meshlogFetchBootstrapSnapshot(&$meshlog, $config, array $types, $count)
     }
 
     $packets = array_merge(
-        extractList($advertisements),
-        extractList($channelMessages),
-        extractList($directMessages),
-        extractList($rawPackets),
-        extractList($telemetry),
-        extractList($systemReports)
+        extractList($advertisements, 'advertisements'),
+        extractList($channelMessages, 'channel_messages'),
+        extractList($directMessages, 'direct_messages'),
+        extractList($rawPackets, 'raw_packets'),
+        extractList($telemetry, 'telemetry'),
+        extractList($systemReports, 'system_reports')
     );
 
     return array(
