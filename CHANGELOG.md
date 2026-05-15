@@ -24,11 +24,13 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **MQTT disconnect diagnostics and keepalive timing improved** — The MQTT client now uses monotonic keepalive timing, handles partial socket writes safely, and logs whether the broker closed the socket or a websocket close frame ended the session.
 - **MQTT idle-link keepalive hardened** — The MQTT client now sends earlier idle pings on otherwise quiet links so short TCP idle timeouts do not force reconnects before the configured keepalive window expires.
 - **MQTT keepalive now follows outbound-idle semantics** — The MQTT client now tracks the last packet sent to the broker and drives `PINGREQ` from client-side idle time, preventing broker disconnects on active QoS0 subscriptions where inbound traffic exists but the client itself has been silent.
+- **MQTT keepalive no longer depends on read gaps** — The MQTT client now checks outbound-idle deadlines even while inbound traffic is flowing and shortens its read poll deadline accordingly, so a busy subscribe stream still emits timely `PINGREQ` packets before the broker closes the socket.
 - **Admin session bootstrap warning fixed** — Admin API session handling now loads MeshLog classes before `session_start()`, preventing incomplete-object warnings when deserializing logged-in users from the session.
 - **Initial live autorefresh no longer starts before the first snapshot completes** — The WebUI now arms its 10-second autorefresh timer only after the initial `/api/v1/all/` load finishes, preventing the wasteful `after_ms=0` full snapshot that could fire during slow first-page loads.
 - **Supervisor root warning suppressed intentionally** — The container supervisord config now declares `user=root`, matching the current runtime model and removing the repeated startup `CRIT` warning about privileges not being dropped.
 - **Container runtime tuning for sustained uptime** — Enabled PHP OPcache in the container image, added php-fpm worker recycling (`pm.max_requests`) plus longer request timeout for heavy stats calls, and tuned nginx gzip/fastcgi buffering/timeouts to reduce upstream timeout and temp-file pressure under large JSON responses.
 - **php-fpm concurrency increased** — Container php-fpm pool now runs in dynamic mode with higher worker limits to prevent admin/API requests from queueing behind the previous `pm.max_children = 5` ceiling.
+- **Scopes polling now avoids the last API redirect** — The WebUI scope refresh path now uses the same normalized trailing-slash directory URL handling as the other API calls, removing the remaining `/api/v1/scopes` redirect churn seen in access logs.
 
 ### Frontend — New Features
 

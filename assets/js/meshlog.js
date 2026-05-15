@@ -6781,7 +6781,8 @@ class MeshLog {
         }
 
         this._scopeRefreshInFlight = true;
-        fetch('api/v1/scopes/?all=1')
+        const scopesUrl = this.__normalizeApiUrl('api/v1/scopes');
+        fetch(`${scopesUrl}?all=1`)
             .then(r => r.json())
             .then(result => {
                 if (!(result && result.status === 'OK')) return;

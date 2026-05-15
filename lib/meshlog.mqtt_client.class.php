@@ -92,22 +92,31 @@ class MeshLogMqttClient {
         $pingSent = false;
 
         while (!feof($this->socket)) {
-            $headerByte = $this->readPacketHeaderByte(1);
+            $now = microtime(true);
+            $elapsed = $now - $lastReceivedAt;
+            $outboundIdle = $now - floatval($this->lastSentAt ?? $lastReceivedAt);
+
+            // Deadline: sent PINGREQ but broker silent for another full
+            // keepalive interval → connection is dead.
+            if ($pingSent && $elapsed >= 2 * $keepalive) {
+                throw new RuntimeException("MQTT keepalive timeout: no response after PINGREQ");
+            }
+
+            // MQTT keepalive is based on client-to-broker traffic. Even if the
+            // broker is publishing regularly, a QoS0 subscriber may otherwise
+            // send nothing upstream for long enough to be closed.
+            if (!$pingSent && $outboundIdle >= $idlePingInterval) {
+                $this->sendRaw(chr(0xC0) . chr(0x00));
+                $pingSent = true;
+                $now = microtime(true);
+                $elapsed = $now - $lastReceivedAt;
+                $outboundIdle = $now - floatval($this->lastSentAt ?? $lastReceivedAt);
+            }
+
+            $timeUntilNextPing = max(0.05, $idlePingInterval - $outboundIdle);
+            $headerTimeout = $pingSent ? min(1.0, max(0.05, (2 * $keepalive) - $elapsed)) : min(1.0, $timeUntilNextPing);
+            $headerByte = $this->readPacketHeaderByte($headerTimeout);
             if ($headerByte === null) {
-                $elapsed = microtime(true) - $lastReceivedAt;
-                $outboundIdle = microtime(true) - floatval($this->lastSentAt ?? $lastReceivedAt);
-                // Deadline: sent PINGREQ but broker silent for another full
-                // keepalive interval → connection is dead.
-                if ($pingSent && $elapsed >= 2 * $keepalive) {
-                    throw new RuntimeException("MQTT keepalive timeout: no response after PINGREQ");
-                }
-                // MQTT keepalive is based on client-to-broker traffic. Even if
-                // the broker is publishing regularly, a QoS0 subscriber may
-                // otherwise send nothing upstream for long enough to be closed.
-                if (!$pingSent && $outboundIdle >= $idlePingInterval) {
-                    $this->sendRaw(chr(0xC0) . chr(0x00));
-                    $pingSent = true;
-                }
                 continue;
             }
 
