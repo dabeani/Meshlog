@@ -6,8 +6,10 @@ require_once __DIR__ . '/../api/v1/live/helpers.php';
 const MESHLOG_WS_BIND = 'tcp://0.0.0.0:8081';
 const MESHLOG_WS_QUERY_INTERVAL_SEC = 1.0;
 const MESHLOG_WS_PING_INTERVAL_SEC = 20.0;
+const MESHLOG_WS_METADATA_INTERVAL_SEC = 30.0;
 const MESHLOG_WS_MAX_LIMIT = 500;
 const MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT = 500;
+const MESHLOG_WS_METADATA_COUNT = 5000;
 
 function meshlogWsLog($level, $message) {
     fwrite(STDOUT, sprintf("[%s][%s] %s\n", date('c'), $level, $message));
@@ -211,6 +213,56 @@ function meshlogFetchLiveBatch(&$meshlog, $config, $sinceMs, array $types, $limi
     }
 }
 
+function meshlogReadScopesMap($meshlog) {
+    $map = array();
+    $scopes = MeshLogScope::getAll($meshlog);
+    foreach ($scopes as $scope) {
+        $number = intval($scope->number ?? -1);
+        if ($number < 0 || $number > 255) continue;
+        $name = trim((string)($scope->name ?? ''));
+        if ($name === '') continue;
+        $map[strval($number)] = $name;
+    }
+    return $map;
+}
+
+function meshlogFetchMetadataSnapshot(&$meshlog, $config, $count = MESHLOG_WS_METADATA_COUNT) {
+    if (!$meshlog instanceof MeshLog) {
+        $meshlog = meshlogCreateInstance($config);
+    }
+
+    $limit = max(1, intval($count));
+    $params = array(
+        'offset' => 0,
+        'count' => $limit,
+        'after_ms' => 0,
+        'before_ms' => 0,
+    );
+
+    try {
+        $reporters = $meshlog->getReporters($params);
+        $contacts = $meshlog->getContactsQuick($params);
+        $channels = $meshlog->getChannels($params);
+        $scopesMap = meshlogReadScopesMap($meshlog);
+    } catch (Throwable $e) {
+        meshlogWsLog('WARN', 'WebSocket metadata query failed, recreating MeshLog instance: ' . $e->getMessage());
+        $meshlog = meshlogCreateInstance($config);
+        $reporters = $meshlog->getReporters($params);
+        $contacts = $meshlog->getContactsQuick($params);
+        $channels = $meshlog->getChannels($params);
+        $scopesMap = meshlogReadScopesMap($meshlog);
+    }
+
+    return array(
+        'type' => 'metadata',
+        'reporters' => $reporters,
+        'contacts' => $contacts,
+        'channels' => $channels,
+        'scopes_map' => $scopesMap,
+        'timestamp_ms' => intval(round(microtime(true) * 1000)),
+    );
+}
+
 function meshlogFetchBootstrapSnapshot(&$meshlog, $config, array $types, $count) {
     if (!$meshlog instanceof MeshLog) {
         $meshlog = meshlogCreateInstance($config);
@@ -273,6 +325,7 @@ function meshlogFetchBootstrapSnapshot(&$meshlog, $config, array $types, $count)
         'reporters' => $reporters,
         'contacts' => $contacts,
         'channels' => $channels,
+        'scopes_map' => meshlogReadScopesMap($meshlog),
         'advertisements' => $advertisements,
         'channel_messages' => $channelMessages,
         'direct_messages' => $directMessages,
@@ -327,6 +380,7 @@ while (true) {
                 'count' => MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT,
                 'last_query_at' => 0.0,
                 'last_ping_at' => microtime(true),
+                'last_metadata_at' => 0.0,
             );
             continue;
         }
@@ -397,6 +451,7 @@ while (true) {
                         $clients[$clientId]['since_ms'],
                         max(0, intval($bootstrap['timestamp_ms'] ?? 0))
                     );
+                    $clients[$clientId]['last_metadata_at'] = microtime(true);
                 }
 
                 meshlogWsLog('INFO', sprintf(
@@ -459,36 +514,55 @@ while (true) {
         }
 
         if (($now - $client['last_query_at']) < MESHLOG_WS_QUERY_INTERVAL_SEC) {
-            unset($client);
-            continue;
+            // fall through and still allow metadata heartbeat frames
+        } else {
+            $client['last_query_at'] = $now;
+
+            try {
+                $result = meshlogFetchLiveBatch($meshlog, $config, $client['since_ms'], $client['types'], $client['limit']);
+                $packets = $result['packets'] ?? array();
+                if (count($packets) > 0) {
+                    $cursorMs = $result['newest_timestamp_ms'] ?? $client['since_ms'];
+                    $payload = json_encode(array(
+                        'packets' => $packets,
+                        'timestamp_ms' => $cursorMs,
+                        'count' => count($packets),
+                        'has_more' => $result['has_more'] ?? false,
+                        'oldest_timestamp_ms' => $result['oldest_timestamp_ms'] ?? null,
+                    ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                    if ($payload === false || !meshlogSendFrame($socket, $payload, 0x1)) {
+                        meshlogCloseClient($clients, $clientId, 1001, 'send failed');
+                        unset($client);
+                        continue;
+                    }
+
+                    $client['since_ms'] = intval($cursorMs);
+                }
+            } catch (Throwable $e) {
+                meshlogWsLog('ERROR', sprintf('WebSocket live query failed for client %d: %s', $clientId, $e->getMessage()));
+                meshlogCloseClient($clients, $clientId, 1011, 'query failed');
+                unset($client);
+                continue;
+            }
         }
 
-        $client['last_query_at'] = $now;
-
-        try {
-            $result = meshlogFetchLiveBatch($meshlog, $config, $client['since_ms'], $client['types'], $client['limit']);
-            $packets = $result['packets'] ?? array();
-            if (count($packets) > 0) {
-                $cursorMs = $result['newest_timestamp_ms'] ?? $client['since_ms'];
-                $payload = json_encode(array(
-                    'packets' => $packets,
-                    'timestamp_ms' => $cursorMs,
-                    'count' => count($packets),
-                    'has_more' => $result['has_more'] ?? false,
-                    'oldest_timestamp_ms' => $result['oldest_timestamp_ms'] ?? null,
-                ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-                if ($payload === false || !meshlogSendFrame($socket, $payload, 0x1)) {
-                    meshlogCloseClient($clients, $clientId, 1001, 'send failed');
+        if (($now - ($client['last_metadata_at'] ?? 0.0)) >= MESHLOG_WS_METADATA_INTERVAL_SEC) {
+            try {
+                $metadata = meshlogFetchMetadataSnapshot($meshlog, $config);
+                $metadataPayload = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                if ($metadataPayload === false || !meshlogSendFrame($socket, $metadataPayload, 0x1)) {
+                    meshlogCloseClient($clients, $clientId, 1001, 'metadata send failed');
                     unset($client);
                     continue;
                 }
-
-                $client['since_ms'] = intval($cursorMs);
+                $client['last_metadata_at'] = $now;
+            } catch (Throwable $e) {
+                meshlogWsLog('ERROR', sprintf('WebSocket metadata query failed for client %d: %s', $clientId, $e->getMessage()));
+                meshlogCloseClient($clients, $clientId, 1011, 'metadata failed');
+                unset($client);
+                continue;
             }
-        } catch (Throwable $e) {
-            meshlogWsLog('ERROR', sprintf('WebSocket live query failed for client %d: %s', $clientId, $e->getMessage()));
-            meshlogCloseClient($clients, $clientId, 1011, 'query failed');
         }
 
         unset($client);
