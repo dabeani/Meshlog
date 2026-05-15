@@ -24,7 +24,7 @@ define("DEFAULT_COUNT", 500);
 class MeshLog {
     public $pdo = null;
     private $error = '';
-    private $version = 21;
+    private $version = 22;
     private $ntpConfig = array(
         'enabled' => true,
         'host' => 'pool.ntp.org',
@@ -1521,14 +1521,31 @@ class MeshLog {
         }
         $timeSyncMap = $this->getReporterTimeSyncMap($publicKeys);
 
+        $contactMap = array();
+        if (count($publicKeys) > 0) {
+            $placeholders = implode(',', array_fill(0, count($publicKeys), '?'));
+            $sql = "SELECT * FROM contacts WHERE public_key IN ($placeholders)";
+            $stmt = $this->pdo->prepare($sql);
+            foreach ($publicKeys as $index => $publicKey) {
+                $stmt->bindValue($index + 1, strtoupper(strval($publicKey)), PDO::PARAM_STR);
+            }
+            $stmt->execute();
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $contact = MeshLogContact::fromDb($row, $this);
+                if (!$contact) {
+                    continue;
+                }
+                $contactMap[strtoupper(strval($row['public_key'] ?? ''))] = $contact->asArray();
+            }
+        }
+
         // find contact
         $out = [];
         foreach ($results['objects'] as $k => $r) {
-            $pk = $r["public_key"];
-            $c = MeshLogContact::findBy("public_key", $pk, $this, array());
-            if ($c) {
-                $r['contact_id'] = $c->getId();
-                $r['contact'] = $c->asArray();
+            $pk = strtoupper(strval($r['public_key'] ?? ''));
+            if ($pk !== '' && isset($contactMap[$pk]) && is_array($contactMap[$pk])) {
+                $r['contact_id'] = intval($contactMap[$pk]['id'] ?? 0);
+                $r['contact'] = $contactMap[$pk];
             }
 
             $reporterData = json_decode($r['data'] ?? '{}', true);
@@ -1536,7 +1553,7 @@ class MeshLog {
                 $r['reporter_status'] = $reporterData['reporter_status'];
             }
 
-            $timeSync = $timeSyncMap[strtoupper($pk)] ?? null;
+            $timeSync = $timeSyncMap[$pk] ?? null;
             if ($timeSync) {
                 $r['time_sync'] = $timeSync;
             }

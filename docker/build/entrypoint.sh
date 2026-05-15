@@ -31,6 +31,7 @@ $config["map"]["zoom"] = intval(getenv("MAP_ZOOM") ?: "10");
 
 $config["mqtt"]["enabled"] = filter_var(getenv("MQTT_ENABLED") ?: "false", FILTER_VALIDATE_BOOLEAN);
 $config["mqtt"]["debug"] = filter_var(getenv("MQTT_DEBUG") ?: "false", FILTER_VALIDATE_BOOLEAN);
+$config["mqtt"]["log_each_insert"] = filter_var(getenv("MQTT_LOG_EACH_INSERT") ?: "false", FILTER_VALIDATE_BOOLEAN);
 $config["mqtt"]["transport"] = getenv("MQTT_TRANSPORT") ?: "tcp";
 $config["mqtt"]["host"] = getenv("MQTT_HOST") ?: "127.0.0.1";
 $config["mqtt"]["port"] = intval(getenv("MQTT_PORT") ?: "1883");

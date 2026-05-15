@@ -3,7 +3,7 @@ FROM php:8.4-fpm-alpine
 ARG TIMEZONE=Europe/Riga
 
 RUN apk add --no-cache nginx supervisor bash tzdata \
-	&& docker-php-ext-install mysqli pdo pdo_mysql
+	&& docker-php-ext-install mysqli pdo pdo_mysql opcache
 
 ENV TZ=${TIMEZONE}
 
@@ -14,6 +14,7 @@ COPY . ${APP_ROOT}
 RUN rm -rf ${APP_ROOT}/.git ${APP_ROOT}/docker
 
 COPY docker/build/php.ini /usr/local/etc/php/conf.d/php.ini
+COPY docker/build/php-fpm-www.conf /usr/local/etc/php-fpm.d/zz-meshlog-www.conf
 COPY docker/build/nginx.conf /etc/nginx/nginx.conf
 COPY docker/build/supervisord.conf /etc/supervisord.conf
 COPY docker/build/entrypoint.sh /entrypoint.sh

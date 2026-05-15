@@ -49,7 +49,67 @@
         return intval($stmt->fetchColumn()) > 0;
     }
 
+    function getStatsCachePath($windowHours) {
+        $windowHours = intval($windowHours);
+        if ($windowHours < 1) {
+            $windowHours = 24;
+        }
+        return rtrim(sys_get_temp_dir(), '/') . '/meshlog_admin_stats_' . $windowHours . '.json';
+    }
+
+    function readStatsCache($cachePath, $ttlSeconds) {
+        if (!is_readable($cachePath)) {
+            return null;
+        }
+
+        $modifiedAt = @filemtime($cachePath);
+        if (!$modifiedAt || (time() - $modifiedAt) > $ttlSeconds) {
+            return null;
+        }
+
+        $raw = @file_get_contents($cachePath);
+        if (!is_string($raw) || $raw === '') {
+            return null;
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return $decoded;
+    }
+
+    function writeStatsCache($cachePath, $data) {
+        if (!is_array($data)) {
+            return;
+        }
+
+        $encoded = json_encode($data);
+        if (!is_string($encoded) || $encoded === '') {
+            return;
+        }
+
+        @file_put_contents($cachePath, $encoded, LOCK_EX);
+    }
+
     $windowHours = clampInt($_GET['window_hours'] ?? 24, 1, 168, 24);
+    $cacheTtlSeconds = clampInt($_GET['cache_ttl'] ?? 60, 10, 3600, 60);
+    $forceRefresh = clampInt($_GET['refresh'] ?? 0, 0, 1, 0) === 1;
+    $cachePath = getStatsCachePath($windowHours);
+
+    if (!$forceRefresh) {
+        $cached = readStatsCache($cachePath, $cacheTtlSeconds);
+        if (is_array($cached) && !empty($cached)) {
+            $cached['cache'] = array(
+                'hit' => true,
+                'ttl_seconds' => $cacheTtlSeconds,
+            );
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode($cached);
+            exit;
+        }
+    }
 
     try {
         $pdo = $meshlog->pdo;
@@ -249,11 +309,21 @@
             'ingest_breakdown' => $ingestBreakdown,
             'raw_packet_type_breakdown' => $packetTypes,
             'top_reporters' => $topReporters,
+            'cache' => array(
+                'hit' => false,
+                'ttl_seconds' => $cacheTtlSeconds,
+            ),
         );
+
+        writeStatsCache($cachePath, $results);
     } catch (Throwable $e) {
         $results = array(
             'status' => 'error',
             'error' => $e->getMessage(),
+            'cache' => array(
+                'hit' => false,
+                'ttl_seconds' => $cacheTtlSeconds,
+            ),
         );
     }
 

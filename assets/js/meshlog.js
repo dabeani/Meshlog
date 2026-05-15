@@ -3250,6 +3250,8 @@ class MeshLog {
         this.autorefresh = 0;
         this.decor = true;
         this.scopeRefreshTimer = null;
+        this.liveMapSyncIntervalMs = 60000;
+        this._lastLiveMapSyncAt = 0;
 
         // epoch of newest object
         this.latest = 0;
@@ -6267,7 +6269,7 @@ class MeshLog {
 
         // max count
         if (params.hasOwnProperty('count')) {
-            query.before = params['count'];
+            query.count = params['count'];
         }
 
         // reporter ids
@@ -6278,7 +6280,30 @@ class MeshLog {
         return query;
     }
 
+    __normalizeApiUrl(url) {
+        if (typeof url !== 'string') {
+            return url;
+        }
+
+        // Avoid nginx directory canonicalization redirects for API directory routes.
+        if (!url.startsWith('api/')) {
+            return url;
+        }
+
+        if (url.endsWith('/')) {
+            return url;
+        }
+
+        const lastSegment = url.split('/').pop() ?? '';
+        if (lastSegment.includes('.')) {
+            return url;
+        }
+
+        return `${url}/`;
+    }
+
     __fetchJson(url, query, onResponse, onError = null) {
+        const normalizedUrl = this.__normalizeApiUrl(url);
         const urlparams = new URLSearchParams();
 
         for (const key in query) {
@@ -6293,7 +6318,7 @@ class MeshLog {
             }
         }
 
-        fetch(`${url}?${urlparams.toString()}`)
+        fetch(`${normalizedUrl}?${urlparams.toString()}`)
             .then(response => response.json())
             .then(data => onResponse(data))
             .catch(error => {
@@ -6579,7 +6604,16 @@ class MeshLog {
         return true;
     }
 
-    syncLiveMapEntities(onDone = null) {
+    syncLiveMapEntities(onDone = null, force = false) {
+        const now = Date.now();
+        if (!force && this._lastLiveMapSyncAt > 0 && (now - this._lastLiveMapSyncAt) < this.liveMapSyncIntervalMs) {
+            if (typeof onDone === 'function') {
+                onDone();
+            }
+            return;
+        }
+        this._lastLiveMapSyncAt = now;
+
         const query = { count: 5000 };
         let pending = 2;
 

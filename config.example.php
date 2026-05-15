@@ -15,6 +15,7 @@ $config = array(
     'mqtt' => array(
         'enabled' => false,
         'debug' => false, // true prints detailed MQTT topic/reporter resolution logs
+        'log_each_insert' => false, // false logs periodic summaries; true logs every inserted packet
         'transport' => 'tcp', // tcp, ssl, ws, wss
         'host' => '127.0.0.1',
         'port' => 1883,

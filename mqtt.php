@@ -7,6 +7,7 @@ if (php_sapi_name() !== 'cli') {
 }
 
 const MQTT_RECONNECT_DELAY_SECONDS = 1;
+const MQTT_INSERT_SUMMARY_INTERVAL_SECONDS = 30;
 
 require_once __DIR__ . "/api/v1/utils.php";
 require_once __DIR__ . "/lib/meshlog.class.php";
@@ -22,6 +23,7 @@ if (!isset($config['db']) || !is_array($config['db'])) {
 $mqttConfig = $config['mqtt'] ?? array();
 $enabled = boolval($mqttConfig['enabled'] ?? false);
 $debug = boolval($mqttConfig['debug'] ?? false);
+$logEachInsert = boolval($mqttConfig['log_each_insert'] ?? $debug);
 if (!$enabled) {
     echo "MQTT disabled. Set \$config['mqtt']['enabled'] = true\n";
     exit(0);
@@ -45,6 +47,10 @@ function mqttGetEffectiveReporter($mqttMeta) {
 }
 
 while (true) {
+    $insertCountSinceLog = 0;
+    $insertBytesSinceLog = 0;
+    $lastInsertSummaryAt = time();
+
     try {
         // Create a fresh MeshLog (and therefore a fresh PDO connection) on every
         // reconnect cycle.  If the MySQL connection goes stale (e.g. MySQL
@@ -67,7 +73,7 @@ while (true) {
         $client->connect();
         mqttLog("INFO", "Connected. Waiting for packets...");
 
-        $client->loop(function($topic, $payload) use ($meshlog, $debug) {
+        $client->loop(function($topic, $payload) use ($meshlog, $debug, $logEachInsert, &$insertCountSinceLog, &$insertBytesSinceLog, &$lastInsertSummaryAt) {
             mqttDebug($debug, "MQTT message received topic=" . $topic . " bytes=" . strlen($payload));
 
             // Decode minimal metadata for logging
@@ -113,7 +119,24 @@ while (true) {
             if (is_array($result) && array_key_exists("error", $result)) {
                 mqttLog("WARN", "Skipped MQTT message from topic " . $topic . ": " . $result["error"]);
             } else {
-                mqttLog("INFO", "Insert OK type={$insertType} reporter=" . ($meta['attempted_reporter'] ?? '') . " bytes=" . strlen($payload));
+                if ($logEachInsert) {
+                    mqttLog("INFO", "Insert OK type={$insertType} reporter=" . ($meta['attempted_reporter'] ?? '') . " bytes=" . strlen($payload));
+                    return;
+                }
+
+                $insertCountSinceLog++;
+                $insertBytesSinceLog += strlen($payload);
+                $now = time();
+
+                if (($now - $lastInsertSummaryAt) >= MQTT_INSERT_SUMMARY_INTERVAL_SECONDS) {
+                    mqttLog(
+                        "INFO",
+                        "Insert summary count={$insertCountSinceLog} bytes={$insertBytesSinceLog} last_type={$insertType} last_reporter=" . ($meta['attempted_reporter'] ?? '')
+                    );
+                    $insertCountSinceLog = 0;
+                    $insertBytesSinceLog = 0;
+                    $lastInsertSummaryAt = $now;
+                }
             }
         });
 

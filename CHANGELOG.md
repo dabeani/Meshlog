@@ -6,6 +6,16 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ## [v1.0.5] — Map/Live Feed UI (2026-04-19)
 
+### Backend / Container — Performance & Stability (2026-05-15)
+
+- **Long-run DB performance index pass** — Added `migration 022` with targeted indexes for ingest-heavy and time-window query paths (`created_at`/`received_at`, hash+time dedupe, reporter lookup, contact live-map filters) to prevent progressive slowdown as tables grow.
+- **Admin stats endpoint timeout hardening** — `/admin/api/stats/` now has a short server-side TTL cache (default 60s, optional forced refresh) so repeated dashboard requests reuse computed aggregates instead of re-running expensive scans every request.
+- **Reporter fetch query load reduction** — Replaced per-reporter contact lookup (`N+1`) with a single batched contact prefetch in `getReporters()`, preserving existing API payload shape while reducing query count.
+- **Live map API pressure reduction** — WebUI now throttles heavy live map entity sync (`contacts` + `reporters`) to once per minute by default instead of every refresh loop.
+- **Redirect and query cleanup for API polling** — WebUI API calls now normalize directory endpoints to trailing-slash URLs (reducing repeated 301 hops) and correctly map `count` query params.
+- **MQTT worker log I/O reduction** — MQTT ingest now supports summary logging mode by default (`log_each_insert=false`) to avoid sustained per-packet stdout flood in long-running containers; per-packet logs remain available via config.
+- **Container runtime tuning for sustained uptime** — Enabled PHP OPcache in the container image, added php-fpm worker recycling (`pm.max_requests`) plus longer request timeout for heavy stats calls, and tuned nginx gzip/fastcgi buffering/timeouts to reduce upstream timeout and temp-file pressure under large JSON responses.
+
 ### Frontend — New Features
 
 - **GPS movement route lines on the device minimap** — The GPS history trail in the device popup now connects consecutive fixes with a polyline. A gap of more than 2 hours between fixes breaks the route into a new segment. Dots fade from dim blue (oldest) to bright cyan (newest), and the last-known-position fix is rendered larger.
