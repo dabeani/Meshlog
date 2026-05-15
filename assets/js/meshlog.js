@@ -6464,13 +6464,12 @@ class MeshLog {
         const types = this.__getEnabledLiveStreamTypes();
         if (types.length < 1) return null;
 
-        const normalizedUrl = this.__normalizeApiUrl('api/v1/live/stream.php');
-        const urlparams = new URLSearchParams();
-        urlparams.set('since_ms', String(Math.max(0, Number(this.latest) || 0)));
-        urlparams.set('types', types.join(','));
-        urlparams.set('limit', '100');
-        urlparams.set('max_duration_sec', String(this.liveStreamMaxDurationSec));
-        return `${normalizedUrl}?${urlparams.toString()}`;
+        const wsUrl = new URL('/ws/live', window.location.href);
+        wsUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl.searchParams.set('since_ms', String(Math.max(0, Number(this.latest) || 0)));
+        wsUrl.searchParams.set('types', types.join(','));
+        wsUrl.searchParams.set('limit', '100');
+        return wsUrl.toString();
     }
 
     __applyLiveNotifications() {
@@ -6494,7 +6493,6 @@ class MeshLog {
 
         this.onLoadAll({messages, contacts: [], groups: []});
         this.__applyLiveNotifications();
-        this.syncLiveMapEntities();
     }
 
     __scheduleLiveStreamReconnect() {
@@ -6526,8 +6524,8 @@ class MeshLog {
             return;
         }
 
-        if (typeof EventSource !== 'function') {
-            this.showError('This browser does not support the live event stream.', 5000);
+        if (typeof WebSocket !== 'function') {
+            this.showError('This browser does not support the live WebSocket feed.', 5000);
             return;
         }
 
@@ -6536,32 +6534,29 @@ class MeshLog {
             return;
         }
 
-        const stream = new EventSource(streamUrl);
+        const stream = new WebSocket(streamUrl);
         this.liveStream = stream;
 
-        stream.addEventListener('packets', (event) => {
+        stream.addEventListener('message', (event) => {
             if (this.liveStream !== stream) return;
 
             try {
                 const payload = JSON.parse(event.data);
                 this.__handleLiveStreamPayload(payload);
             } catch (error) {
-                console.error('live stream payload parse failed', error);
+                console.error('live websocket payload parse failed', error);
             }
         });
 
-        stream.addEventListener('end', () => {
+        stream.addEventListener('close', () => {
             if (this.liveStream !== stream) return;
-            this.liveStream.close();
             this.liveStream = null;
             this.__scheduleLiveStreamReconnect();
         });
 
         stream.addEventListener('error', () => {
             if (this.liveStream !== stream) return;
-            this.liveStream.close();
-            this.liveStream = null;
-            this.__scheduleLiveStreamReconnect();
+            stream.close();
         });
     }
 

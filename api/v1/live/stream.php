@@ -50,134 +50,10 @@ $limit = min($requestedLimit, 500);
 $maxDurationSec = max(5, min(intval(getParam('max_duration_sec', 25)), 55));
 $sleepMicros = 1000000; // 1s
 
-function buildCombinedPackets($meshlog, $sinceMs, $beforeMs, $types, $limit, $historyMode = false) {
-    // Fetch one extra row so callers can know if older/newer rows remain.
-    $fetchCount = max(1, $limit + 1);
-    $queryWindow = array(
-        'after_ms' => $historyMode ? 0 : $sinceMs,
-        'before_ms' => $historyMode ? $beforeMs : 0,
-        'count' => $fetchCount,
-    );
-
-    $advertisements = $meshlog->getAdvertisementsQuick(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
-
-    $messages = $meshlog->getDirectMessagesQuick(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
-
-    $channelMessages = $meshlog->getChannelMessagesQuick(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
-
-    $rawPackets = $meshlog->getRawPackets(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
-
-    $telemetry = $meshlog->getTelemetry(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
-
-    $systemReports = $meshlog->getSystemReports(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
-
-    $advertisementRows = extractList($advertisements, 'advertisements');
-    $messageRows = extractList($messages, 'direct_messages');
-    $channelMessageRows = extractList($channelMessages, 'channel_messages');
-    $rawPacketRows = extractList($rawPackets, 'raw_packets');
-    $telemetryRows = extractList($telemetry, 'telemetry');
-    $systemReportRows = extractList($systemReports, 'system_reports');
-
-    $combined = array();
-
-    if (in_array('ADV', $types)) {
-        foreach ($advertisementRows as $adv) {
-            $packet = $adv;
-            $packet['node_type'] = (string)$packet['type'];  // preserve integer node type
-            $packet['type'] = 'ADV';
-            $combined[] = $packet;
-        }
-    }
-
-    if (in_array('MSG', $types)) {
-        foreach ($messageRows as $msg) {
-            $packet = $msg;
-            $packet['type'] = 'MSG';
-            $combined[] = $packet;
-        }
-    }
-
-    if (in_array('PUB', $types)) {
-        foreach ($channelMessageRows as $cmsg) {
-            $packet = $cmsg;
-            $packet['type'] = 'PUB';
-            $combined[] = $packet;
-        }
-    }
-
-    if (in_array('RAW', $types)) {
-        foreach ($rawPacketRows as $raw) {
-            $packet = $raw;
-            $packet['type'] = 'RAW';
-            $combined[] = $packet;
-        }
-    }
-
-    if (in_array('TEL', $types)) {
-        foreach ($telemetryRows as $tel) {
-            $packet = $tel;
-            $packet['type'] = 'TEL';
-            $combined[] = $packet;
-        }
-    }
-
-    if (in_array('SYS', $types)) {
-        foreach ($systemReportRows as $sys) {
-            $packet = $sys;
-            $packet['type'] = 'SYS';
-            $combined[] = $packet;
-        }
-    }
-
-    // Enrich: add reporter_name, contact_public_key, channel_name, lift report fields to root.
-    $combined = enrichPackets($combined, $meshlog->pdo);
-
-    usort($combined, function($a, $b) {
-        return (packetTimestampMs($b) ?? 0) <=> (packetTimestampMs($a) ?? 0);
-    });
-
-    $hasMore = count($combined) > $limit;
-    $packets = array_slice($combined, 0, $limit);
-
-    $oldestTimestampMs = oldestPacketTimestampMs($packets);
-    $newestTimestampMs = newestPacketTimestampMs($packets);
-
-    return array(
-        'packets' => $packets,
-        'has_more' => $hasMore,
-        'oldest_timestamp_ms' => $oldestTimestampMs,
-        'newest_timestamp_ms' => $newestTimestampMs,
-    );
-}
-
 $startedAt = time();
 
 if ($historyMode) {
-    $result = buildCombinedPackets($meshlog, $sinceMs, $beforeMs, $types, $limit, true);
+    $result = buildLivePacketBatch($meshlog, $sinceMs, $beforeMs, $types, $limit, true);
     $payload = array(
         'packets' => $result['packets'],
         'timestamp_ms' => $result['newest_timestamp_ms'] ?? $sinceMs,
@@ -199,7 +75,7 @@ while (true) {
         break;
     }
 
-    $result = buildCombinedPackets($meshlog, $sinceMs, 0, $types, $limit, false);
+    $result = buildLivePacketBatch($meshlog, $sinceMs, 0, $types, $limit, false);
     $packets = $result['packets'];
 
     if (!empty($packets)) {

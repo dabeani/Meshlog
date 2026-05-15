@@ -152,3 +152,122 @@ function oldestPacketTimestampMs(array $packets) {
     }
     return $oldest;
 }
+
+function buildLivePacketBatch($meshlog, $sinceMs, $beforeMs, array $types, $limit, $historyMode = false) {
+    $fetchCount = max(1, intval($limit) + 1);
+    $queryWindow = array(
+        'after_ms' => $historyMode ? 0 : intval($sinceMs),
+        'before_ms' => $historyMode ? intval($beforeMs) : 0,
+        'count' => $fetchCount,
+    );
+
+    $advertisements = $meshlog->getAdvertisementsQuick(array(
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
+    ));
+
+    $messages = $meshlog->getDirectMessagesQuick(array(
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
+    ));
+
+    $channelMessages = $meshlog->getChannelMessagesQuick(array(
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
+    ));
+
+    $rawPackets = $meshlog->getRawPackets(array(
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
+    ));
+
+    $telemetry = $meshlog->getTelemetry(array(
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
+    ));
+
+    $systemReports = $meshlog->getSystemReports(array(
+        'after_ms' => $queryWindow['after_ms'],
+        'before_ms' => $queryWindow['before_ms'],
+        'count' => $queryWindow['count'],
+    ));
+
+    $advertisementRows = extractList($advertisements, 'advertisements');
+    $messageRows = extractList($messages, 'direct_messages');
+    $channelMessageRows = extractList($channelMessages, 'channel_messages');
+    $rawPacketRows = extractList($rawPackets, 'raw_packets');
+    $telemetryRows = extractList($telemetry, 'telemetry');
+    $systemReportRows = extractList($systemReports, 'system_reports');
+
+    $combined = array();
+
+    if (in_array('ADV', $types, true)) {
+        foreach ($advertisementRows as $adv) {
+            $packet = $adv;
+            $packet['node_type'] = (string)$packet['type'];
+            $packet['type'] = 'ADV';
+            $combined[] = $packet;
+        }
+    }
+
+    if (in_array('MSG', $types, true)) {
+        foreach ($messageRows as $msg) {
+            $packet = $msg;
+            $packet['type'] = 'MSG';
+            $combined[] = $packet;
+        }
+    }
+
+    if (in_array('PUB', $types, true)) {
+        foreach ($channelMessageRows as $cmsg) {
+            $packet = $cmsg;
+            $packet['type'] = 'PUB';
+            $combined[] = $packet;
+        }
+    }
+
+    if (in_array('RAW', $types, true)) {
+        foreach ($rawPacketRows as $raw) {
+            $packet = $raw;
+            $packet['type'] = 'RAW';
+            $combined[] = $packet;
+        }
+    }
+
+    if (in_array('TEL', $types, true)) {
+        foreach ($telemetryRows as $tel) {
+            $packet = $tel;
+            $packet['type'] = 'TEL';
+            $combined[] = $packet;
+        }
+    }
+
+    if (in_array('SYS', $types, true)) {
+        foreach ($systemReportRows as $sys) {
+            $packet = $sys;
+            $packet['type'] = 'SYS';
+            $combined[] = $packet;
+        }
+    }
+
+    $combined = enrichPackets($combined, $meshlog->pdo);
+
+    usort($combined, function($a, $b) {
+        return (packetTimestampMs($b) ?? 0) <=> (packetTimestampMs($a) ?? 0);
+    });
+
+    $hasMore = count($combined) > $limit;
+    $packets = array_slice($combined, 0, $limit);
+
+    return array(
+        'packets' => $packets,
+        'has_more' => $hasMore,
+        'oldest_timestamp_ms' => oldestPacketTimestampMs($packets),
+        'newest_timestamp_ms' => newestPacketTimestampMs($packets),
+    );
+}
