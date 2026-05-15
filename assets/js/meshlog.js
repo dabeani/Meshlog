@@ -7062,6 +7062,7 @@ class MeshLog {
         this.__fetchQuery(params, 'api/v1/telemetry', data => {
             const sz = this.__loadObjects(this.messages, data, MeshLogTelemetryMessage);
             this.__markOptionalFeedHistoryLoaded('telemetry');
+            this.onLoadMessages();
             console.log(`${sz} telemetry packets loaded`);
             if (onload) onload();
         });
@@ -7071,6 +7072,7 @@ class MeshLog {
         this.__fetchQuery(params, 'api/v1/system_reports', data => {
             const sz = this.__loadObjects(this.messages, data, MeshLogSystemReportMessage);
             this.__markOptionalFeedHistoryLoaded('system');
+            this.onLoadMessages();
             console.log(`${sz} system reports loaded`);
             if (onload) onload();
         });
@@ -7080,6 +7082,7 @@ class MeshLog {
         this.__fetchQuery(params, 'api/v1/raw_packets', data => {
             const sz = this.__loadObjects(this.messages, data, MeshLogRawPacket);
             this.__markOptionalFeedHistoryLoaded('raw');
+            this.onLoadMessages();
             console.log(`${sz} raw packets loaded`);
             if (onload) onload();
         });

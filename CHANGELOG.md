@@ -32,6 +32,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **php-fpm concurrency increased** — Container php-fpm pool now runs in dynamic mode with higher worker limits to prevent admin/API requests from queueing behind the previous `pm.max_children = 5` ceiling.
 - **Scopes polling now avoids the last API redirect** — The WebUI scope refresh path now uses the same normalized trailing-slash directory URL handling as the other API calls, removing the remaining `/api/v1/scopes` redirect churn seen in access logs.
 - **Initial `/api/v1/all/` bootstrap no longer front-loads optional feed histories** — The first WebUI snapshot now always skips raw packets, telemetry packets, and system reports regardless of saved feed toggles, then lazy-loads any enabled optional feed types right after first paint to keep startup responses smaller.
+- **Lazy-loaded feed types render into Live Feed again** — Raw packets, telemetry packets, and system reports now rerun the normal live-feed DOM insertion after their deferred fetch completes, restoring visible live log entries for sessions that rely on those optional feed types.
 - **Packet-flow route flash now stays above device bubbles** — The transient live packet-flow animation now draws its route line in the dedicated foreground overlay pane, so active flows remain clearly visible instead of disappearing behind map markers.
 
 ### Frontend — New Features
