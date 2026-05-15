@@ -6471,9 +6471,11 @@ class MeshLog {
             ? this.initialLiveCursorMs
             : latestCursorMs;
         const params = new URLSearchParams();
+        params.set('bootstrap', this._initialLoad ? '1' : '0');
         params.set('since_ms', String(cursorMs));
         params.set('types', types.join(','));
         params.set('limit', '100');
+        params.set('count', '500');
         return `${scheme}${window.location.host}/ws/live?${params.toString()}`;
     }
 
@@ -6490,6 +6492,35 @@ class MeshLog {
     }
 
     __handleLiveStreamPayload(payload) {
+        if (String(payload?.type ?? '').toLowerCase() === 'bootstrap') {
+            const rep1 = this.__loadObjects(this.reporters, payload.reporters ?? {objects: []}, MeshLogReporter, false);
+            const rep2 = this.__loadObjects(this.contacts, payload.contacts ?? {objects: []}, MeshLogContact, false);
+            const rep4 = this.__loadObjects(this.channels, payload.channels ?? {objects: []}, MeshLogChannel, false);
+
+            const rep3 = this.__loadObjects(this.messages, payload.advertisements ?? {objects: []}, MeshLogAdvertisement);
+            const rep5 = this.__loadObjects(this.messages, payload.channel_messages ?? {objects: []}, MeshLogChannelMessage);
+            const rep6 = this.__loadObjects(this.messages, payload.direct_messages ?? {objects: []}, MeshLogDirectMessage);
+            const rep7 = this.__loadObjects(this.messages, payload.raw_packets ?? {objects: []}, MeshLogRawPacket);
+            const rep8 = this.__loadObjects(this.messages, payload.telemetry ?? {objects: []}, MeshLogTelemetryMessage);
+            const rep9 = this.__loadObjects(this.messages, payload.system_reports ?? {objects: []}, MeshLogSystemReportMessage);
+
+            if (this.__isOptionalFeedTypeEnabled('raw')) this.__markOptionalFeedHistoryLoaded('raw');
+            if (this.__isOptionalFeedTypeEnabled('telemetry')) this.__markOptionalFeedHistoryLoaded('telemetry');
+            if (this.__isOptionalFeedTypeEnabled('system')) this.__markOptionalFeedHistoryLoaded('system');
+
+            this._lastLiveMapSyncAt = Date.now();
+            this.loadScopes();
+            this.__init_reporters();
+            this.onLoadAll({
+                messages: [...rep3, ...rep5, ...rep6, ...rep7, ...rep8, ...rep9],
+                contacts: rep2,
+                groups: rep4
+            });
+            this._initialLoad = false;
+            this.__ensureOptionalFeedDataForVisibleTypes();
+            return;
+        }
+
         const packets = Array.isArray(payload?.packets) ? payload.packets : [];
         if (packets.length < 1) return;
 

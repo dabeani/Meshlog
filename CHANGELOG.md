@@ -43,6 +43,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Docker stack now publishes the live WebSocket daemon port explicitly** — `docker-compose.yaml` now maps `LIVE_WS_PORT` (default `8081`) to the backend container so direct `ws://host:8081/ws/live` transport tests no longer fail with connection refused.
 - **WebUI now builds the live WebSocket URL explicitly for browser compatibility** — The browser client now constructs `ws://`/`wss://` live-feed URLs as plain strings instead of mutating a `URL` object in place, avoiding Safari-side connection failures that degraded into invalid plain `/ws/live` HTTP requests.
 - **WebSocket now starts immediately during first-page bootstrap** — The WebUI now opens `/ws/live` before waiting for the initial `/api/v1/all/` snapshot to finish, so live traffic appears even when the first snapshot is slow; the initial live cursor is pinned to page-open time until the first snapshot establishes the normal message cursor.
+- **WebUI first snapshot now comes from WebSocket instead of `/api/v1/all/`** — The live WebSocket handshake can now deliver a bootstrap dataset (reporters, contacts, channels, and message tables) as the initial batch, and the page bootstrap no longer issues `/api/v1/all/`; after bootstrap, the same socket continues with incremental live packets.
 
 ### Frontend — New Features
 

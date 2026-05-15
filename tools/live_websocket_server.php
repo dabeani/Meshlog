@@ -7,6 +7,7 @@ const MESHLOG_WS_BIND = 'tcp://0.0.0.0:8081';
 const MESHLOG_WS_QUERY_INTERVAL_SEC = 1.0;
 const MESHLOG_WS_PING_INTERVAL_SEC = 20.0;
 const MESHLOG_WS_MAX_LIMIT = 500;
+const MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT = 500;
 
 function meshlogWsLog($level, $message) {
     fwrite(STDOUT, sprintf("[%s][%s] %s\n", date('c'), $level, $message));
@@ -210,6 +211,78 @@ function meshlogFetchLiveBatch(&$meshlog, $config, $sinceMs, array $types, $limi
     }
 }
 
+function meshlogFetchBootstrapSnapshot(&$meshlog, $config, array $types, $count) {
+    if (!$meshlog instanceof MeshLog) {
+        $meshlog = meshlogCreateInstance($config);
+    }
+
+    $limit = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($count)));
+    $params = array(
+        'offset' => 0,
+        'count' => $limit,
+        'after_ms' => 0,
+        'before_ms' => 0,
+    );
+
+    $paramsContacts = array(
+        'offset' => 0,
+        'count' => $limit,
+        'after_ms' => 0,
+        'before_ms' => 0,
+    );
+
+    $includeRawPackets = in_array('RAW', $types, true);
+    $includeTelemetry = in_array('TEL', $types, true);
+    $includeSystemReports = in_array('SYS', $types, true);
+
+    try {
+        $reporters = $meshlog->getReporters($params);
+        $contacts = $meshlog->getContactsQuick($paramsContacts);
+        $advertisements = $meshlog->getAdvertisementsQuick($params);
+        $channels = $meshlog->getChannels($params);
+        $directMessages = $meshlog->getDirectMessagesQuick($params);
+        $channelMessages = $meshlog->getChannelMessagesQuick($params);
+        $telemetry = $includeTelemetry ? $meshlog->getTelemetry($params) : array('objects' => array());
+        $systemReports = $includeSystemReports ? $meshlog->getSystemReports($params) : array('objects' => array());
+        $rawPackets = $includeRawPackets ? $meshlog->getRawPackets($params) : array('objects' => array());
+    } catch (Throwable $e) {
+        meshlogWsLog('WARN', 'WebSocket bootstrap query failed, recreating MeshLog instance: ' . $e->getMessage());
+        $meshlog = meshlogCreateInstance($config);
+        $reporters = $meshlog->getReporters($params);
+        $contacts = $meshlog->getContactsQuick($paramsContacts);
+        $advertisements = $meshlog->getAdvertisementsQuick($params);
+        $channels = $meshlog->getChannels($params);
+        $directMessages = $meshlog->getDirectMessagesQuick($params);
+        $channelMessages = $meshlog->getChannelMessagesQuick($params);
+        $telemetry = $includeTelemetry ? $meshlog->getTelemetry($params) : array('objects' => array());
+        $systemReports = $includeSystemReports ? $meshlog->getSystemReports($params) : array('objects' => array());
+        $rawPackets = $includeRawPackets ? $meshlog->getRawPackets($params) : array('objects' => array());
+    }
+
+    $packets = array_merge(
+        extractList($advertisements),
+        extractList($channelMessages),
+        extractList($directMessages),
+        extractList($rawPackets),
+        extractList($telemetry),
+        extractList($systemReports)
+    );
+
+    return array(
+        'type' => 'bootstrap',
+        'reporters' => $reporters,
+        'contacts' => $contacts,
+        'channels' => $channels,
+        'advertisements' => $advertisements,
+        'channel_messages' => $channelMessages,
+        'direct_messages' => $directMessages,
+        'raw_packets' => $rawPackets,
+        'telemetry' => $telemetry,
+        'system_reports' => $systemReports,
+        'timestamp_ms' => newestPacketTimestampMs($packets) ?? 0,
+    );
+}
+
 $config = meshlogLoadConfig(__DIR__);
 $meshlog = null;
 
@@ -247,9 +320,11 @@ while (true) {
                 'socket' => $clientSocket,
                 'buffer' => '',
                 'handshake' => false,
+                'bootstrap' => false,
                 'since_ms' => 0,
                 'types' => meshlogAllowedLiveTypes(),
                 'limit' => 100,
+                'count' => MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT,
                 'last_query_at' => 0.0,
                 'last_ping_at' => microtime(true),
             );
@@ -299,16 +374,40 @@ while (true) {
 
                 $query = $request['query'];
                 $clients[$clientId]['handshake'] = true;
+                $clients[$clientId]['bootstrap'] = intval($query['bootstrap'] ?? 0) !== 0;
                 $clients[$clientId]['since_ms'] = max(0, intval($query['since_ms'] ?? 0));
                 $clients[$clientId]['types'] = meshlogNormalizeTypes($query['types'] ?? '');
                 $clients[$clientId]['limit'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['limit'] ?? 100)));
+                $clients[$clientId]['count'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['count'] ?? MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT)));
+
+                if ($clients[$clientId]['bootstrap']) {
+                    $bootstrap = meshlogFetchBootstrapSnapshot(
+                        $meshlog,
+                        $config,
+                        $clients[$clientId]['types'],
+                        $clients[$clientId]['count']
+                    );
+
+                    $bootstrapPayload = json_encode($bootstrap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    if ($bootstrapPayload === false || !meshlogSendFrame($socket, $bootstrapPayload, 0x1)) {
+                        throw new RuntimeException('Bootstrap send failed');
+                    }
+
+                    $clients[$clientId]['since_ms'] = max(
+                        $clients[$clientId]['since_ms'],
+                        max(0, intval($bootstrap['timestamp_ms'] ?? 0))
+                    );
+                }
+
                 meshlogWsLog('INFO', sprintf(
-                    'WebSocket client %d connected path=%s since_ms=%d types=%s limit=%d',
+                    'WebSocket client %d connected path=%s bootstrap=%d since_ms=%d types=%s limit=%d count=%d',
                     $clientId,
                     $request['path'],
+                    $clients[$clientId]['bootstrap'] ? 1 : 0,
                     $clients[$clientId]['since_ms'],
                     implode(',', $clients[$clientId]['types']),
-                    $clients[$clientId]['limit']
+                    $clients[$clientId]['limit'],
+                    $clients[$clientId]['count']
                 ));
             } catch (Throwable $e) {
                 meshlogWsLog('WARN', sprintf('WebSocket handshake failed for client %d: %s', $clientId, $e->getMessage()));
