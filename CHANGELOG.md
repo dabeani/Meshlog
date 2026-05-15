@@ -31,6 +31,8 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Container runtime tuning for sustained uptime** — Enabled PHP OPcache in the container image, added php-fpm worker recycling (`pm.max_requests`) plus longer request timeout for heavy stats calls, and tuned nginx gzip/fastcgi buffering/timeouts to reduce upstream timeout and temp-file pressure under large JSON responses.
 - **php-fpm concurrency increased** — Container php-fpm pool now runs in dynamic mode with higher worker limits to prevent admin/API requests from queueing behind the previous `pm.max_children = 5` ceiling.
 - **Scopes polling now avoids the last API redirect** — The WebUI scope refresh path now uses the same normalized trailing-slash directory URL handling as the other API calls, removing the remaining `/api/v1/scopes` redirect churn seen in access logs.
+- **Initial `/api/v1/all/` payload trimmed for default WebUI sessions** — The combined snapshot endpoint now skips raw packets, telemetry packets, and system reports unless the browser has those hidden-by-default feed types enabled, cutting first-load response size while still lazy-loading each type on demand when the user enables it.
+- **Packet-flow route flash now stays above device bubbles** — The transient live packet-flow animation now draws its route line in the dedicated foreground overlay pane, so active flows remain clearly visible instead of disappearing behind map markers.
 
 ### Frontend — New Features
 

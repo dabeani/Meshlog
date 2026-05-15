@@ -3257,6 +3257,11 @@ class MeshLog {
         this._scopeRefreshInFlight = false;
         this.liveMapSyncIntervalMs = 60000;
         this._lastLiveMapSyncAt = 0;
+        this._optionalFeedHistoryLoaded = {
+            raw: false,
+            telemetry: false,
+            system: false,
+        };
 
         // epoch of newest object
         this.latest = 0;
@@ -5841,6 +5846,7 @@ class MeshLog {
     }
 
     __onTypesChanged() {
+        this.__ensureOptionalFeedDataForVisibleTypes();
         this.updateMessagesDom();
         this.updateMarkersForFilter();
     }
@@ -6343,6 +6349,39 @@ class MeshLog {
         this.__fetchJson(url, query, onResponse, onError);
     }
 
+    __isOptionalFeedTypeEnabled(type) {
+        if (type === 'raw') return Settings.getBool('messageTypes.raw', false);
+        if (type === 'telemetry') return Settings.getBool('messageTypes.telemetry', false);
+        if (type === 'system') return Settings.getBool('messageTypes.system', false);
+        return false;
+    }
+
+    __buildAllQuery(params = {}) {
+        const query = this.__prepareQuery(params);
+        query.include_raw_packets = this.__isOptionalFeedTypeEnabled('raw') ? 1 : 0;
+        query.include_telemetry = this.__isOptionalFeedTypeEnabled('telemetry') ? 1 : 0;
+        query.include_system_reports = this.__isOptionalFeedTypeEnabled('system') ? 1 : 0;
+        return query;
+    }
+
+    __markOptionalFeedHistoryLoaded(type) {
+        if (Object.prototype.hasOwnProperty.call(this._optionalFeedHistoryLoaded, type)) {
+            this._optionalFeedHistoryLoaded[type] = true;
+        }
+    }
+
+    __ensureOptionalFeedDataForVisibleTypes() {
+        if (this.__isOptionalFeedTypeEnabled('raw') && !this._optionalFeedHistoryLoaded.raw) {
+            this.loadRawPackets();
+        }
+        if (this.__isOptionalFeedTypeEnabled('telemetry') && !this._optionalFeedHistoryLoaded.telemetry) {
+            this.loadTelemetry();
+        }
+        if (this.__isOptionalFeedTypeEnabled('system') && !this._optionalFeedHistoryLoaded.system) {
+            this.loadSystemReports();
+        }
+    }
+
     showWarning(msg) {
         this.dom_warning_messages.innerText = msg;
         if (msg.length > 0) {
@@ -6715,7 +6754,8 @@ class MeshLog {
     }
 
     loadAll(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/all', data => {
+        const query = this.__buildAllQuery(params);
+        this.__fetchJson('api/v1/all', query, data => {
             if (data.error) {
                 this.showError(data.error);
                 return;
@@ -6731,6 +6771,10 @@ class MeshLog {
             const rep7 = this.__loadObjects(this.messages, data.raw_packets ?? {objects: []}, MeshLogRawPacket);
             const rep8 = this.__loadObjects(this.messages, data.telemetry ?? {objects: []}, MeshLogTelemetryMessage);
             const rep9 = this.__loadObjects(this.messages, data.system_reports ?? {objects: []}, MeshLogSystemReportMessage);
+
+            if (Number(query.include_raw_packets) !== 0) this.__markOptionalFeedHistoryLoaded('raw');
+            if (Number(query.include_telemetry) !== 0) this.__markOptionalFeedHistoryLoaded('telemetry');
+            if (Number(query.include_system_reports) !== 0) this.__markOptionalFeedHistoryLoaded('system');
 
             if (rep1.length) console.log(`${rep1.length} reporters loaded`);
             if (rep2.length) console.log(`${rep2.length} contacts loaded`);
@@ -6752,6 +6796,7 @@ class MeshLog {
             this.__init_reporters();
             this.onLoadAll();
             this._initialLoad = false;
+            this.__ensureOptionalFeedDataForVisibleTypes();
 
             if (onload) {
                 onload({
@@ -7012,6 +7057,7 @@ class MeshLog {
     loadTelemetry(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/telemetry', data => {
             const sz = this.__loadObjects(this.messages, data, MeshLogTelemetryMessage);
+            this.__markOptionalFeedHistoryLoaded('telemetry');
             console.log(`${sz} telemetry packets loaded`);
             if (onload) onload();
         });
@@ -7020,7 +7066,17 @@ class MeshLog {
     loadSystemReports(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/system_reports', data => {
             const sz = this.__loadObjects(this.messages, data, MeshLogSystemReportMessage);
+            this.__markOptionalFeedHistoryLoaded('system');
             console.log(`${sz} system reports loaded`);
+            if (onload) onload();
+        });
+    }
+
+    loadRawPackets(params={}, onload=null) {
+        this.__fetchQuery(params, 'api/v1/raw_packets', data => {
+            const sz = this.__loadObjects(this.messages, data, MeshLogRawPacket);
+            this.__markOptionalFeedHistoryLoaded('raw');
+            console.log(`${sz} raw packets loaded`);
             if (onload) onload();
         });
     }
@@ -7323,8 +7379,8 @@ class MeshLog {
 
         // All animation shapes are purely visual — mark as non-interactive so they never
         // intercept pointer events or block marker clicks during/after an animation.
-        const glowLine  = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, interactive: false, renderer: cr, color: color,     weight: 14, opacity: 0 }).addTo(animLayer);
-        const innerLine = L.polyline(waypoints, { pane: MeshLog.ROUTE_PANE, interactive: false, renderer: cr, color: '#ffffff', weight: 2,  opacity: 0 }).addTo(animLayer);
+        const glowLine  = L.polyline(waypoints, { pane: MeshLog.LIVE_ROUTE_PANE, interactive: false, renderer: cr, color: color,     weight: 14, opacity: 0 }).addTo(animLayer);
+        const innerLine = L.polyline(waypoints, { pane: MeshLog.LIVE_ROUTE_PANE, interactive: false, renderer: cr, color: '#ffffff', weight: 2,  opacity: 0 }).addTo(animLayer);
         const dot = L.circleMarker(waypoints[0], {
             pane: MeshLog.MARKER_PANE_ROUTE, interactive: false, renderer: cr, radius: 7, color: '#ffffff', fillColor: color, fillOpacity: 1, weight: 2, opacity: 1
         }).addTo(animLayer);

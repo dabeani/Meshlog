@@ -10,6 +10,10 @@ $err = $meshlog->getError();
 if ($err) {
     $results = array('error' => $err);
 } else {
+    $includeRawPackets = intval(getParam('include_raw_packets', 1)) !== 0;
+    $includeTelemetry = intval(getParam('include_telemetry', 1)) !== 0;
+    $includeSystemReports = intval(getParam('include_system_reports', 1)) !== 0;
+
     $params = array(
         'offset' => getParam('offset', 0),
         'count' => getParam('count', DEFAULT_COUNT),
@@ -30,9 +34,9 @@ if ($err) {
     $channels = $meshlog->getChannels($params);
     $direct_messages = $meshlog->getDirectMessagesQuick($params);
     $channel_messages = $meshlog->getChannelMessagesQuick($params);
-    $telemetry = $meshlog->getTelemetry($params);
-    $system_reports = $meshlog->getSystemReports($params);
-    $raw_packets = $meshlog->getRawPackets($params);
+    $telemetry = $includeTelemetry ? $meshlog->getTelemetry($params) : array('objects' => array());
+    $system_reports = $includeSystemReports ? $meshlog->getSystemReports($params) : array('objects' => array());
+    $raw_packets = $includeRawPackets ? $meshlog->getRawPackets($params) : array('objects' => array());
 
     $results = array(
         'reporters' => $reporters,
