@@ -1413,23 +1413,30 @@ class MeshLog {
                 a.created_at,
                 ar.created_at AS report_created_at
             FROM reporters r
-            INNER JOIN advertisement_reports ar ON ar.id = (
-                SELECT ar2.id
-                FROM advertisement_reports ar2
-                INNER JOIN advertisements a2 ON a2.id = ar2.advertisement_id
-                INNER JOIN contacts c2 ON c2.id = a2.contact_id
-                WHERE ar2.reporter_id = r.id
-                  AND c2.public_key = r.public_key
-                ORDER BY ar2.id DESC
-                LIMIT 1
-            )
+            INNER JOIN (
+                SELECT
+                    r2.id AS reporter_id,
+                    MAX(ar2.id) AS latest_report_id
+                FROM reporters r2
+                INNER JOIN contacts c2 ON c2.public_key = r2.public_key
+                INNER JOIN advertisements a2 ON a2.contact_id = c2.id
+                INNER JOIN advertisement_reports ar2
+                    ON ar2.advertisement_id = a2.id
+                   AND ar2.reporter_id = r2.id
+                WHERE r2.public_key IN ($placeholders)
+                GROUP BY r2.id
+            ) latest ON latest.reporter_id = r.id
+            INNER JOIN advertisement_reports ar ON ar.id = latest.latest_report_id
             INNER JOIN advertisements a ON a.id = ar.advertisement_id
             WHERE r.public_key IN ($placeholders)
         ";
 
         $query = $this->pdo->prepare($sql);
-        foreach ($publicKeys as $index => $publicKey) {
-            $query->bindValue($index + 1, $publicKey, PDO::PARAM_STR);
+        $bindIndex = 1;
+        for ($repeat = 0; $repeat < 2; $repeat++) {
+            foreach ($publicKeys as $publicKey) {
+                $query->bindValue($bindIndex++, $publicKey, PDO::PARAM_STR);
+            }
         }
         $query->execute();
 

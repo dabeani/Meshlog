@@ -46,6 +46,15 @@ function mqttGetEffectiveReporter($mqttMeta) {
     return 'unknown';
 }
 
+function mqttLogMessageFailure($topic, $payload, Throwable $e) {
+    mqttLog(
+        'ERROR',
+        'MQTT message processing failed topic=' . $topic .
+        ' bytes=' . strlen($payload) .
+        ' error=' . $e->getMessage()
+    );
+}
+
 while (true) {
     $insertCountSinceLog = 0;
     $insertBytesSinceLog = 0;
@@ -75,51 +84,54 @@ while (true) {
         mqttLog("INFO", "Connected. Waiting for packets...");
 
         $client->loop(function($topic, $payload) use ($meshlog, $debug, $logEachInsert, &$insertCountSinceLog, &$insertBytesSinceLog, &$lastInsertSummaryAt) {
-            mqttDebug($debug, "MQTT message received topic=" . $topic . " bytes=" . strlen($payload));
+            try {
+                mqttDebug($debug, "MQTT message received topic=" . $topic . " bytes=" . strlen($payload));
 
-            // Decode minimal metadata for logging
-            $payloadArr = json_decode($payload, true) ?: array();
-            $meta = MeshLogMqttDecoder::extractMetadata($topic, $payloadArr);
-            $type = strtoupper($payloadArr['type'] ?? (isset($payloadArr['packet_type']) ? 'PACKET' : ''));
+                // Decode minimal metadata for logging
+                $payloadArr = json_decode($payload, true) ?: array();
+                $meta = MeshLogMqttDecoder::extractMetadata($topic, $payloadArr);
+                $type = strtoupper($payloadArr['type'] ?? (isset($payloadArr['packet_type']) ? 'PACKET' : ''));
 
-            // Add detailed decode logging for debugging encrypted/RAW packets.
-            if ($debug) {
-                $pktType = isset($payloadArr['packet_type']) ? intval($payloadArr['packet_type']) : null;
-                if (isset($payloadArr['type']) && strtoupper($payloadArr['type']) === 'PACKET') {
-                    $rawHex = strtoupper(preg_replace('/[^0-9A-Fa-f]/', '', $payloadArr['raw'] ?? ''));
-                    $pathStr = $payloadArr['path'] ?? '';
-                $rawBytes = intval(strlen($rawHex) / 2);
-                mqttDebug($debug, "PACKET detail packet_type=" . var_export($pktType, true) . " path=$pathStr raw_len=" . $rawBytes . " raw_head=" . substr($rawHex, 0, 64));
-                } elseif (isset($payloadArr['type'])) {
-                    $t = strtoupper($payloadArr['type']);
-                    if ($t === 'PUB' || $t === 'MSG') {
-                        $chan = $payloadArr['channel']['hash'] ?? ($payloadArr['contact']['pubkey'] ?? '');
-                        $msg = $payloadArr['message']['text'] ?? $payloadArr['message'] ?? '';
-                        mqttDebug($debug, "$t structured detail channel=$chan msg_len=" . strlen($msg));
+                // Add detailed decode logging for debugging encrypted/RAW packets.
+                if ($debug) {
+                    $pktType = isset($payloadArr['packet_type']) ? intval($payloadArr['packet_type']) : null;
+                    if (isset($payloadArr['type']) && strtoupper($payloadArr['type']) === 'PACKET') {
+                        $rawHex = strtoupper(preg_replace('/[^0-9A-Fa-f]/', '', $payloadArr['raw'] ?? ''));
+                        $pathStr = $payloadArr['path'] ?? '';
+                        $rawBytes = intval(strlen($rawHex) / 2);
+                        mqttDebug($debug, "PACKET detail packet_type=" . var_export($pktType, true) . " path=$pathStr raw_len=" . $rawBytes . " raw_head=" . substr($rawHex, 0, 64));
+                    } elseif (isset($payloadArr['type'])) {
+                        $t = strtoupper($payloadArr['type']);
+                        if ($t === 'PUB' || $t === 'MSG') {
+                            $chan = $payloadArr['channel']['hash'] ?? ($payloadArr['contact']['pubkey'] ?? '');
+                            $msg = $payloadArr['message']['text'] ?? $payloadArr['message'] ?? '';
+                            mqttDebug($debug, "$t structured detail channel=$chan msg_len=" . strlen($msg));
+                        }
                     }
                 }
-            }
 
-            $result = $meshlog->insertMqtt($topic, $payload);
-            $meshlog->maybeAutoPurge();
-            $mqttMeta = is_array($result) ? ($result['_mqtt'] ?? array()) : array();
+                $result = $meshlog->insertMqtt($topic, $payload);
+                $meshlog->maybeAutoPurge();
+                $mqttMeta = is_array($result) ? ($result['_mqtt'] ?? array()) : array();
 
-            if ($debug && is_array($mqttMeta)) {
-                mqttDebug(
-                    $debug,
-                    "MQTT reporter resolution reporter=" . mqttGetEffectiveReporter($mqttMeta) .
-                    " source=" . ($mqttMeta['reporter_source'] ?? 'unknown') .
-                    " topic_reporter=" . ($mqttMeta['topic_reporter'] ?? '') .
-                    " payload_reporter=" . ($mqttMeta['payload_reporter'] ?? '') .
-                    " mismatch=" . (boolval($mqttMeta['topic_payload_mismatch'] ?? false) ? 'yes' : 'no')
-                );
-            }
+                if ($debug && is_array($mqttMeta)) {
+                    mqttDebug(
+                        $debug,
+                        "MQTT reporter resolution reporter=" . mqttGetEffectiveReporter($mqttMeta) .
+                        " source=" . ($mqttMeta['reporter_source'] ?? 'unknown') .
+                        " topic_reporter=" . ($mqttMeta['topic_reporter'] ?? '') .
+                        " payload_reporter=" . ($mqttMeta['payload_reporter'] ?? '') .
+                        " mismatch=" . (boolval($mqttMeta['topic_payload_mismatch'] ?? false) ? 'yes' : 'no')
+                    );
+                }
 
-            $insertType = is_array($result) ? ($result['insert_type'] ?? $type) : $type;
+                $insertType = is_array($result) ? ($result['insert_type'] ?? $type) : $type;
 
-            if (is_array($result) && array_key_exists("error", $result)) {
-                mqttLog("WARN", "Skipped MQTT message from topic " . $topic . ": " . $result["error"]);
-            } else {
+                if (is_array($result) && array_key_exists("error", $result)) {
+                    mqttLog("WARN", "Skipped MQTT message from topic " . $topic . ": " . $result["error"]);
+                    return;
+                }
+
                 if ($logEachInsert) {
                     mqttLog("INFO", "Insert OK type={$insertType} reporter=" . ($meta['attempted_reporter'] ?? '') . " bytes=" . strlen($payload));
                     return;
@@ -138,10 +150,13 @@ while (true) {
                     $insertBytesSinceLog = 0;
                     $lastInsertSummaryAt = $now;
                 }
+            } catch (Throwable $e) {
+                mqttLogMessageFailure($topic, $payload, $e);
             }
         });
 
-        fwrite(STDERR, "[" . date('c') . "][ERROR] MQTT connection closed\n");
+        $disconnectReason = $client->getLastDisconnectReason() ?: 'unknown';
+        fwrite(STDERR, "[" . date('c') . "][ERROR] MQTT connection closed: " . $disconnectReason . "\n");
     } catch (Throwable $e) {
         fwrite(STDERR, "[" . date('c') . "][ERROR] MQTT worker error: " . $e->getMessage() . "\n");
     }

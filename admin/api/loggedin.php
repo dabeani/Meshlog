@@ -1,4 +1,7 @@
 <?php
+    require_once __DIR__ . '/../../lib/meshlog.class.php';
+    require_once __DIR__ . '/../../api/v1/utils.php';
+
     session_start();
     header('Content-Type: application/json; charset=utf-8');
 
@@ -9,9 +12,6 @@
         echo json_encode(array('error' => 'unauthorized'), JSON_PRETTY_PRINT);
         exit;
     }
-
-    require_once __DIR__ . '/../../lib/meshlog.class.php';
-    require_once __DIR__ . '/../../api/v1/utils.php';
 
     $config = meshlogLoadConfig(__DIR__);
     $meshlog = new MeshLog(array_merge($config['db'], array('ntp' => $config['ntp'] ?? array())));

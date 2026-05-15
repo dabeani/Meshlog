@@ -10,6 +10,7 @@ class MeshLogMqttClient {
     private $connected = false;
     private $websocket = false;
     private $timeout = 5;
+    private $lastDisconnectReason = null;
 
     public function __construct($config) {
         $this->config = $config;
@@ -70,6 +71,7 @@ class MeshLogMqttClient {
         }
         $this->readPacketPayload();
         $this->connected = true;
+        $this->lastDisconnectReason = null;
     }
 
     public function loop($onMessage) {
@@ -77,19 +79,19 @@ class MeshLogMqttClient {
             throw new RuntimeException("MQTT not connected");
         }
 
-        $keepalive = intval($this->config['keepalive'] ?? 30);
+        $keepalive = max(1, intval($this->config['keepalive'] ?? 30));
         // $lastReceived tracks the last time any data arrived from the broker.
         // $pingSent is true once we have fired a PINGREQ and are waiting for a
         // PINGRESP (or any broker traffic).  If a full 2× keepalive interval
         // passes from the moment we sent the PINGREQ with no response, the TCP
         // connection is considered dead and we throw to trigger a reconnect.
-        $lastReceived = time();
+        $lastReceivedAt = microtime(true);
         $pingSent = false;
 
         while (!feof($this->socket)) {
             $headerByte = $this->readPacketHeaderByte(1);
             if ($headerByte === null) {
-                $elapsed = time() - $lastReceived;
+                $elapsed = microtime(true) - $lastReceivedAt;
                 // Deadline: sent PINGREQ but broker silent for another full
                 // keepalive interval → connection is dead.
                 if ($pingSent && $elapsed >= 2 * $keepalive) {
@@ -104,7 +106,7 @@ class MeshLogMqttClient {
             }
 
             // Any incoming byte resets the keepalive tracking.
-            $lastReceived = time();
+            $lastReceivedAt = microtime(true);
             $pingSent = false;
 
             $packetType = ($headerByte >> 4) & 0x0F;
@@ -120,6 +122,12 @@ class MeshLogMqttClient {
                 // PINGRESP — already handled by resetting $pingSent / $lastReceived above.
             }
         }
+
+        $this->markDisconnected($this->lastDisconnectReason ?: 'broker closed socket');
+    }
+
+    public function getLastDisconnectReason() {
+        return $this->lastDisconnectReason;
     }
 
     public function getEffectiveClientId() {
@@ -279,9 +287,10 @@ class MeshLogMqttClient {
     }
 
     private function readFromBuffer($len, $timeoutSeconds) {
-        $start = time();
+        $deadline = microtime(true) + max(0.0, floatval($timeoutSeconds));
         while (strlen($this->buffer) < $len) {
-            if ((time() - $start) >= $timeoutSeconds) {
+            $remaining = $deadline - microtime(true);
+            if ($remaining <= 0) {
                 break;
             }
 
@@ -297,13 +306,17 @@ class MeshLogMqttClient {
                 // indefinitely regardless of stream_set_timeout behaviour.
                 $read = [$this->socket];
                 $write = $except = null;
-                $ready = @stream_select($read, $write, $except, 0, static::POLL_SLEEP_MICROSECONDS);
+                $pollSeconds = min($remaining, static::POLL_SLEEP_MICROSECONDS / 1000000);
+                $selectSeconds = intval(floor($pollSeconds));
+                $selectMicros = intval(($pollSeconds - $selectSeconds) * 1000000);
+                $ready = @stream_select($read, $write, $except, $selectSeconds, $selectMicros);
                 if ($ready === false || $ready === 0) {
                     continue; // nothing ready yet; stream_select already waited POLL_SLEEP_MICROSECONDS
                 }
                 $chunk = fread($this->socket, static::READ_BUFFER_SIZE);
                 if ($chunk === false || $chunk === '') {
                     if (feof($this->socket)) {
+                        $this->markDisconnected('broker closed socket');
                         break; // Remote end closed the connection — exit immediately
                     }
                     continue;
@@ -323,11 +336,22 @@ class MeshLogMqttClient {
             $bytes = $this->encodeWebSocketFrame($bytes);
         }
         $len = strlen($bytes);
-        $written = fwrite($this->socket, $bytes);
-        if ($written === false || $written < $len) {
-            throw new RuntimeException(
-                "MQTT write failed: wrote " . ($written === false ? '0' : $written) . "/$len bytes"
-            );
+        $offset = 0;
+        while ($offset < $len) {
+            $written = fwrite($this->socket, substr($bytes, $offset));
+            if ($written === false || $written < 1) {
+                throw new RuntimeException(
+                    "MQTT write failed: wrote " . ($written === false ? '0' : strval($written)) . "/$len bytes"
+                );
+            }
+            $offset += $written;
+        }
+    }
+
+    private function markDisconnected($reason) {
+        $this->connected = false;
+        if ($reason !== null && trim(strval($reason)) !== '') {
+            $this->lastDisconnectReason = trim(strval($reason));
         }
     }
 
@@ -408,7 +432,7 @@ class MeshLogMqttClient {
         }
 
         if ($opcode == 0x8) {
-            $this->connected = false;
+            $this->markDisconnected('websocket close frame');
             fclose($this->socket);
             $this->socket = null;
             return '';
