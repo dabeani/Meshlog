@@ -22,6 +22,6 @@ COPY docker/build/entrypoint.sh /entrypoint.sh
 RUN chown -R www-data:www-data ${APP_ROOT}
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 80
+EXPOSE 80 8081
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

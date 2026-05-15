@@ -45,6 +45,7 @@ DB_PASS=meshcore
 DB_ROOT_PASS=meshcore
 TIMEZONE=Europe/Vienna
 WEB_PORT=80
+LIVE_WS_PORT=8081
 MAP_LAT=51.5074
 MAP_LON=-0.1278
 MAP_ZOOM=10
@@ -126,6 +127,13 @@ The Meshlog web interface is available at:
 ```
 http://<your-server-ip>:<WEB_PORT>
 ```
+
+The live WebSocket daemon is available at:
+```
+ws://<your-server-ip>:<LIVE_WS_PORT>/ws/live
+```
+
+The normal WebUI still uses the same site origin and nginx upgrade path (`/ws/live`) on `WEB_PORT`; the dedicated `LIVE_WS_PORT` mapping is mainly useful for direct transport testing.
 
 ## ⚠️ Warning
 
