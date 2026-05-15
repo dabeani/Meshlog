@@ -579,9 +579,8 @@ var meshlog = new MeshLog(
     "error",
     "context-menu",
 );
-meshlog.loadAll(() => {
-    meshlog.setAutorefresh(10000);
-});
+meshlog.setAutorefresh(10000);
+meshlog.loadAll();
 meshlog.updateHeatmapMenuState();
 if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
     meshlog.refreshGeneralStatsPanel();

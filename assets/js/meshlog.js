@@ -3267,6 +3267,7 @@ class MeshLog {
         this.liveStreamRequested = false;
         this.liveStreamReconnectDelayMs = 1000;
         this.liveStreamMaxDurationSec = 25;
+        this.initialLiveCursorMs = Date.now();
 
         // epoch of newest object
         this.latest = 0;
@@ -6465,8 +6466,12 @@ class MeshLog {
         if (types.length < 1) return null;
 
         const scheme = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const latestCursorMs = Math.max(0, Number(this.latest) || 0);
+        const cursorMs = (this._initialLoad && latestCursorMs <= 0)
+            ? this.initialLiveCursorMs
+            : latestCursorMs;
         const params = new URLSearchParams();
-        params.set('since_ms', String(Math.max(0, Number(this.latest) || 0)));
+        params.set('since_ms', String(cursorMs));
         params.set('types', types.join(','));
         params.set('limit', '100');
         return `${scheme}${window.location.host}/ws/live?${params.toString()}`;
