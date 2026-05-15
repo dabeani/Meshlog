@@ -43,7 +43,7 @@ services:
       MQTT_HOST: ${MQTT_HOST:-127.0.0.1}
       MQTT_PORT: ${MQTT_PORT:-1883}
       MQTT_TOPIC: ${MQTT_TOPIC:-meshcore/+/+/packets}
-      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-meshlog-mqtt}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-auto}
       MQTT_USERNAME: ${MQTT_USERNAME:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       MQTT_KEEPALIVE: ${MQTT_KEEPALIVE:-30}

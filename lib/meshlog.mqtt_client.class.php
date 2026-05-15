@@ -122,6 +122,22 @@ class MeshLogMqttClient {
         }
     }
 
+    public function getEffectiveClientId() {
+        $configured = trim(strval($this->config['client_id'] ?? ''));
+        $normalized = strtolower($configured);
+
+        if ($configured !== '' && $normalized !== 'auto' && $normalized !== 'meshlog-mqtt') {
+            return $configured;
+        }
+
+        $hostToken = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '', gethostname() ?: 'meshlog'));
+        if ($hostToken === '') {
+            $hostToken = substr(md5(uniqid('', true)), 0, 8);
+        }
+
+        return 'meshlog-' . substr($hostToken, 0, 12);
+    }
+
     private function handlePublish($payload, $flags, $onMessage) {
         if (strlen($payload) < 2) return;
         $topicLen = unpack('n', substr($payload, 0, 2))[1];
@@ -157,7 +173,7 @@ class MeshLogMqttClient {
     }
 
     private function sendConnect() {
-        $clientId = $this->config['client_id'] ?? ('meshlog_' . substr(md5(uniqid('', true)), 0, 8));
+        $clientId = $this->getEffectiveClientId();
         $username = $this->config['username'] ?? '';
         $password = $this->config['password'] ?? '';
         $keepalive = intval($this->config['keepalive'] ?? 30);

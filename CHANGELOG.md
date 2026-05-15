@@ -11,10 +11,14 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Long-run DB performance index pass** — Added `migration 022` with targeted indexes for ingest-heavy and time-window query paths (`created_at`/`received_at`, hash+time dedupe, reporter lookup, contact live-map filters) to prevent progressive slowdown as tables grow.
 - **Admin stats endpoint timeout hardening** — `/admin/api/stats/` now has a short server-side TTL cache (default 60s, optional forced refresh) so repeated dashboard requests reuse computed aggregates instead of re-running expensive scans every request.
 - **Reporter fetch query load reduction** — Replaced per-reporter contact lookup (`N+1`) with a single batched contact prefetch in `getReporters()`, preserving existing API payload shape while reducing query count.
+- **Admin reporter API batching** — `/admin/api/reporters/` now resolves contact linkage, latest advertisement metadata, and last activity with batched queries instead of repeated per-row lookups, reducing device-page latency under larger installations.
+- **Admin channel API batching** — `/admin/api/channels/` now computes per-channel message counts with one grouped query instead of one `COUNT(*)` query per channel row.
 - **Live map API pressure reduction** — WebUI now throttles heavy live map entity sync (`contacts` + `reporters`) to once per minute by default instead of every refresh loop.
 - **Redirect and query cleanup for API polling** — WebUI API calls now normalize directory endpoints to trailing-slash URLs (reducing repeated 301 hops) and correctly map `count` query params.
 - **MQTT worker log I/O reduction** — MQTT ingest now supports summary logging mode by default (`log_each_insert=false`) to avoid sustained per-packet stdout flood in long-running containers; per-packet logs remain available via config.
+- **MQTT client-id collision hardening** — Docker MQTT defaults now use `auto` client IDs, and the MQTT client treats empty/legacy IDs as auto-generated unique IDs per container to avoid broker-side disconnects caused by reused client identifiers.
 - **Container runtime tuning for sustained uptime** — Enabled PHP OPcache in the container image, added php-fpm worker recycling (`pm.max_requests`) plus longer request timeout for heavy stats calls, and tuned nginx gzip/fastcgi buffering/timeouts to reduce upstream timeout and temp-file pressure under large JSON responses.
+- **php-fpm concurrency increased** — Container php-fpm pool now runs in dynamic mode with higher worker limits to prevent admin/API requests from queueing behind the previous `pm.max_children = 5` ceiling.
 
 ### Frontend — New Features
 

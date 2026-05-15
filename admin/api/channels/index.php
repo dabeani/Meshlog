@@ -157,8 +157,25 @@
             $errors[] = 'Failed to delete: ' . ($channel ? $channel->getError() : 'Channel not found');
         }
     } else {
-        // Return all channels including disabled ones
-        $results = MeshLogChannel::getAll($meshlog, array('offset' => 0, 'count' => 1000, 'where' => array()));
+        $sql = '
+            SELECT c.*, COALESCE(msg_counts.message_count, 0) AS message_count
+            FROM channels c
+            LEFT JOIN (
+                SELECT channel_id, COUNT(*) AS message_count
+                FROM channel_messages
+                GROUP BY channel_id
+            ) msg_counts ON msg_counts.channel_id = c.id
+            ORDER BY c.id DESC
+            LIMIT 1000
+        ';
+        $stmt = $meshlog->pdo->query($sql);
+        $objects = array();
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $channel = MeshLogChannel::fromDb($row, $meshlog);
+            if (!$channel) continue;
+            $objects[] = $channel->asArray();
+        }
+        $results = array('status' => 'OK', 'objects' => $objects);
     }
 
     if (sizeof($errors)) {

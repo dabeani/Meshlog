@@ -68,7 +68,8 @@ while (true) {
             "Connecting to MQTT broker transport=" . ($mqttConfig['transport'] ?? 'tcp') .
             " host=" . ($mqttConfig['host'] ?? '') .
             " port=" . strval($mqttConfig['port'] ?? 1883) .
-            " topic=" . ($mqttConfig['topic'] ?? 'meshcore/+/+/packets')
+            " topic=" . ($mqttConfig['topic'] ?? 'meshcore/+/+/packets') .
+            " client_id=" . $client->getEffectiveClientId()
         );
         $client->connect();
         mqttLog("INFO", "Connected. Waiting for packets...");

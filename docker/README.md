@@ -54,7 +54,7 @@ MQTT_TRANSPORT=tcp
 MQTT_HOST=127.0.0.1
 MQTT_PORT=1883
 MQTT_TOPIC=meshcore/+/+/packets
-MQTT_CLIENT_ID=meshlog-mqtt
+MQTT_CLIENT_ID=auto
 MQTT_USERNAME=
 MQTT_PASSWORD=
 MQTT_KEEPALIVE=30
@@ -68,6 +68,7 @@ MQTT_TIMEOUT=5
 When `MQTT_ENABLED=true`, the backend container automatically runs the MQTT worker on startup.
 Firmware HTTP logging via `log.php` remains available at the same time.
 Set `MQTT_DEBUG=true` to enable detailed MQTT topic/reporter resolution logs from `mqtt.php`.
+`MQTT_CLIENT_ID=auto` derives a unique client ID per container to avoid broker disconnects caused by client-ID collisions.
 
 ### 4. Build and start the stack
 

@@ -58,35 +58,143 @@
         return $changes;
     }
 
-    function enrichReporterRow($meshlog, $row, $connectedAgeSeconds) {
-        $contact = MeshLogContact::findBy('public_key', $row['public_key'], $meshlog, array());
-        $row['contact'] = null;
-        $row['contact_id'] = null;
-        $row['contact_type'] = null;
-        $row['last_heard_at'] = null;
-        $row['connection_state'] = 'never-seen';
+    function normalizeReporterKeys($values) {
+        $normalized = array();
+        foreach ($values as $value) {
+            $value = strtoupper(trim(strval($value)));
+            if ($value === '') continue;
+            $normalized[$value] = true;
+        }
+        return array_keys($normalized);
+    }
 
-        if ($contact) {
-            $row['contact'] = $contact->asArray();
-            $row['contact_id'] = $contact->getId();
-            $advertisement = MeshLogAdvertisement::findBy('contact_id', $contact->getId(), $meshlog, array());
-            if ($advertisement) {
-                $row['contact_type'] = intval($advertisement->type);
-                $row['advertisement'] = $advertisement->asArray();
-            }
+    function sqlPlaceholders($count) {
+        if ($count <= 0) return '';
+        return implode(',', array_fill(0, $count, '?'));
+    }
+
+    function pickLatestSqlTimestamp($first, $second) {
+        $firstTs = $first ? strtotime(strval($first)) : false;
+        $secondTs = $second ? strtotime(strval($second)) : false;
+
+        if ($firstTs === false) return $second ?: null;
+        if ($secondTs === false) return $first ?: null;
+
+        return $firstTs >= $secondTs ? $first : $second;
+    }
+
+    function fetchContactsByPublicKey($meshlog, $publicKeys) {
+        $publicKeys = normalizeReporterKeys($publicKeys);
+        if (count($publicKeys) < 1) {
+            return array();
         }
 
-        $row['last_heard_at'] = findReporterLastActivity($meshlog, intval($row['id']), strval($row['public_key']));
-        if (!empty($row['last_heard_at'])) {
-            $lastHeardTs = strtotime($row['last_heard_at']);
-            if ($lastHeardTs !== false && (time() - $lastHeardTs) <= $connectedAgeSeconds) {
-                $row['connection_state'] = 'connected';
-            } else {
-                $row['connection_state'] = 'disconnected';
-            }
+        $stmt = $meshlog->pdo->prepare(
+            'SELECT * FROM contacts WHERE public_key IN (' . sqlPlaceholders(count($publicKeys)) . ')'
+        );
+        foreach ($publicKeys as $index => $publicKey) {
+            $stmt->bindValue($index + 1, $publicKey, PDO::PARAM_STR);
+        }
+        $stmt->execute();
+
+        $contacts = array();
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $contact = MeshLogContact::fromDb($row, $meshlog);
+            if (!$contact) continue;
+            $contacts[strtoupper(strval($row['public_key'] ?? ''))] = $contact->asArray();
         }
 
-        return $row;
+        return $contacts;
+    }
+
+    function fetchLatestAdvertisementsByContactId($meshlog, $contactIds) {
+        $contactIds = array_values(array_unique(array_filter(array_map('intval', $contactIds), function($value) {
+            return $value > 0;
+        })));
+        if (count($contactIds) < 1) {
+            return array();
+        }
+
+        $sql = '
+            SELECT a.id, a.contact_id, a.hash, a.name, a.lat, a.lon, a.type, a.flags, a.hash_size, a.sent_at, a.created_at
+            FROM advertisements a
+            INNER JOIN (
+                SELECT contact_id, MAX(id) AS latest_id
+                FROM advertisements
+                WHERE contact_id IN (' . sqlPlaceholders(count($contactIds)) . ')
+                GROUP BY contact_id
+            ) latest ON latest.latest_id = a.id
+        ';
+        $stmt = $meshlog->pdo->prepare($sql);
+        foreach ($contactIds as $index => $contactId) {
+            $stmt->bindValue($index + 1, $contactId, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+
+        $advertisements = array();
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $contactId = intval($row['contact_id'] ?? 0);
+            if ($contactId <= 0) continue;
+            $advertisements[$contactId] = array(
+                'id' => intval($row['id'] ?? 0),
+                'contact_id' => $contactId,
+                'hash' => $row['hash'] ?? null,
+                'name' => $row['name'] ?? null,
+                'lat' => isset($row['lat']) ? floatval($row['lat']) : null,
+                'lon' => isset($row['lon']) ? floatval($row['lon']) : null,
+                'type' => intval($row['type'] ?? 0),
+                'flags' => intval($row['flags'] ?? 0),
+                'hash_size' => intval($row['hash_size'] ?? 1),
+                'sent_at' => $row['sent_at'] ?? null,
+                'created_at' => $row['created_at'] ?? null,
+            );
+        }
+
+        return $advertisements;
+    }
+
+    function fetchReporterActivityMap($meshlog, $reporterIds) {
+        $reporterIds = array_values(array_unique(array_filter(array_map('intval', $reporterIds), function($value) {
+            return $value > 0;
+        })));
+        if (count($reporterIds) < 1) {
+            return array();
+        }
+
+        $placeholders = sqlPlaceholders(count($reporterIds));
+        $sql = '
+            SELECT reporter_id, MAX(ts) AS last_activity_at
+            FROM (
+                SELECT reporter_id, MAX(received_at) AS ts FROM advertisement_reports WHERE reporter_id IN (' . $placeholders . ') GROUP BY reporter_id
+                UNION ALL
+                SELECT reporter_id, MAX(received_at) AS ts FROM direct_message_reports WHERE reporter_id IN (' . $placeholders . ') GROUP BY reporter_id
+                UNION ALL
+                SELECT reporter_id, MAX(received_at) AS ts FROM channel_message_reports WHERE reporter_id IN (' . $placeholders . ') GROUP BY reporter_id
+                UNION ALL
+                SELECT reporter_id, MAX(received_at) AS ts FROM raw_packets WHERE reporter_id IN (' . $placeholders . ') GROUP BY reporter_id
+                UNION ALL
+                SELECT reporter_id, MAX(received_at) AS ts FROM telemetry WHERE reporter_id IN (' . $placeholders . ') GROUP BY reporter_id
+                UNION ALL
+                SELECT reporter_id, MAX(received_at) AS ts FROM system_reports WHERE reporter_id IN (' . $placeholders . ') GROUP BY reporter_id
+            ) activity
+            GROUP BY reporter_id
+        ';
+        $stmt = $meshlog->pdo->prepare($sql);
+
+        $bindIndex = 1;
+        for ($repeat = 0; $repeat < 6; $repeat++) {
+            foreach ($reporterIds as $reporterId) {
+                $stmt->bindValue($bindIndex++, $reporterId, PDO::PARAM_INT);
+            }
+        }
+        $stmt->execute();
+
+        $activity = array();
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $activity[intval($row['reporter_id'] ?? 0)] = $row['last_activity_at'] ?? null;
+        }
+
+        return $activity;
     }
 
     if (isset($_POST['approve'])) {
@@ -201,35 +309,70 @@
             $errors[] = 'Failed to delete';
         }
     } else {
-        $results = MeshLogReporter::getAll($meshlog, array('secret' => true, 'order' => 'ASC'));
-        // Include pending reporters (authorized=0, reporter_pending=1) by re-querying all
-        $pendingStmt = $meshlog->pdo->query("SELECT * FROM reporters WHERE reporter_pending = 1 ORDER BY id ASC");
-        $pendingRows = $pendingStmt ? $pendingStmt->fetchAll(PDO::FETCH_ASSOC) : array();
-        $existingIds = array_column($results['objects'] ?? array(), 'id');
-        foreach ($pendingRows as $pendingRow) {
-            if (!in_array($pendingRow['id'], $existingIds)) {
-                $pr = MeshLogReporter::fromDb($pendingRow, $meshlog);
-                if ($pr) $results['objects'][] = $pr->asArray(true);
-            }
-        }
+        $stmt = $meshlog->pdo->query('SELECT * FROM reporters ORDER BY id ASC');
+        $reporterRows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : array();
+
+        $objects = array();
         $publicKeys = array();
-        foreach (($results['objects'] ?? array()) as $row) {
+        $reporterIds = array();
+        foreach ($reporterRows as $reporterRow) {
+            $reporter = MeshLogReporter::fromDb($reporterRow, $meshlog);
+            if (!$reporter) continue;
+            $row = $reporter->asArray(true);
+            $objects[] = $row;
             if (!empty($row['public_key'])) {
                 $publicKeys[] = $row['public_key'];
             }
+            if (!empty($row['id'])) {
+                $reporterIds[] = intval($row['id']);
+            }
         }
+
+        $contactMap = fetchContactsByPublicKey($meshlog, $publicKeys);
+        $contactIds = array();
+        foreach ($contactMap as $contact) {
+            $contactIds[] = intval($contact['id'] ?? 0);
+        }
+        $advertisementMap = fetchLatestAdvertisementsByContactId($meshlog, $contactIds);
+        $activityMap = fetchReporterActivityMap($meshlog, $reporterIds);
         $timeSyncMap = $meshlog->getReporterTimeSyncMap($publicKeys);
-        $objects = array();
-        foreach (($results['objects'] ?? array()) as $row) {
-            $enriched = enrichReporterRow($meshlog, $row, $connectedAgeSeconds);
+
+        foreach ($objects as $index => $row) {
+            $publicKey = strtoupper(strval($row['public_key'] ?? ''));
+            $contact = $contactMap[$publicKey] ?? null;
+            $contactId = intval($contact['id'] ?? 0);
+            $advertisement = $contactId > 0 ? ($advertisementMap[$contactId] ?? null) : null;
+            $lastHeardAt = pickLatestSqlTimestamp(
+                $activityMap[intval($row['id'] ?? 0)] ?? null,
+                $contact['last_heard_at'] ?? null
+            );
+
+            $objects[$index]['contact'] = $contact;
+            $objects[$index]['contact_id'] = $contactId > 0 ? $contactId : null;
+            $objects[$index]['contact_type'] = $advertisement ? intval($advertisement['type'] ?? 0) : null;
+            $objects[$index]['advertisement'] = $advertisement;
+            $objects[$index]['last_heard_at'] = $lastHeardAt;
+            $objects[$index]['connection_state'] = 'never-seen';
+            if (!empty($lastHeardAt)) {
+                $lastHeardTs = strtotime($lastHeardAt);
+                if ($lastHeardTs !== false && (time() - $lastHeardTs) <= $connectedAgeSeconds) {
+                    $objects[$index]['connection_state'] = 'connected';
+                } else {
+                    $objects[$index]['connection_state'] = 'disconnected';
+                }
+            }
+
             $timeSync = $timeSyncMap[strtoupper(strval($row['public_key'] ?? ''))] ?? null;
             if ($timeSync) {
-                $enriched['time_sync'] = $timeSync;
+                $objects[$index]['time_sync'] = $timeSync;
             }
-            unset($enriched['auth']);
-            $objects[] = $enriched;
+            unset($objects[$index]['auth']);
         }
-        $results['objects'] = $objects;
+
+        $results = array(
+            'status' => 'OK',
+            'objects' => $objects,
+        );
     }
 
     if (sizeof($errors)) {

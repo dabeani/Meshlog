@@ -8,6 +8,7 @@ class MeshLogChannel extends MeshLogEntity {
     public $psk = null;
     public $enabled = null;
     public $created_at = null;
+    public $message_count = null;
 
     public static function fromJson($data, $meshlog) {
         $m = new MeshLogChannel($meshlog);
@@ -35,6 +36,7 @@ class MeshLogChannel extends MeshLogEntity {
         $m->psk = $data['psk'] ?? '';
         $m->enabled = $data['enabled'];
         $m->created_at = $data['created_at'];
+        $m->message_count = isset($data['message_count']) ? intval($data['message_count']) : null;
 
         return $m;
     }
@@ -54,8 +56,7 @@ class MeshLogChannel extends MeshLogEntity {
             'psk' => $this->psk ?? '',
             'enabled' => $this->enabled,
             'created_at' => $this->created_at,
-            // include message count for admin UI
-            'message_count' => $this->getMessageCount()
+            'message_count' => $this->message_count !== null ? intval($this->message_count) : $this->getMessageCount()
         );
     }
 
