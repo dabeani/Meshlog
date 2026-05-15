@@ -6724,35 +6724,35 @@ class MeshLog {
         this.__fetchQuery({ "before_ms": oldest_adv }, 'api/v1/advertisements', data => {
             const rep = self.__loadObjects(self.advertisements, data, MeshLogAdvertisement);
             if (rep.length) console.log(`${rep.length} advertisements loaded`);
-            self.onLoadAll();
+            self.onLoadAll({messages: rep, contacts: [], groups: []});
             if (onload) onload();
         });
 
         this.__fetchQuery({ "before_ms": oldest_grp }, 'api/v1/channel_messages', data => {
             const rep = self.__loadObjects(self.channel_messages, data, MeshLogChannelMessage);
             if (rep.length) console.log(`${rep.length} group messages loaded`);
-            self.onLoadAll();
+            self.onLoadAll({messages: rep, contacts: [], groups: []});
             if (onload) onload();
         });
 
         this.__fetchQuery({ "before_ms": oldest_dm }, 'api/v1/direct_messages', data => {
             const rep = self.__loadObjects(self.direct_messages, data, MeshLogDirectMessage);
             if (rep.length) console.log(`${rep.length} direct messages loaded`);
-            self.onLoadAll();
+            self.onLoadAll({messages: rep, contacts: [], groups: []});
             if (onload) onload();
         });
 
         this.__fetchQuery({ "before_ms": oldest_tel }, 'api/v1/telemetry', data => {
             const rep = self.__loadObjects(self.messages, data, MeshLogTelemetryMessage);
             if (rep.length) console.log(`${rep.length} telemetry packets loaded`);
-            self.onLoadAll();
+            self.onLoadAll({messages: rep, contacts: [], groups: []});
             if (onload) onload();
         });
 
         this.__fetchQuery({ "before_ms": oldest_sys }, 'api/v1/system_reports', data => {
             const rep = self.__loadObjects(self.messages, data, MeshLogSystemReportMessage);
             if (rep.length) console.log(`${rep.length} system reports loaded`);
-            self.onLoadAll();
+            self.onLoadAll({messages: rep, contacts: [], groups: []});
             if (onload) onload();
         });
     }
@@ -6798,7 +6798,11 @@ class MeshLog {
             this.loadScopes();
 
             this.__init_reporters();
-            this.onLoadAll();
+            this.onLoadAll({
+                messages: [...rep3, ...rep5, ...rep6, ...rep7, ...rep8, ...rep9],
+                contacts: rep2,
+                groups: rep4
+            });
             this._initialLoad = false;
             this.__ensureOptionalFeedDataForVisibleTypes();
 
@@ -6892,7 +6896,8 @@ class MeshLog {
         });
     }
 
-    onLoadContacts() {
+    onLoadContacts(contacts = null) {
+        const contactList = Array.isArray(contacts) ? contacts : Object.values(this.contacts);
         let repHashes = {};
         Object.entries(this.contacts).forEach(([id,contact]) => {
             if (contact.isRepeater()) {
@@ -6905,7 +6910,7 @@ class MeshLog {
             }
         });
 
-        Object.entries(this.contacts).forEach(([id,contact]) => {
+        contactList.forEach((contact) => {
             let latest = contact.last;
             if (!latest) return;
 
@@ -6920,7 +6925,9 @@ class MeshLog {
             contact.addToMap(this.map);
             contact.syncMarkerVisibility();
         });
-        this.updateContactsDom();
+        if (contactList.length > 0) {
+            this.updateContactsDom();
+        }
     }
 
     onLoadChannels() {
@@ -6989,25 +6996,34 @@ class MeshLog {
         this.updateMarkersForFilter();
     }
 
-    updateMessagesDom() {
-        for (const [key, msg] of Object.entries(this.messages)) {
+    updateMessagesDom(messages = null) {
+        const messageList = Array.isArray(messages) ? messages : Object.values(this.messages);
+        for (const msg of messageList) {
             msg.createDom(false);
             msg.updateDom();
         }
     }
 
-    onLoadMessages() {
-        Object.entries(this.messages).forEach(([id, msg]) => {
+    onLoadMessages(messages = null) {
+        const messageList = Array.isArray(messages) ? messages : Object.values(this.messages);
+        messageList.forEach((msg) => {
+            const id = msg?.getId?.() ?? msg?.data?.id ?? 'unknown';
             try { this.addMessage(msg); }
             catch (e) { console.error('addMessage failed for', id, e); }
         });
-        this.updateMessagesDom();
+        this.updateMessagesDom(messageList);
     }
 
-    onLoadAll() {
-        this.onLoadMessages();
-        this.onLoadContacts();
-        this.onLoadChannels();
+    onLoadAll(delta = null) {
+        const messages = delta?.messages ?? null;
+        const contacts = delta?.contacts ?? null;
+        const groups = delta?.groups ?? null;
+
+        this.onLoadMessages(messages);
+        this.onLoadContacts(contacts);
+        if (!Array.isArray(groups) || groups.length > 0) {
+            this.onLoadChannels();
+        }
     }
 
     loadReporters(params={}, onload=null) {
@@ -7062,7 +7078,7 @@ class MeshLog {
         this.__fetchQuery(params, 'api/v1/telemetry', data => {
             const sz = this.__loadObjects(this.messages, data, MeshLogTelemetryMessage);
             this.__markOptionalFeedHistoryLoaded('telemetry');
-            this.onLoadMessages();
+            this.onLoadMessages(sz);
             console.log(`${sz} telemetry packets loaded`);
             if (onload) onload();
         });
@@ -7072,7 +7088,7 @@ class MeshLog {
         this.__fetchQuery(params, 'api/v1/system_reports', data => {
             const sz = this.__loadObjects(this.messages, data, MeshLogSystemReportMessage);
             this.__markOptionalFeedHistoryLoaded('system');
-            this.onLoadMessages();
+            this.onLoadMessages(sz);
             console.log(`${sz} system reports loaded`);
             if (onload) onload();
         });
@@ -7082,7 +7098,7 @@ class MeshLog {
         this.__fetchQuery(params, 'api/v1/raw_packets', data => {
             const sz = this.__loadObjects(this.messages, data, MeshLogRawPacket);
             this.__markOptionalFeedHistoryLoaded('raw');
-            this.onLoadMessages();
+            this.onLoadMessages(sz);
             console.log(`${sz} raw packets loaded`);
             if (onload) onload();
         });
