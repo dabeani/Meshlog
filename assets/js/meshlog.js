@@ -6415,7 +6415,7 @@ class MeshLog {
         }
     }
 
-    __loadObjects(dataset, data, klass) {
+    __loadObjects(dataset, data, klass, updateLatest = true) {
         if (data.error) {
             this.showError(data.error);
             return 0;
@@ -6427,7 +6427,7 @@ class MeshLog {
             const id = klass.idPrefix + o.id;
             this.__addObject(dataset, id, obj);
 
-            if (o.created_at) {
+            if (updateLatest && o.created_at) {
                 const created_at = parseMeshlogTimestamp(o.created_at);
                 if (created_at > 0 && !isNaN(created_at) && created_at > this.latest) {
                     this.latest = created_at;
@@ -6765,9 +6765,9 @@ class MeshLog {
                 return;
             }
 
-            const rep1 = this.__loadObjects(this.reporters, data.reporters, MeshLogReporter);
-            const rep2 = this.__loadObjects(this.contacts, data.contacts, MeshLogContact);
-            const rep4 = this.__loadObjects(this.channels, data.channels, MeshLogChannel);
+            const rep1 = this.__loadObjects(this.reporters, data.reporters, MeshLogReporter, false);
+            const rep2 = this.__loadObjects(this.contacts, data.contacts, MeshLogContact, false);
+            const rep4 = this.__loadObjects(this.channels, data.channels, MeshLogChannel, false);
 
             const rep3 = this.__loadObjects(this.messages, data.advertisements, MeshLogAdvertisement);
             const rep5 = this.__loadObjects(this.messages, data.channel_messages, MeshLogChannelMessage);
@@ -7012,7 +7012,7 @@ class MeshLog {
 
     loadReporters(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/reporters', data => {
-            const sz = this.__loadObjects(this.reporters, data, MeshLogObject);
+            const sz = this.__loadObjects(this.reporters, data, MeshLogObject, false);
             console.log(`${sz} reporters loaded`);
             if (onload) onload();
         });
@@ -7020,7 +7020,7 @@ class MeshLog {
 
     loadContacts(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/contacts', data => {
-            const sz = this.__loadObjects(this.contacts, data, MeshLogContact);
+            const sz = this.__loadObjects(this.contacts, data, MeshLogContact, false);
             console.log(`${sz} contacts loaded`);
             if (onload) onload();
         });
@@ -7036,7 +7036,7 @@ class MeshLog {
 
     loadChannels(params={}, onload=null) {
         this.__fetchQuery(params, 'api/v1/channels', data => {
-            const sz = this.__loadObjects(this.channels, data, MeshLogObject);
+            const sz = this.__loadObjects(this.channels, data, MeshLogObject, false);
             console.log(`${sz} channels loaded`);
             if (onload) onload();
         });
