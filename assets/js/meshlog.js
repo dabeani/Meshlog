@@ -3252,6 +3252,9 @@ class MeshLog {
         this.autorefresh = 0;
         this.decor = true;
         this.scopeRefreshTimer = null;
+        this.scopeRefreshIntervalMs = 30000;
+        this._lastScopeRefreshAt = 0;
+        this._scopeRefreshInFlight = false;
         this.liveMapSyncIntervalMs = 60000;
         this._lastLiveMapSyncAt = 0;
 
@@ -3274,7 +3277,7 @@ class MeshLog {
 
         this.scopeRefreshTimer = window.setInterval(() => {
             this.loadScopes();
-        }, 30000);
+        }, this.scopeRefreshIntervalMs);
          
 
         this.dom_settings_types = document.getElementById(stypesid);
@@ -6739,6 +6742,10 @@ class MeshLog {
             if (rep8.length) console.log(`${rep8.length} telemetry packets loaded`);
             if (rep9.length) console.log(`${rep9.length} system reports loaded`);
 
+            // /api/v1/all already refreshes contacts/reporters, so avoid a
+            // redundant live entity snapshot on the next autorefresh tick.
+            this._lastLiveMapSyncAt = Date.now();
+
             // Load scopes for scope name lookup in live-feed
             this.loadScopes();
 
@@ -6762,7 +6769,18 @@ class MeshLog {
         });
     }
 
-    loadScopes() {
+    loadScopes(force = false) {
+        const now = Date.now();
+        if (!force) {
+            if (this._scopeRefreshInFlight) {
+                return;
+            }
+            if (this._lastScopeRefreshAt > 0 && (now - this._lastScopeRefreshAt) < this.scopeRefreshIntervalMs) {
+                return;
+            }
+        }
+
+        this._scopeRefreshInFlight = true;
         fetch('api/v1/scopes/?all=1')
             .then(r => r.json())
             .then(result => {
@@ -6794,6 +6812,10 @@ class MeshLog {
             })
             .catch(err => {
                 console.log('Note: scopes API not available or no scopes defined', err);
+            })
+            .finally(() => {
+                this._lastScopeRefreshAt = Date.now();
+                this._scopeRefreshInFlight = false;
             });
     }
 
