@@ -160,6 +160,7 @@ class MeshLogEntity {
         $count = $params['count'] ?? DEFAULT_COUNT;
         $after_ms = $params['after_ms'] ?? 0;
         $before_ms = $params['before_ms'] ?? 0;
+        $ids = $params['ids'] ?? array();
         $secret = $params['secret'] ?? false;
 
         $where = $params['where'] ?? array();
@@ -177,6 +178,30 @@ class MeshLogEntity {
                 $sqlWhere .= " AND t.created_at < FROM_UNIXTIME(:before_ms)";
             } else {
                 $sqlWhere = " WHERE t.created_at < FROM_UNIXTIME(:before_ms)";
+            }
+        }
+
+        if (is_array($ids) && count($ids) > 0) {
+            $normalizedIds = array();
+            foreach ($ids as $id) {
+                $id = intval($id);
+                if ($id <= 0) continue;
+                $normalizedIds[$id] = $id;
+            }
+
+            if (count($normalizedIds) > 0) {
+                $placeholders = array();
+                foreach (array_values($normalizedIds) as $index => $id) {
+                    $placeholder = ':id_' . $index;
+                    $placeholders[] = $placeholder;
+                    $sqlBind[] = array($placeholder, $id, PDO::PARAM_INT);
+                }
+
+                if (strlen($sqlWhere)) {
+                    $sqlWhere .= " AND t.id IN (" . implode(',', $placeholders) . ")";
+                } else {
+                    $sqlWhere = " WHERE t.id IN (" . implode(',', $placeholders) . ")";
+                }
             }
         }
 
@@ -199,7 +224,7 @@ class MeshLogEntity {
         
         foreach ($sqlBind as $b) {
             if (sizeof($b) != 3) continue;
-            $query->bindParam($b[0], $b[1],  $b[2]);
+            $query->bindValue($b[0], $b[1],  $b[2]);
         }
         $query->bindParam(':offset', $offset,  PDO::PARAM_INT);
         $query->bindParam(':count', $count,  PDO::PARAM_INT);
