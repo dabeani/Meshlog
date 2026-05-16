@@ -5399,15 +5399,16 @@ class MeshLog {
         backgroundPane.style.zIndex = '520';
         backgroundPane.style.pointerEvents = 'auto';
 
-        // Highlighted / active markers sit on top of everything.
+        // Highlighted / active markers sit on top of packet-flow lines.
         const routeMarkerPane = this.map.createPane(MeshLog.MARKER_PANE_ROUTE);
         routeMarkerPane.style.zIndex = '650';
         routeMarkerPane.style.pointerEvents = 'auto';
 
-        // Live animated route lines float above all markers.
+        // Live animated route lines stay above background markers, but below
+        // active/involved markers so packet endpoints remain visible.
         // pointer-events: none so they never block clicks on device bubbles.
         const liveRoutePane = this.map.createPane(MeshLog.LIVE_ROUTE_PANE);
-        liveRoutePane.style.zIndex = '660';
+        liveRoutePane.style.zIndex = '640';
         liveRoutePane.style.pointerEvents = 'none';
     }
 
@@ -5504,7 +5505,6 @@ class MeshLog {
             this.previewFocusedContactId = null;
             this.selectedMarkerId = null;
             this.activePopupContactId = null;
-            this._hideMapSearchResults?.();
             // close any open popups
             try { this.map.closePopup(); } catch (_) { void _; }
             this.activeContactPopup = null;
