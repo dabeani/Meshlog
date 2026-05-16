@@ -75,6 +75,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ### WebUI — Fixes & Improvements
 
+- **Collector filter now suppresses hidden-reporter route visuals consistently** — When a collector is deselected in the WebUI settings, cached route overlays, hover/click path rendering, and live packet-flow animations now all ignore that reporter instead of drawing lines toward a hidden collector pin.
 - **Packet-flow overlays no longer hide involved map pins** — Live packet route animations now render above uninvolved/background markers but below the active markers that belong to the shown route, so unrelated pins no longer cut across the flow while route endpoints stay visible.
 - **Live bootstrap reset no longer crashes on route cleanup** — The WebUI bootstrap reset path now calls the existing route-animation shutdown helper, preventing a runtime `TypeError` that could abort live WebSocket bootstrap before markers and links render.
 - **Dead standalone map-search and polling remnants removed** — Removed the unused standalone map-search control code and stale polling-era state fields from the WebUI runtime, reducing dead branches without changing current menu-search behavior.

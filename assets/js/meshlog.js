@@ -1889,6 +1889,10 @@ class MeshLogReport {
     }
 
     showPath(animated = false) {
+        if (!this._meshlog.isReporterAllowed(this.data.reporter_id)) {
+            this._meshlog.hidePath(this.getPathLayerId());
+            return;
+        }
         let sender = this._meshlog.contacts[this.contact_id] ?? false;
         let receiver = this._meshlog.reporters[this.data.reporter_id];
         this._meshlog.showPath(this.getPathLayerId(), this.data.path, sender, receiver, this.getPreviewData(), animated);
@@ -5736,6 +5740,7 @@ class MeshLog {
         this.__restartLiveStream();
         this.updateMessagesDom();
         this.updateMarkersForFilter();
+        this.updatePaths();
     }
 
     // Show/hide every contact map marker based on the active collector filter.
@@ -7400,13 +7405,28 @@ class MeshLog {
 
         Object.entries(this.layer_descs).forEach(([k,desc]) => {
             const animatedRoute = !!desc.animated;
+            const allowedPaths = Array.isArray(desc.paths)
+                ? desc.paths.filter((path) => this.isReporterAllowed(path?.reporter?.data?.id))
+                : [];
+            if (allowedPaths.length < 1) {
+                return;
+            }
 
-            for (const cid of desc.markers) {
+            const allowedMarkers = new Set();
+            for (let i = 0; i < allowedPaths.length; i++) {
+                const path = allowedPaths[i];
+                const fromId = Number(path?.from?.contact_id ?? 0);
+                const toId = Number(path?.to?.contact_id ?? 0);
+                if (Number.isFinite(fromId) && fromId > 0) allowedMarkers.add(fromId);
+                if (Number.isFinite(toId) && toId > 0) allowedMarkers.add(toId);
+            }
+
+            for (const cid of allowedMarkers) {
                 this.visible_markers.add(cid);
             }
 
-            for (let i=0;i<desc.paths.length;i++) {
-                let path = desc.paths[i];
+            for (let i=0;i<allowedPaths.length;i++) {
+                let path = allowedPaths[i];
                 let line_uid  = [path.from.contact_id, path.to.contact_id].join('_');
                 let line_id   = [path.from.contact_id, path.to.contact_id].sort((a, b) => a - b).join('_');
                 let decor_id  = `${path.reporter.data.id}`;
@@ -7473,7 +7493,7 @@ class MeshLog {
                 if (animatedRoute) {
                     this._startRouteLineAnimation(lineGlow, line2, innerWeight);
                     // Apply glow effect to devices on the active path
-                    for (const contactId of desc.markers) {
+                    for (const contactId of allowedMarkers) {
                         const contact = this.contacts[contactId];
                         if (contact?.marker?.getElement?.()) {
                             const markerEl = contact.marker.getElement();
@@ -7706,6 +7726,7 @@ class MeshLog {
         const animatedPathKeys = new Set();
 
         msg.reports.forEach(report => {
+            if (!this.isReporterAllowed(report.data.reporter_id)) return;
             const reporter = this.reporters[report.data.reporter_id];
             if (!reporter) return;
             const hashes    = parsePath(report.data.path);
