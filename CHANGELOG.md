@@ -8,6 +8,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ### Backend / Container — Performance & Stability (2026-05-15)
 
+- **WebSocket bootstrap slices now respect a payload-size ceiling** — Bootstrap delivery no longer slices only by object count; the live daemon now caps each encoded JSON slice to a bounded size so Safari does not receive oversized text frames that can fail with `JSON Parse error: Unterminated string`.
 - **Long-run DB performance index pass** — Added `migration 022` with targeted indexes for ingest-heavy and time-window query paths (`created_at`/`received_at`, hash+time dedupe, reporter lookup, contact live-map filters) to prevent progressive slowdown as tables grow.
 - **Admin stats endpoint timeout hardening** — `/admin/api/stats/` now has a short server-side TTL cache (default 60s, optional forced refresh) so repeated dashboard requests reuse computed aggregates instead of re-running expensive scans every request.
 - **Reporter fetch query load reduction** — Replaced per-reporter contact lookup (`N+1`) with a single batched contact prefetch in `getReporters()`, preserving existing API payload shape while reducing query count.

@@ -13,6 +13,7 @@ const MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT = 500;
 const MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT = 120;
 const MESHLOG_WS_BOOTSTRAP_CHUNK_MIN = 25;
 const MESHLOG_WS_BOOTSTRAP_CHUNK_MAX = 250;
+const MESHLOG_WS_BOOTSTRAP_CHUNK_TARGET_BYTES = 98304;
 const MESHLOG_WS_METADATA_COUNT = 5000;
 const MESHLOG_WS_PACKET_DEDUPE_MAX = 4000;
 
@@ -545,6 +546,47 @@ function meshlogFilterClientDuplicates(&$client, array $packets) {
     return $filtered;
 }
 
+function meshlogBuildBootstrapSlices($bootstrapId, $sectionKey, array $objects, $chunkSizeLimit) {
+    $targetBytes = MESHLOG_WS_BOOTSTRAP_CHUNK_TARGET_BYTES;
+    $maxObjects = max(1, intval($chunkSizeLimit));
+    $chunks = array();
+    $current = array();
+
+    foreach ($objects as $object) {
+        $candidate = $current;
+        $candidate[] = $object;
+
+        $testPayload = json_encode(array(
+            'type' => 'bootstrap_slice',
+            'bootstrap_id' => $bootstrapId,
+            'section' => $sectionKey,
+            'chunk_index' => 1,
+            'chunk_total' => 1,
+            'objects' => $candidate,
+        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        if ($testPayload === false) {
+            throw new RuntimeException('Bootstrap slice encoding failed for section ' . $sectionKey);
+        }
+
+        $candidateTooLarge = strlen($testPayload) > $targetBytes;
+        $candidateTooMany = count($candidate) > $maxObjects;
+        if (count($current) > 0 && ($candidateTooLarge || $candidateTooMany)) {
+            $chunks[] = $current;
+            $current = array($object);
+            continue;
+        }
+
+        $current = $candidate;
+    }
+
+    if (count($current) > 0) {
+        $chunks[] = $current;
+    }
+
+    return $chunks;
+}
+
 function meshlogSendBootstrapSlices($socket, array $bootstrap, $bootstrapId, $chunkSize, array $types) {
     $sections = array(
         array('key' => 'reporters', 'legacy' => 'reporters'),
@@ -581,9 +623,10 @@ function meshlogSendBootstrapSlices($socket, array $bootstrap, $bootstrapId, $ch
         $total = count($objects);
         if ($total < 1) continue;
 
-        $chunkTotal = max(1, intval(ceil($total / $chunkSize)));
+        $slices = meshlogBuildBootstrapSlices($bootstrapId, $key, $objects, $chunkSize);
+        $chunkTotal = count($slices);
         for ($i = 0; $i < $chunkTotal; $i++) {
-            $slice = array_slice($objects, $i * $chunkSize, $chunkSize);
+            $slice = $slices[$i];
             if (!meshlogSendJsonFrame($socket, array(
                 'type' => 'bootstrap_slice',
                 'bootstrap_id' => $bootstrapId,
