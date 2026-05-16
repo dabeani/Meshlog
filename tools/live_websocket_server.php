@@ -9,7 +9,11 @@ const MESHLOG_WS_PING_INTERVAL_SEC = 20.0;
 const MESHLOG_WS_METADATA_INTERVAL_SEC = 30.0;
 const MESHLOG_WS_MAX_LIMIT = 500;
 const MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT = 500;
+const MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT = 120;
+const MESHLOG_WS_BOOTSTRAP_CHUNK_MIN = 25;
+const MESHLOG_WS_BOOTSTRAP_CHUNK_MAX = 250;
 const MESHLOG_WS_METADATA_COUNT = 5000;
+const MESHLOG_WS_PACKET_DEDUPE_MAX = 4000;
 
 function meshlogWsLog($level, $message) {
     fwrite(STDOUT, sprintf("[%s][%s] %s\n", date('c'), $level, $message));
@@ -128,6 +132,14 @@ function meshlogSendBytes($socket, $bytes) {
 
 function meshlogSendFrame($socket, $payload, $opcode = 0x1) {
     return meshlogSendBytes($socket, meshlogEncodeFrame($payload, $opcode));
+}
+
+function meshlogSendJsonFrame($socket, $payload) {
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        return false;
+    }
+    return meshlogSendFrame($socket, $json, 0x1);
 }
 
 function meshlogExtractFrames(&$buffer) {
@@ -336,6 +348,124 @@ function meshlogFetchBootstrapSnapshot(&$meshlog, $config, array $types, $count)
     );
 }
 
+function meshlogPacketSignature($packet) {
+    if (!is_array($packet)) return null;
+
+    $type = strtoupper(strval($packet['type'] ?? ''));
+    $id = intval($packet['id'] ?? 0);
+    if ($type === '' || $id <= 0) return null;
+
+    $reportCount = 0;
+    $lastReportId = 0;
+    if (isset($packet['reports']) && is_array($packet['reports'])) {
+        $reportCount = count($packet['reports']);
+        if ($reportCount > 0) {
+            $last = $packet['reports'][$reportCount - 1] ?? null;
+            if (is_array($last)) {
+                $lastReportId = intval($last['id'] ?? 0);
+            }
+        }
+    }
+
+    $receivedAt = strval($packet['received_at'] ?? '');
+    return sprintf('%s:%d:%s:%d:%d', $type, $id, $receivedAt, $reportCount, $lastReportId);
+}
+
+function meshlogFilterClientDuplicates(&$client, array $packets) {
+    if (!isset($client['sent_packet_signatures']) || !is_array($client['sent_packet_signatures'])) {
+        $client['sent_packet_signatures'] = array();
+    }
+    if (!isset($client['sent_packet_order']) || !is_array($client['sent_packet_order'])) {
+        $client['sent_packet_order'] = array();
+    }
+
+    $filtered = array();
+    foreach ($packets as $packet) {
+        $sig = meshlogPacketSignature($packet);
+        if ($sig === null) {
+            $filtered[] = $packet;
+            continue;
+        }
+
+        if (isset($client['sent_packet_signatures'][$sig])) {
+            continue;
+        }
+
+        $client['sent_packet_signatures'][$sig] = true;
+        $client['sent_packet_order'][] = $sig;
+        $filtered[] = $packet;
+
+        while (count($client['sent_packet_order']) > MESHLOG_WS_PACKET_DEDUPE_MAX) {
+            $oldSig = array_shift($client['sent_packet_order']);
+            if ($oldSig !== null) {
+                unset($client['sent_packet_signatures'][$oldSig]);
+            }
+        }
+    }
+
+    return $filtered;
+}
+
+function meshlogSendBootstrapSlices($socket, array $bootstrap, $bootstrapId, $chunkSize, array $types) {
+    $sections = array(
+        array('key' => 'reporters', 'legacy' => 'reporters'),
+        array('key' => 'contacts', 'legacy' => 'contacts'),
+        array('key' => 'channels', 'legacy' => 'channels'),
+        array('key' => 'advertisements', 'legacy' => 'advertisements'),
+        array('key' => 'channel_messages', 'legacy' => 'channel_messages'),
+        array('key' => 'direct_messages', 'legacy' => 'direct_messages'),
+        array('key' => 'raw_packets', 'legacy' => 'raw_packets'),
+        array('key' => 'telemetry', 'legacy' => 'telemetry'),
+        array('key' => 'system_reports', 'legacy' => 'system_reports'),
+    );
+
+    $counts = array();
+    foreach ($sections as $section) {
+        $counts[$section['key']] = count(extractList($bootstrap[$section['key']] ?? array(), $section['legacy']));
+    }
+
+    if (!meshlogSendJsonFrame($socket, array(
+        'type' => 'bootstrap_start',
+        'bootstrap_id' => $bootstrapId,
+        'chunk_size' => $chunkSize,
+        'counts' => $counts,
+        'types' => array_values($types),
+        'scopes_map' => $bootstrap['scopes_map'] ?? array(),
+        'timestamp_ms' => intval($bootstrap['timestamp_ms'] ?? 0),
+    ))) {
+        return false;
+    }
+
+    foreach ($sections as $section) {
+        $key = $section['key'];
+        $objects = extractList($bootstrap[$key] ?? array(), $section['legacy']);
+        $total = count($objects);
+        if ($total < 1) continue;
+
+        $chunkTotal = max(1, intval(ceil($total / $chunkSize)));
+        for ($i = 0; $i < $chunkTotal; $i++) {
+            $slice = array_slice($objects, $i * $chunkSize, $chunkSize);
+            if (!meshlogSendJsonFrame($socket, array(
+                'type' => 'bootstrap_slice',
+                'bootstrap_id' => $bootstrapId,
+                'section' => $key,
+                'chunk_index' => $i + 1,
+                'chunk_total' => $chunkTotal,
+                'objects' => $slice,
+            ))) {
+                return false;
+            }
+        }
+    }
+
+    return meshlogSendJsonFrame($socket, array(
+        'type' => 'bootstrap_done',
+        'bootstrap_id' => $bootstrapId,
+        'types' => array_values($types),
+        'timestamp_ms' => intval($bootstrap['timestamp_ms'] ?? 0),
+    ));
+}
+
 $config = meshlogLoadConfig(__DIR__);
 $meshlog = null;
 
@@ -378,9 +508,12 @@ while (true) {
                 'types' => meshlogAllowedLiveTypes(),
                 'limit' => 100,
                 'count' => MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT,
+                'chunk_size' => MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT,
                 'last_query_at' => 0.0,
                 'last_ping_at' => microtime(true),
                 'last_metadata_at' => 0.0,
+                'sent_packet_signatures' => array(),
+                'sent_packet_order' => array(),
             );
             continue;
         }
@@ -433,6 +566,10 @@ while (true) {
                 $clients[$clientId]['types'] = meshlogNormalizeTypes($query['types'] ?? '');
                 $clients[$clientId]['limit'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['limit'] ?? 100)));
                 $clients[$clientId]['count'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['count'] ?? MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT)));
+                $clients[$clientId]['chunk_size'] = min(
+                    MESHLOG_WS_BOOTSTRAP_CHUNK_MAX,
+                    max(MESHLOG_WS_BOOTSTRAP_CHUNK_MIN, intval($query['chunk_size'] ?? MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT))
+                );
 
                 if ($clients[$clientId]['bootstrap']) {
                     $bootstrap = meshlogFetchBootstrapSnapshot(
@@ -442,8 +579,14 @@ while (true) {
                         $clients[$clientId]['count']
                     );
 
-                    $bootstrapPayload = json_encode($bootstrap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                    if ($bootstrapPayload === false || !meshlogSendFrame($socket, $bootstrapPayload, 0x1)) {
+                    $bootstrapId = sprintf('%d-%d', $clientId, intval(round(microtime(true) * 1000)));
+                    if (!meshlogSendBootstrapSlices(
+                        $socket,
+                        $bootstrap,
+                        $bootstrapId,
+                        $clients[$clientId]['chunk_size'],
+                        $clients[$clientId]['types']
+                    )) {
                         throw new RuntimeException('Bootstrap send failed');
                     }
 
@@ -455,14 +598,15 @@ while (true) {
                 }
 
                 meshlogWsLog('INFO', sprintf(
-                    'WebSocket client %d connected path=%s bootstrap=%d since_ms=%d types=%s limit=%d count=%d',
+                    'WebSocket client %d connected path=%s bootstrap=%d since_ms=%d types=%s limit=%d count=%d chunk_size=%d',
                     $clientId,
                     $request['path'],
                     $clients[$clientId]['bootstrap'] ? 1 : 0,
                     $clients[$clientId]['since_ms'],
                     implode(',', $clients[$clientId]['types']),
                     $clients[$clientId]['limit'],
-                    $clients[$clientId]['count']
+                    $clients[$clientId]['count'],
+                    $clients[$clientId]['chunk_size']
                 ));
             } catch (Throwable $e) {
                 meshlogWsLog('WARN', sprintf('WebSocket handshake failed for client %d: %s', $clientId, $e->getMessage()));
@@ -521,6 +665,7 @@ while (true) {
             try {
                 $result = meshlogFetchLiveBatch($meshlog, $config, $client['since_ms'], $client['types'], $client['limit']);
                 $packets = $result['packets'] ?? array();
+                $packets = meshlogFilterClientDuplicates($client, $packets);
                 if (count($packets) > 0) {
                     $cursorMs = $result['newest_timestamp_ms'] ?? $client['since_ms'];
                     $payload = json_encode(array(

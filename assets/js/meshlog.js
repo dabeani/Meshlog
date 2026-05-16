@@ -3268,6 +3268,7 @@ class MeshLog {
         this.liveStreamReconnectDelayMs = 1000;
         this.liveStreamMaxDurationSec = 25;
         this.liveForceBootstrap = false;
+        this.liveBootstrapState = null;
         this.initialLiveCursorMs = Date.now();
 
         // epoch of newest object
@@ -6473,7 +6474,114 @@ class MeshLog {
         params.set('types', types.join(','));
         params.set('limit', '100');
         params.set('count', '500');
+        params.set('chunk_size', '120');
         return `${scheme}${window.location.host}/ws/live?${params.toString()}`;
+    }
+
+    __resetStateForBootstrap() {
+        this.clearSelection();
+        this.__stopRouteLineAnimations();
+        this._cleanupTransientRouteAnimations();
+        this.transientRouteAnimations = [];
+        this.routeAnimationFrames = [];
+
+        this.link_layers.clearLayers();
+        this.route_trail_layers.clearLayers();
+        this.layer_descs = {};
+        this.links = {};
+        this.visible_markers.clear();
+
+        this.reporters = {};
+        this.contacts = {};
+        this.channels = {};
+        this.messages = {};
+
+        this.dom_logs.replaceChildren();
+        this.dom_contacts.replaceChildren();
+        if (this.dom_channel_badges) {
+            this.dom_channel_badges.replaceChildren();
+        }
+        if (this._collectorFilterRow) {
+            this._collectorFilterRow.remove();
+            this._collectorFilterRow = null;
+        }
+
+        this._optionalFeedHistoryLoaded = {
+            raw: false,
+            telemetry: false,
+            system: false,
+        };
+
+        this.latest = 0;
+        this.new_messages = {};
+    }
+
+    __beginLiveBootstrap(payload) {
+        this.liveBootstrapState = {
+            id: String(payload?.bootstrap_id ?? `bootstrap-${Date.now()}`),
+            types: Array.isArray(payload?.types)
+                ? payload.types.map((type) => String(type).toUpperCase())
+                : this.__getEnabledLiveStreamTypes(),
+        };
+
+        this.__resetStateForBootstrap();
+        this.__applyScopesMap(payload?.scopes_map ?? {});
+    }
+
+    __ingestBootstrapSlice(payload) {
+        const section = String(payload?.section ?? '').toLowerCase();
+        const objects = Array.isArray(payload?.objects) ? payload.objects : [];
+        if (objects.length < 1) return;
+
+        const data = {objects};
+        switch (section) {
+            case 'reporters':
+                this.__loadObjects(this.reporters, data, MeshLogReporter, false);
+                break;
+            case 'contacts':
+                this.__loadObjects(this.contacts, data, MeshLogContact, false);
+                break;
+            case 'channels':
+                this.__loadObjects(this.channels, data, MeshLogChannel, false);
+                break;
+            case 'advertisements':
+                this.__loadObjects(this.messages, data, MeshLogAdvertisement);
+                break;
+            case 'channel_messages':
+                this.__loadObjects(this.messages, data, MeshLogChannelMessage);
+                break;
+            case 'direct_messages':
+                this.__loadObjects(this.messages, data, MeshLogDirectMessage);
+                break;
+            case 'raw_packets':
+                this.__loadObjects(this.messages, data, MeshLogRawPacket);
+                break;
+            case 'telemetry':
+                this.__loadObjects(this.messages, data, MeshLogTelemetryMessage);
+                break;
+            case 'system_reports':
+                this.__loadObjects(this.messages, data, MeshLogSystemReportMessage);
+                break;
+            default:
+                break;
+        }
+    }
+
+    __finalizeLiveBootstrap(payload) {
+        const bootstrapTypes = Array.isArray(payload?.types)
+            ? payload.types.map((type) => String(type).toUpperCase())
+            : (this.liveBootstrapState?.types ?? this.__getEnabledLiveStreamTypes());
+
+        if (bootstrapTypes.includes('RAW')) this.__markOptionalFeedHistoryLoaded('raw');
+        if (bootstrapTypes.includes('TEL')) this.__markOptionalFeedHistoryLoaded('telemetry');
+        if (bootstrapTypes.includes('SYS')) this.__markOptionalFeedHistoryLoaded('system');
+
+        this._lastLiveMapSyncAt = Date.now();
+        this.__init_reporters();
+        this.onLoadAll();
+        this._initialLoad = false;
+        this.liveForceBootstrap = false;
+        this.liveBootstrapState = null;
     }
 
     __applyScopesMap(scopesMap) {
@@ -6546,6 +6654,35 @@ class MeshLog {
     }
 
     __handleLiveStreamPayload(payload) {
+        const payloadType = String(payload?.type ?? '').toLowerCase();
+
+        if (payloadType === 'bootstrap_start') {
+            this.__beginLiveBootstrap(payload);
+            return;
+        }
+
+        if (payloadType === 'bootstrap_slice') {
+            if (!this.liveBootstrapState) {
+                this.__beginLiveBootstrap(payload);
+            }
+            if (String(payload?.bootstrap_id ?? '') !== String(this.liveBootstrapState?.id ?? '')) {
+                return;
+            }
+            this.__ingestBootstrapSlice(payload);
+            return;
+        }
+
+        if (payloadType === 'bootstrap_done') {
+            if (!this.liveBootstrapState) {
+                return;
+            }
+            if (String(payload?.bootstrap_id ?? '') !== String(this.liveBootstrapState?.id ?? '')) {
+                return;
+            }
+            this.__finalizeLiveBootstrap(payload);
+            return;
+        }
+
         if (String(payload?.type ?? '').toLowerCase() === 'bootstrap') {
             this.__applyLiveMetadataPayload(payload);
 
