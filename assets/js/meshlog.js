@@ -3240,6 +3240,7 @@ class MeshLog {
         this.link_layers = L.layerGroup([]);
         this.route_trail_layers = L.layerGroup([]);
         this.visible_markers = new Set();
+        this.transientForegroundMarkers = new Map();
         this._initialLoad = true;
         this.visible_contacts = {};
         this.links = {};
@@ -5433,10 +5434,54 @@ class MeshLog {
                 if (animation.layer && this.map.hasLayer(animation.layer)) {
                     this.map.removeLayer(animation.layer);
                 }
+                if (!animation.markersReleased) {
+                    this._removeTransientForegroundMarkers(animation.markerIds ?? []);
+                    animation.markersReleased = true;
+                }
                 return false;
             }
             return true;
         });
+    }
+
+    _getForegroundMarkerIds() {
+        const foregroundIds = new Set(this.visible_markers);
+        for (const markerId of this.transientForegroundMarkers.keys()) {
+            foregroundIds.add(markerId);
+        }
+        return foregroundIds;
+    }
+
+    _addTransientForegroundMarkers(contactIds) {
+        let changed = false;
+        for (let i = 0; i < contactIds.length; i++) {
+            const markerId = Number(contactIds[i]);
+            if (!Number.isFinite(markerId) || markerId <= 0) continue;
+            const count = this.transientForegroundMarkers.get(markerId) ?? 0;
+            this.transientForegroundMarkers.set(markerId, count + 1);
+            changed = true;
+        }
+        if (changed) {
+            this.fadeMarkers();
+        }
+    }
+
+    _removeTransientForegroundMarkers(contactIds) {
+        let changed = false;
+        for (let i = 0; i < contactIds.length; i++) {
+            const markerId = Number(contactIds[i]);
+            if (!Number.isFinite(markerId) || markerId <= 0) continue;
+            const count = this.transientForegroundMarkers.get(markerId) ?? 0;
+            if (count <= 1) {
+                changed = this.transientForegroundMarkers.delete(markerId) || changed;
+            } else {
+                this.transientForegroundMarkers.set(markerId, count - 1);
+                changed = true;
+            }
+        }
+        if (changed) {
+            this.fadeMarkers();
+        }
     }
 
     _trimTransientRouteAnimations() {
@@ -7327,10 +7372,11 @@ class MeshLog {
     }
 
     fadeMarkers(opacity=0.2) {
-        const empty = this.visible_markers.size < 1;
+        const foregroundMarkerIds = this._getForegroundMarkerIds();
+        const empty = foregroundMarkerIds.size < 1;
         Object.entries(this.contacts).forEach(([k,v]) => {
             if (!v.marker) return;
-            const highlighted = !empty && this.visible_markers.has(v.data.id);
+            const highlighted = !empty && foregroundMarkerIds.has(v.data.id);
             v.setMarkerPane(highlighted);
             if (empty || highlighted) {
                 v.marker.setOpacity(1);
@@ -7622,18 +7668,29 @@ class MeshLog {
     }
 
     // Animate a traveling dot + glow line from waypoints[0] to waypoints[last]
-    _runPathAnimation(waypoints, color) {
+    _runPathAnimation(waypoints, color, contactIds = []) {
         const validWpts = waypoints.filter(w => w[0] !== 0 || w[1] !== 0);
         if (validWpts.length < 2) return;
 
         this._trimTransientRouteAnimations();
+
+        const markerIds = Array.from(new Set(
+            (Array.isArray(contactIds) ? contactIds : [])
+                .map((contactId) => Number(contactId))
+                .filter((contactId) => Number.isFinite(contactId) && contactId > 0)
+        ));
+        if (markerIds.length > 0) {
+            this._addTransientForegroundMarkers(markerIds);
+        }
 
         const animLayer = L.layerGroup().addTo(this.map);
         const cr = this.canvas_renderer;
         const animationState = {
             layer: animLayer,
             frameId: 0,
-            done: false
+            done: false,
+            markerIds,
+            markersReleased: false
         };
         this.transientRouteAnimations.push(animationState);
 
@@ -7732,26 +7789,35 @@ class MeshLog {
             const hashes    = parsePath(report.data.path);
             const waypoints = this._buildPathWaypoints(hashes, srcContact, reporter);
             if (waypoints.length < 2) return;
+            const pathContactIds = new Set();
             const color     = reporter.getStyle().color ?? '#4eb8d0';
-            const pathKey = `${report.data.reporter_id}:${color}:${waypoints.map(point => point.join(',')).join('|')}`;
-            if (!animatedPathKeys.has(pathKey)) {
-                animatedPathKeys.add(pathKey);
-                this._runPathAnimation(waypoints, color);
-            }
 
             // Collect contacts on this path for label display
             const anchor = this._getReporterAnchor(reporter);
             const reporterContact = anchor?.contact_id ? this.contacts[anchor.contact_id] : null;
-            if (reporterContact) labelContacts.add(reporterContact);
+            if (reporterContact) {
+                labelContacts.add(reporterContact);
+                pathContactIds.add(reporterContact.data.id);
+            }
             let prev = anchor;
             for (let i = hashes.length - 1; i >= 0; i--) {
                 const nearest = this.findNearestContact(prev?.lat ?? 0, prev?.lon ?? 0, hashes[i], true);
                 if (nearest?.result) {
                     labelContacts.add(nearest.result);
+                    pathContactIds.add(nearest.result.data.id);
                     prev = { lat: nearest.result.adv.data.lat, lon: nearest.result.adv.data.lon };
                 }
             }
-            if (srcContact?.adv) labelContacts.add(srcContact);
+            if (srcContact?.adv) {
+                labelContacts.add(srcContact);
+                pathContactIds.add(srcContact.data.id);
+            }
+
+            const pathKey = `${report.data.reporter_id}:${color}:${waypoints.map(point => point.join(',')).join('|')}`;
+            if (!animatedPathKeys.has(pathKey)) {
+                animatedPathKeys.add(pathKey);
+                this._runPathAnimation(waypoints, color, Array.from(pathContactIds));
+            }
         });
 
         labelContacts.forEach(c => c.showLabel(true));
