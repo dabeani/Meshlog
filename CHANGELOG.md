@@ -57,6 +57,10 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Static packet route lines now render above uninvolved pin markers** — The map pane stacking order now draws non-animated packet path overlays above regular (non-active) marker pins while keeping active/highlighted markers at the top.
 - **Live tab now shows WebSocket connection status at a glance** — Added a status dot beside the Live tab label: red when disconnected, yellow while connecting/reconnecting, green once connected.
 - **Live tab status dot now pulses on WebSocket activity** — Incoming/outgoing heartbeat and message traffic trigger a fading blue pulse on the status dot so socket activity is visible in real time.
+- **Stats/overlay/popup data paths fully migrated to WebSocket queries** — WebUI now fetches General Stats, Heatmap, Coverage, Contact Stats, Contact Health, and Contact Advertisement Trails through live WebSocket request/response frames instead of REST API calls.
+- **WebSocket daemon now supports typed query actions** — `/ws/live` accepts JSON `type=query` requests and returns `type=query_result` payloads for `stats`, `stats_heatmap`, `coverage`, `contact_stats`, `contact_health`, and `contact_advertisements` with validated/clamped inputs.
+- **Legacy WebUI REST loader stack removed** — Removed old `/api/v1/*` fetch utilities and deprecated snapshot/history loader methods (`loadAll/loadNew/loadOld/loadScopes/load*`) so Live tab data transport is now WS-only with no fallback branch.
+- **Live request queueing added for reconnect-safe UI queries** — Browser-side WS requests are now queued while connecting, retried after reconnect, timed out deterministically, and failed cleanly only when live transport is explicitly disabled.
 
 ### Frontend — New Features
 

@@ -3251,12 +3251,6 @@ class MeshLog {
         this.timer = false;
         this.autorefresh = 0;
         this.decor = true;
-        this.scopeRefreshTimer = null;
-        this.scopeRefreshIntervalMs = 30000;
-        this._lastScopeRefreshAt = 0;
-        this._scopeRefreshInFlight = false;
-        this.liveMapSyncIntervalMs = 60000;
-        this._lastLiveMapSyncAt = 0;
         this._optionalFeedHistoryLoaded = {
             raw: false,
             telemetry: false,
@@ -3280,6 +3274,10 @@ class MeshLog {
         this.liveForceBootstrap = false;
         this.liveBootstrapState = null;
         this.initialLiveCursorMs = Date.now();
+        this.liveRequestSeq = 0;
+        this.liveRequestTimeoutMs = 12000;
+        this.livePendingRequests = new Map();
+        this.liveQueuedRequestIds = [];
 
         // epoch of newest object
         this.latest = 0;
@@ -4225,10 +4223,8 @@ class MeshLog {
             data: loadingData,
         });
 
-        this.__fetchJson(
-            'api/v1/contact_advertisements',
-            { contact_id: numericContactId },
-            (data) => {
+        this.__requestLiveData('contact_advertisements', { contact_id: numericContactId })
+            .then((data) => {
                 const normalized = data?.error
                     ? this._getEmptyContactAdvertisementTrail({
                         hasError: true,
@@ -4253,14 +4249,14 @@ class MeshLog {
                 if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'general') {
                     this.updateSelectedContactPopup();
                 }
-            },
-            () => {
+            })
+            .catch(() => {
                 this.contactAdvertisementTrailCache.set(key, {
                     status: 'error',
                     fetchedAt: Date.now(),
                     data: this._getEmptyContactAdvertisementTrail({
                         hasError: true,
-                        note: 'Failed to fetch advertisement coordinates.',
+                        note: 'Failed to load advertisement coordinates via live websocket.',
                     }),
                 });
 
@@ -4271,8 +4267,7 @@ class MeshLog {
                 if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'general') {
                     this.updateSelectedContactPopup();
                 }
-            }
-        );
+            });
     }
 
     getContactAdvertisementTrail(contactId, options = {}) {
@@ -4538,10 +4533,8 @@ class MeshLog {
 
         this.contactHealthCache.set(key, { status: 'loading', fetchedAt: cached?.fetchedAt ?? 0, data: loadingData });
 
-        this.__fetchJson(
-            'api/v1/contact_health',
-            { contact_id: numericContactId, limit: 48 },
-            (data) => {
+        this.__requestLiveData('contact_health', { contact_id: numericContactId, limit: 48 })
+            .then((data) => {
                 const normalized = data?.error
                     ? this._getEmptyContactHealth({ hasError: true, note: data.error })
                     : {
@@ -4560,18 +4553,17 @@ class MeshLog {
                 if (this.selectedMarkerId === numericContactId || this.activePopupContactId === numericContactId) {
                     this.updateSelectedContactPopup();
                 }
-            },
-            () => {
+            })
+            .catch(() => {
                 this.contactHealthCache.set(key, {
                     status: 'error',
                     fetchedAt: Date.now(),
-                    data: this._getEmptyContactHealth({ hasError: true, note: 'Failed to load health data.' }),
+                    data: this._getEmptyContactHealth({ hasError: true, note: 'Failed to load health data via live websocket.' }),
                 });
                 if (this.selectedMarkerId === numericContactId || this.activePopupContactId === numericContactId) {
                     this.updateSelectedContactPopup();
                 }
-            }
-        );
+            });
     }
 
     getContactHealth(contactId) {
@@ -4850,10 +4842,8 @@ class MeshLog {
             data: loadingData,
         });
 
-        this.__fetchJson(
-            'api/v1/contact_stats',
-            { contact_id: numericContactId, window_hours: numericWindowHours },
-            (data) => {
+        this.__requestLiveData('contact_stats', { contact_id: numericContactId, window_hours: numericWindowHours })
+            .then((data) => {
                 const normalized = data?.error
                     ? this._getEmptyContactPacketStats(numericWindowHours, {
                         hasError: true,
@@ -4874,22 +4864,21 @@ class MeshLog {
                 if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'stats' && Number(this.popupUiState?.statsWindowHours) === numericWindowHours) {
                     this.updateSelectedContactPopup();
                 }
-            },
-            () => {
+            })
+            .catch(() => {
                 this.contactPacketStatsCache.set(key, {
                     status: 'error',
                     fetchedAt: Date.now(),
                     data: this._getEmptyContactPacketStats(numericWindowHours, {
                         hasError: true,
-                        note: 'Failed to fetch database-backed stats.',
+                        note: 'Failed to load database-backed stats via live websocket.',
                     }),
                 });
 
                 if (this.selectedMarkerId === numericContactId && this.popupUiState?.tab === 'stats' && Number(this.popupUiState?.statsWindowHours) === numericWindowHours) {
                     this.updateSelectedContactPopup();
                 }
-            }
-        );
+            });
     }
 
     getContactPacketStats(contactId, windowHours = 24) {
@@ -5039,10 +5028,8 @@ class MeshLog {
             data: loadingData,
         });
 
-        this.__fetchJson(
-            'api/v1/stats',
-            { window_hours: normalizedWindowHours },
-            (data) => {
+        this.__requestLiveData('stats', { window_hours: normalizedWindowHours })
+            .then((data) => {
                 const normalized = data?.error
                     ? this._getEmptyGeneralStats(normalizedWindowHours, {
                         hasError: true,
@@ -5063,22 +5050,21 @@ class MeshLog {
                 if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
                     this.refreshGeneralStatsPanel();
                 }
-            },
-            () => {
+            })
+            .catch(() => {
                 this.generalStatsCache.set(key, {
                     status: 'error',
                     fetchedAt: Date.now(),
                     data: this._getEmptyGeneralStats(normalizedWindowHours, {
                         hasError: true,
-                        note: 'Failed to fetch database-backed advertisement stats.',
+                        note: 'Failed to load database-backed advertisement stats via live websocket.',
                     }),
                 });
 
                 if (document.querySelector('.sidebar-tab.active')?.dataset.tab === 'stats') {
                     this.refreshGeneralStatsPanel();
                 }
-            }
-        );
+            });
     }
 
     getGeneralStats(windowHours = 24) {
@@ -5382,8 +5368,7 @@ class MeshLog {
         const wh = this._normalizeStatsWindowHours(windowHours);
         const statusEl = document.getElementById('map-heatmap-status');
         if (statusEl) statusEl.textContent = 'loading…';
-        fetch(`api/v1/stats/heatmap/?window_hours=${wh}`)
-            .then((r) => r.json())
+        this.__requestLiveData('stats_heatmap', { window_hours: wh })
             .then((data) => {
                 if (Array.isArray(data.points) && data.points.length > 0) {
                     this._applyHeatmapLayer(data.points);
@@ -5394,7 +5379,7 @@ class MeshLog {
                 }
             })
             .catch((e) => {
-                console.warn('[Heatmap] fetch failed:', e);
+                console.warn('[Heatmap] websocket request failed:', e);
                 if (statusEl) statusEl.textContent = 'error';
             });
     }
@@ -5464,8 +5449,7 @@ class MeshLog {
         const wh = this._normalizeCoverageWindowHours(windowHours);
         const statusEl = document.getElementById('map-coverage-status');
         if (statusEl) statusEl.textContent = 'loading…';
-        fetch(`api/v1/coverage/?window_hours=${wh}`)
-            .then((r) => r.json())
+        this.__requestLiveData('coverage', { window_hours: wh, precision: 3 })
             .then((data) => {
                 if (Array.isArray(data.spots) && data.spots.length > 0) {
                     this._renderCoverageSpots(data.spots);
@@ -5476,7 +5460,7 @@ class MeshLog {
                 }
             })
             .catch((e) => {
-                console.warn('[Coverage] fetch failed:', e);
+                console.warn('[Coverage] websocket request failed:', e);
                 if (statusEl) statusEl.textContent = 'error';
             });
     }
@@ -6300,81 +6284,131 @@ class MeshLog {
         }
     }
 
-    __prepareQuery(params={}) {
-        let query = {};
-        // bax date
-        if (params.hasOwnProperty('after_ms')) {
-            query.after_ms = params['after_ms'];
-        }
-        // min date
-        if (params.hasOwnProperty('before_ms')) {
-            query.before_ms = params['before_ms'];
-        }
-
-        // max count
-        if (params.hasOwnProperty('count')) {
-            query.count = params['count'];
-        }
-
-        // reporter ids
-        if (params.hasOwnProperty('reporters')) {
-            query.reporters = params['reporters'];
-        }
-
-        return query;
+    __nextLiveRequestId() {
+        this.liveRequestSeq += 1;
+        return `${Date.now()}-${this.liveRequestSeq}`;
     }
 
-    __normalizeApiUrl(url) {
-        if (typeof url !== 'string') {
-            return url;
+    __flushLiveRequestQueue() {
+        const stream = this.liveStream;
+        if (!(stream instanceof WebSocket) || stream.readyState !== WebSocket.OPEN) {
+            return;
         }
 
-        // Avoid nginx directory canonicalization redirects for API directory routes.
-        if (!url.startsWith('api/')) {
-            return url;
+        if (!Array.isArray(this.liveQueuedRequestIds) || this.liveQueuedRequestIds.length < 1) {
+            return;
         }
 
-        if (url.endsWith('/')) {
-            return url;
-        }
+        const pendingIds = [...this.liveQueuedRequestIds];
+        this.liveQueuedRequestIds = [];
 
-        const lastSegment = url.split('/').pop() ?? '';
-        if (lastSegment.includes('.')) {
-            return url;
-        }
+        for (let i = 0; i < pendingIds.length; i++) {
+            const requestId = String(pendingIds[i] ?? '');
+            const pending = this.livePendingRequests.get(requestId) ?? null;
+            if (!pending || pending.sent) continue;
 
-        return `${url}/`;
-    }
-
-    __fetchJson(url, query, onResponse, onError = null) {
-        const normalizedUrl = this.__normalizeApiUrl(url);
-        const urlparams = new URLSearchParams();
-
-        for (const key in query) {
-            if (query.hasOwnProperty(key)) {
-                const value = query[key];
-                if (Array.isArray(value)) {
-                    // For arrays, append each item with same key
-                    value.forEach(item => urlparams.append(key, item));
-                } else if (value !== undefined && value !== null) {
-                    urlparams.append(key, value);
-                }
+            try {
+                stream.send(JSON.stringify(pending.payload));
+                pending.sent = true;
+            } catch (_error) {
+                this.liveQueuedRequestIds.push(requestId);
+                break;
             }
         }
-
-        fetch(`${normalizedUrl}?${urlparams.toString()}`)
-            .then(response => response.json())
-            .then(data => onResponse(data))
-            .catch(error => {
-                if (typeof onError === 'function') {
-                    onError(error);
-                }
-            });
     }
 
-    __fetchQuery(params, url, onResponse, onError = null) {
-        const query = this.__prepareQuery(params);
-        this.__fetchJson(url, query, onResponse, onError);
+    __failAllLiveRequests(errorMessage = 'Live data request failed.') {
+        for (const [requestId, pending] of this.livePendingRequests.entries()) {
+            if (pending?.timer) {
+                clearTimeout(pending.timer);
+            }
+            try {
+                pending?.reject?.(new Error(errorMessage));
+            } catch (_error) {
+                void _error;
+            }
+            this.livePendingRequests.delete(requestId);
+        }
+        this.liveQueuedRequestIds = [];
+    }
+
+    __requeueLiveRequests() {
+        const queuedIds = new Set(Array.isArray(this.liveQueuedRequestIds) ? this.liveQueuedRequestIds : []);
+        for (const [requestId, pending] of this.livePendingRequests.entries()) {
+            if (!pending) continue;
+            pending.sent = false;
+            queuedIds.add(requestId);
+        }
+        this.liveQueuedRequestIds = Array.from(queuedIds);
+    }
+
+    __requestLiveData(action, params = {}) {
+        const requestAction = String(action ?? '').trim().toLowerCase();
+        if (!requestAction) {
+            return Promise.reject(new Error('Live request action is required.'));
+        }
+
+        if (!this.liveStreamRequested) {
+            return Promise.reject(new Error('Live stream is disabled.'));
+        }
+
+        const requestId = this.__nextLiveRequestId();
+        const payload = {
+            type: 'query',
+            request_id: requestId,
+            action: requestAction,
+            params: (params && typeof params === 'object' && !Array.isArray(params)) ? params : {},
+        };
+
+        return new Promise((resolve, reject) => {
+            const timeoutMs = Math.max(1000, Number(this.liveRequestTimeoutMs) || 12000);
+            const timer = window.setTimeout(() => {
+                this.livePendingRequests.delete(requestId);
+                this.liveQueuedRequestIds = this.liveQueuedRequestIds.filter((id) => id !== requestId);
+                reject(new Error(`Live request timed out (${requestAction}).`));
+            }, timeoutMs);
+
+            this.livePendingRequests.set(requestId, {
+                payload,
+                resolve,
+                reject,
+                timer,
+                sent: false,
+            });
+
+            this.liveQueuedRequestIds.push(requestId);
+
+            const hasSocket = this.liveStream instanceof WebSocket;
+            const socketState = hasSocket ? this.liveStream.readyState : WebSocket.CLOSED;
+            if (!hasSocket || socketState === WebSocket.CLOSING || socketState === WebSocket.CLOSED) {
+                this.__restartLiveStream();
+            }
+
+            this.__flushLiveRequestQueue();
+        });
+    }
+
+    __handleLiveQueryResult(payload) {
+        const requestId = String(payload?.request_id ?? '').trim();
+        if (!requestId) return;
+
+        const pending = this.livePendingRequests.get(requestId) ?? null;
+        if (!pending) return;
+
+        this.livePendingRequests.delete(requestId);
+        this.liveQueuedRequestIds = this.liveQueuedRequestIds.filter((id) => id !== requestId);
+
+        if (pending.timer) {
+            clearTimeout(pending.timer);
+        }
+
+        const errorText = String(payload?.error ?? '').trim();
+        if (errorText) {
+            pending.reject(new Error(errorText));
+            return;
+        }
+
+        pending.resolve(payload?.data ?? null);
     }
 
     __getEnabledLiveStreamTypes() {
@@ -6596,7 +6630,6 @@ class MeshLog {
         if (bootstrapTypes.includes('TEL')) this.__markOptionalFeedHistoryLoaded('telemetry');
         if (bootstrapTypes.includes('SYS')) this.__markOptionalFeedHistoryLoaded('system');
 
-        this._lastLiveMapSyncAt = Date.now();
         this.__init_reporters();
         this.onLoadAll();
         this._initialLoad = false;
@@ -6676,6 +6709,11 @@ class MeshLog {
     __handleLiveStreamPayload(payload) {
         const payloadType = String(payload?.type ?? '').toLowerCase();
 
+        if (payloadType === 'query_result') {
+            this.__handleLiveQueryResult(payload);
+            return;
+        }
+
         if (payloadType === 'bootstrap_start') {
             this.__beginLiveBootstrap(payload);
             return;
@@ -6717,7 +6755,6 @@ class MeshLog {
             if (this.__isOptionalFeedTypeEnabled('telemetry')) this.__markOptionalFeedHistoryLoaded('telemetry');
             if (this.__isOptionalFeedTypeEnabled('system')) this.__markOptionalFeedHistoryLoaded('system');
 
-            this._lastLiveMapSyncAt = Date.now();
             this.onLoadMessages([...rep3, ...rep5, ...rep6, ...rep7, ...rep8, ...rep9]);
             this._initialLoad = false;
             this.liveForceBootstrap = false;
@@ -6862,7 +6899,7 @@ class MeshLog {
         );
     }
 
-    __stopLiveStream() {
+    __stopLiveStream(keepPendingRequests = false) {
         if (this.liveStreamReconnectTimer) {
             clearTimeout(this.liveStreamReconnectTimer);
             this.liveStreamReconnectTimer = null;
@@ -6879,10 +6916,16 @@ class MeshLog {
             this.liveStream.close();
             this.liveStream = null;
         }
+
+        if (keepPendingRequests) {
+            this.__requeueLiveRequests();
+        } else {
+            this.__failAllLiveRequests('Live stream is not connected.');
+        }
     }
 
     __restartLiveStream() {
-        this.__stopLiveStream();
+        this.__stopLiveStream(true);
 
         if (!this.liveStreamRequested) {
             this.__setLiveWsStatus('disconnected');
@@ -6917,10 +6960,11 @@ class MeshLog {
         stream.addEventListener('open', () => {
             if (this.liveStream !== stream) return;
             this.liveStreamReconnectAttempt = 0;
-             this.__setLiveWsStatus('connected');
+            this.__setLiveWsStatus('connected');
             this.__startLiveStreamKeepAlive(stream);
             this.__markLiveStreamHeartbeat();
             this.__pulseLiveWsActivity();
+            this.__flushLiveRequestQueue();
         });
 
         stream.addEventListener('message', (event) => {
@@ -6943,6 +6987,7 @@ class MeshLog {
         stream.addEventListener('close', () => {
             if (this.liveStream !== stream) return;
             this.__clearLiveStreamKeepAlive();
+            this.__requeueLiveRequests();
             this.liveStream = null;
             this.__setLiveWsStatus(this.liveStreamRequested ? 'connecting' : 'disconnected');
             this.__scheduleLiveStreamReconnect();
@@ -6951,6 +6996,7 @@ class MeshLog {
         stream.addEventListener('error', () => {
             if (this.liveStream !== stream) return;
             this.__clearLiveStreamKeepAlive();
+            this.__requeueLiveRequests();
             this.__setLiveWsStatus(this.liveStreamRequested ? 'connecting' : 'disconnected');
             stream.close();
         });
@@ -6963,26 +7009,10 @@ class MeshLog {
         return false;
     }
 
-    __buildAllQuery(params = {}) {
-        const query = this.__prepareQuery(params);
-        const isInitialBootstrap = this._initialLoad
-            && Number(query.after_ms ?? 0) <= 0
-            && Number(query.before_ms ?? 0) <= 0;
-
-        query.include_raw_packets = !isInitialBootstrap && this.__isOptionalFeedTypeEnabled('raw') ? 1 : 0;
-        query.include_telemetry = !isInitialBootstrap && this.__isOptionalFeedTypeEnabled('telemetry') ? 1 : 0;
-        query.include_system_reports = !isInitialBootstrap && this.__isOptionalFeedTypeEnabled('system') ? 1 : 0;
-        return query;
-    }
-
     __markOptionalFeedHistoryLoaded(type) {
         if (Object.prototype.hasOwnProperty.call(this._optionalFeedHistoryLoaded, type)) {
             this._optionalFeedHistoryLoaded[type] = true;
         }
-    }
-
-    __ensureOptionalFeedDataForVisibleTypes() {
-        // WebUI optional feed history is delivered through websocket bootstrap snapshots.
     }
 
     showWarning(msg) {
@@ -7259,222 +7289,6 @@ class MeshLog {
         return true;
     }
 
-    syncLiveMapEntities(onDone = null, force = false) {
-        const now = Date.now();
-        if (!force && this._lastLiveMapSyncAt > 0 && (now - this._lastLiveMapSyncAt) < this.liveMapSyncIntervalMs) {
-            if (typeof onDone === 'function') {
-                onDone();
-            }
-            return;
-        }
-        this._lastLiveMapSyncAt = now;
-
-        const query = { count: 5000 };
-        let pending = 2;
-
-        const finish = () => {
-            pending -= 1;
-            if (pending > 0) return;
-
-            this._renderActiveRouteTrail();
-
-            if (typeof onDone === 'function') {
-                onDone();
-            }
-        };
-
-        this.__fetchJson('api/v1/contacts', query, (data) => {
-            this._syncLiveContacts(data);
-            finish();
-        }, () => finish());
-
-        this.__fetchJson('api/v1/reporters', query, (data) => {
-            this._syncLiveReporters(data);
-            finish();
-        }, () => finish());
-    }
-
-    loadNew(onload=null) {
-        let params = { 
-            "after_ms": this.latest
-        };
-        this.loadAll(params, onload);
-    }
-
-    loadOld(onload=null) {
-        const self = this;
-        let oldest_adv = this.latest;
-        let oldest_grp = this.latest;
-        let oldest_dm  = this.latest;
-        let oldest_tel = this.latest;
-        let oldest_sys = this.latest;
-
-        Object.entries(this.messages).forEach(([k,v]) => {
-            if (v instanceof MeshLogAdvertisement) {
-                if (v.time < oldest_adv) oldest_adv = v.time;
-            } else if (v instanceof MeshLogChannelMessage) {
-                if (v.time < oldest_grp) oldest_grp = v.time;
-            } else if (v instanceof MeshLogDirectMessage) {
-                if (v.time < oldest_dm) oldest_dm = v.time;
-            } else if (v instanceof MeshLogTelemetryMessage) {
-                if (v.time < oldest_tel) oldest_tel = v.time;
-            } else if (v instanceof MeshLogSystemReportMessage) {
-                if (v.time < oldest_sys) oldest_sys = v.time;
-            }
-        });
-
-        this.__fetchQuery({ "before_ms": oldest_adv }, 'api/v1/advertisements', data => {
-            const rep = self.__loadObjects(self.advertisements, data, MeshLogAdvertisement);
-            if (rep.length) console.log(`${rep.length} advertisements loaded`);
-            self.onLoadAll({messages: rep, contacts: [], groups: []});
-            if (onload) onload();
-        });
-
-        this.__fetchQuery({ "before_ms": oldest_grp }, 'api/v1/channel_messages', data => {
-            const rep = self.__loadObjects(self.channel_messages, data, MeshLogChannelMessage);
-            if (rep.length) console.log(`${rep.length} group messages loaded`);
-            self.onLoadAll({messages: rep, contacts: [], groups: []});
-            if (onload) onload();
-        });
-
-        this.__fetchQuery({ "before_ms": oldest_dm }, 'api/v1/direct_messages', data => {
-            const rep = self.__loadObjects(self.direct_messages, data, MeshLogDirectMessage);
-            if (rep.length) console.log(`${rep.length} direct messages loaded`);
-            self.onLoadAll({messages: rep, contacts: [], groups: []});
-            if (onload) onload();
-        });
-
-        this.__fetchQuery({ "before_ms": oldest_tel }, 'api/v1/telemetry', data => {
-            const rep = self.__loadObjects(self.messages, data, MeshLogTelemetryMessage);
-            if (rep.length) console.log(`${rep.length} telemetry packets loaded`);
-            self.onLoadAll({messages: rep, contacts: [], groups: []});
-            if (onload) onload();
-        });
-
-        this.__fetchQuery({ "before_ms": oldest_sys }, 'api/v1/system_reports', data => {
-            const rep = self.__loadObjects(self.messages, data, MeshLogSystemReportMessage);
-            if (rep.length) console.log(`${rep.length} system reports loaded`);
-            self.onLoadAll({messages: rep, contacts: [], groups: []});
-            if (onload) onload();
-        });
-    }
-
-    loadAll(params={}, onload=null) {
-        const query = this.__buildAllQuery(params);
-        this.__fetchJson('api/v1/all', query, data => {
-            if (data.error) {
-                this.showError(data.error);
-                return;
-            }
-
-            const rep1 = this.__loadObjects(this.reporters, data.reporters, MeshLogReporter, false);
-            const rep2 = this.__loadObjects(this.contacts, data.contacts, MeshLogContact, false);
-            const rep4 = this.__loadObjects(this.channels, data.channels, MeshLogChannel, false);
-
-            const rep3 = this.__loadObjects(this.messages, data.advertisements, MeshLogAdvertisement);
-            const rep5 = this.__loadObjects(this.messages, data.channel_messages, MeshLogChannelMessage);
-            const rep6 = this.__loadObjects(this.messages, data.direct_messages, MeshLogDirectMessage);
-            const rep7 = this.__loadObjects(this.messages, data.raw_packets ?? {objects: []}, MeshLogRawPacket);
-            const rep8 = this.__loadObjects(this.messages, data.telemetry ?? {objects: []}, MeshLogTelemetryMessage);
-            const rep9 = this.__loadObjects(this.messages, data.system_reports ?? {objects: []}, MeshLogSystemReportMessage);
-
-            if (Number(query.include_raw_packets) !== 0) this.__markOptionalFeedHistoryLoaded('raw');
-            if (Number(query.include_telemetry) !== 0) this.__markOptionalFeedHistoryLoaded('telemetry');
-            if (Number(query.include_system_reports) !== 0) this.__markOptionalFeedHistoryLoaded('system');
-
-            if (rep1.length) console.log(`${rep1.length} reporters loaded`);
-            if (rep2.length) console.log(`${rep2.length} contacts loaded`);
-            if (rep3.length) console.log(`${rep3.length} advertisements loaded`);
-            if (rep4.length) console.log(`${rep4.length} groups loaded`);
-            if (rep5.length) console.log(`${rep5.length} group messages loaded`);
-            if (rep6.length) console.log(`${rep6.length} direct messages loaded`);
-            if (rep7.length) console.log(`${rep7.length} raw packets loaded`);
-            if (rep8.length) console.log(`${rep8.length} telemetry packets loaded`);
-            if (rep9.length) console.log(`${rep9.length} system reports loaded`);
-
-            // /api/v1/all already refreshes contacts/reporters, so avoid a
-            // redundant live entity snapshot on the next autorefresh tick.
-            this._lastLiveMapSyncAt = Date.now();
-
-            // Load scopes for scope name lookup in live-feed
-            this.loadScopes();
-
-            this.__init_reporters();
-            this.onLoadAll({
-                messages: [...rep3, ...rep5, ...rep6, ...rep7, ...rep8, ...rep9],
-                contacts: rep2,
-                groups: rep4
-            });
-            this._initialLoad = false;
-            this.__ensureOptionalFeedDataForVisibleTypes();
-
-            if (onload) {
-                onload({
-                    reporters: rep1,
-                    contacts: rep2,
-                    groups: rep4,
-                    advertisements: rep3,
-                    channel_messages: rep5,
-                    direct_messages: rep6,
-                    raw_packets: rep7,
-                    telemetry: rep8,
-                    system_reports: rep9,
-                });
-            }
-        });
-    }
-
-    loadScopes(force = false) {
-        const now = Date.now();
-        if (!force) {
-            if (this._scopeRefreshInFlight) {
-                return;
-            }
-            if (this._lastScopeRefreshAt > 0 && (now - this._lastScopeRefreshAt) < this.scopeRefreshIntervalMs) {
-                return;
-            }
-        }
-
-        this._scopeRefreshInFlight = true;
-        const scopesUrl = this.__normalizeApiUrl('api/v1/scopes');
-        fetch(`${scopesUrl}?all=1`)
-            .then(r => r.json())
-            .then(result => {
-                if (!(result && result.status === 'OK')) return;
-
-                const loadedScopes = {};
-
-                if (result.map && typeof result.map === 'object') {
-                    Object.entries(result.map).forEach(([key, value]) => {
-                        const scopeNum = Number.parseInt(key, 10);
-                        if (!Number.isFinite(scopeNum) || scopeNum < 0 || scopeNum > 255) return;
-                        const scopeName = String(value ?? '').trim();
-                        if (!scopeName) return;
-                        loadedScopes[scopeNum] = scopeName;
-                    });
-                } else if (Array.isArray(result.scopes)) {
-                    result.scopes.forEach(scope => {
-                        const scopeNum = Number.parseInt(scope?.number, 10);
-                        if (!Number.isFinite(scopeNum) || scopeNum < 0 || scopeNum > 255) return;
-                        const scopeName = String(scope?.name ?? '').trim();
-                        if (!scopeName) return;
-                        loadedScopes[scopeNum] = scopeName;
-                    });
-                }
-
-                this.scopes = loadedScopes;
-                this.refreshScopeBadges();
-                console.log(`${Object.keys(this.scopes).length} scopes loaded`);
-            })
-            .catch(err => {
-                console.log('Note: scopes API not available or no scopes defined', err);
-            })
-            .finally(() => {
-                this._lastScopeRefreshAt = Date.now();
-                this._scopeRefreshInFlight = false;
-            });
-    }
-
     resolveScopeName(scope) {
         const scopeNum = Number.parseInt(scope, 10);
         if (!Number.isFinite(scopeNum) || scopeNum < 0 || scopeNum > 255) {
@@ -7626,84 +7440,6 @@ class MeshLog {
         if (!Array.isArray(groups) || groups.length > 0) {
             this.onLoadChannels();
         }
-    }
-
-    loadReporters(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/reporters', data => {
-            const sz = this.__loadObjects(this.reporters, data, MeshLogObject, false);
-            console.log(`${sz} reporters loaded`);
-            if (onload) onload();
-        });
-    }
-
-    loadContacts(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/contacts', data => {
-            const sz = this.__loadObjects(this.contacts, data, MeshLogContact, false);
-            console.log(`${sz} contacts loaded`);
-            if (onload) onload();
-        });
-    }
-
-    loadAdvertisements(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/advertisements', data => {
-            const sz = this.__loadObjects(this.advertisements, data, MeshLogAdvertisement);
-            console.log(`${sz} advertisements loaded`);
-            if (onload) onload();
-        });
-    }
-
-    loadChannels(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/channels', data => {
-            const sz = this.__loadObjects(this.channels, data, MeshLogObject, false);
-            console.log(`${sz} channels loaded`);
-            if (onload) onload();
-        });
-    }
-
-    loadChannelMessages(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/channel_messages', data => {
-            const sz = this.__loadObjects(this.channel_messages, data, MeshLogChannelMessage);
-            console.log(`${sz} channels messages loaded`);
-            if (onload) onload();
-        });
-    }
-
-    loadDirectMessages(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/direct_messages', data => {
-            const sz = this.__loadObjects(this.direct_messages, data, MeshLogDirectMessage);
-            console.log(`${sz} direct messages loaded`);
-            if (onload) onload();
-        });
-    }
-
-    loadTelemetry(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/telemetry', data => {
-            const sz = this.__loadObjects(this.messages, data, MeshLogTelemetryMessage);
-            this.__markOptionalFeedHistoryLoaded('telemetry');
-            this.onLoadMessages(sz);
-            console.log(`${sz} telemetry packets loaded`);
-            if (onload) onload();
-        });
-    }
-
-    loadSystemReports(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/system_reports', data => {
-            const sz = this.__loadObjects(this.messages, data, MeshLogSystemReportMessage);
-            this.__markOptionalFeedHistoryLoaded('system');
-            this.onLoadMessages(sz);
-            console.log(`${sz} system reports loaded`);
-            if (onload) onload();
-        });
-    }
-
-    loadRawPackets(params={}, onload=null) {
-        this.__fetchQuery(params, 'api/v1/raw_packets', data => {
-            const sz = this.__loadObjects(this.messages, data, MeshLogRawPacket);
-            this.__markOptionalFeedHistoryLoaded('raw');
-            this.onLoadMessages(sz);
-            console.log(`${sz} raw packets loaded`);
-            if (onload) onload();
-        });
     }
 
     fadeMarkers(opacity=0.2) {
@@ -8222,14 +7958,15 @@ class MeshLog {
     }
 
     refresh() {
-        clearTimeout(this.timer);
-        const self = this;
-        this.loadNew((data) => {
-            this.__applyLiveNotifications();
-
-            self.syncLiveMapEntities();
-        });
-        this.setAutorefresh(this.interval);
+        if (!this.liveStreamRequested) {
+            return;
+        }
+        if (typeof WebSocket !== 'function') {
+            return;
+        }
+        if (!this.liveStream || this.liveStream.readyState !== WebSocket.OPEN) {
+            this.__restartLiveStream();
+        }
     }
 
     setAutorefresh(interval) {

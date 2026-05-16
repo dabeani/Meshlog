@@ -226,6 +226,94 @@ function meshlogFetchLiveBatch(&$meshlog, $config, $sinceMs, array $types, $limi
     }
 }
 
+function meshlogNormalizeWindowHours($value, $default = 24) {
+    $hours = intval($value);
+    if (!in_array($hours, array(1, 24, 36), true)) {
+        return intval($default);
+    }
+    return $hours;
+}
+
+function meshlogResolveQueryAction(&$meshlog, $config, $action, array $params) {
+    if (!$meshlog instanceof MeshLog) {
+        $meshlog = meshlogCreateInstance($config);
+    }
+
+    $queryAction = strtolower(trim(strval($action ?? '')));
+    $queryParams = is_array($params) ? $params : array();
+
+    $executeAction = function ($meshlogInstance) use ($queryAction, $queryParams) {
+        switch ($queryAction) {
+            case 'stats': {
+                $windowHours = meshlogNormalizeWindowHours($queryParams['window_hours'] ?? 24, 24);
+                return $meshlogInstance->getGeneralAdvertisementStats($windowHours);
+            }
+
+            case 'stats_heatmap': {
+                $windowHours = meshlogNormalizeWindowHours($queryParams['window_hours'] ?? 24, 24);
+                return $meshlogInstance->getHeatmapData($windowHours);
+            }
+
+            case 'coverage': {
+                $windowHours = intval($queryParams['window_hours'] ?? 168);
+                if ($windowHours <= 0 || $windowHours > 8760) {
+                    $windowHours = 168;
+                }
+
+                $precision = intval($queryParams['precision'] ?? 3);
+                if ($precision < 1 || $precision > 6) {
+                    $precision = 3;
+                }
+
+                return $meshlogInstance->getCoverageSpots($windowHours, $precision);
+            }
+
+            case 'contact_stats': {
+                $contactId = intval($queryParams['contact_id'] ?? 0);
+                if ($contactId <= 0) {
+                    return array('error' => 'contact_id is required');
+                }
+
+                $windowHours = meshlogNormalizeWindowHours($queryParams['window_hours'] ?? 24, 24);
+                return $meshlogInstance->getContactPacketStats($contactId, $windowHours);
+            }
+
+            case 'contact_health': {
+                $contactId = intval($queryParams['contact_id'] ?? 0);
+                if ($contactId <= 0) {
+                    return array('error' => 'contact_id is required');
+                }
+
+                $limit = intval($queryParams['limit'] ?? 48);
+                if ($limit < 1 || $limit > 200) {
+                    $limit = 48;
+                }
+
+                return $meshlogInstance->getContactHealthTimeline($contactId, $limit);
+            }
+
+            case 'contact_advertisements': {
+                $contactId = intval($queryParams['contact_id'] ?? 0);
+                if ($contactId <= 0) {
+                    return array('error' => 'contact_id is required');
+                }
+
+                return $meshlogInstance->getContactAdvertisementsWithCoordinates($contactId);
+            }
+        }
+
+        return array('error' => 'Unsupported query action');
+    };
+
+    try {
+        return $executeAction($meshlog);
+    } catch (Throwable $e) {
+        meshlogWsLog('WARN', 'WebSocket query action failed, recreating MeshLog instance: ' . $e->getMessage());
+        $meshlog = meshlogCreateInstance($config);
+        return $executeAction($meshlog);
+    }
+}
+
 function meshlogReadScopesMap($meshlog) {
     $map = array();
     $scopes = MeshLogScope::getAll($meshlog);
@@ -715,6 +803,38 @@ while (true) {
                             meshlogCloseClient($clients, $clientId, 1001, 'pong json failed');
                             continue 2;
                         }
+                        $clients[$clientId]['last_pong_at'] = microtime(true);
+                        continue;
+                    }
+
+                    if (strtolower(strval($decoded['type'] ?? '')) === 'query') {
+                        $requestId = trim(strval($decoded['request_id'] ?? ''));
+                        if ($requestId === '') {
+                            continue;
+                        }
+
+                        $action = strtolower(trim(strval($decoded['action'] ?? '')));
+                        $params = is_array($decoded['params'] ?? null) ? $decoded['params'] : array();
+
+                        $response = array(
+                            'type' => 'query_result',
+                            'request_id' => substr($requestId, 0, 128),
+                            'action' => $action,
+                            'timestamp_ms' => intval(round(microtime(true) * 1000)),
+                        );
+
+                        try {
+                            $response['data'] = meshlogResolveQueryAction($meshlog, $config, $action, $params);
+                        } catch (Throwable $e) {
+                            $response['error'] = 'Query action failed';
+                            meshlogWsLog('WARN', sprintf('WebSocket query failed for client %d action=%s error=%s', $clientId, $action, $e->getMessage()));
+                        }
+
+                        if (!meshlogSendJsonFrame($socket, $response)) {
+                            meshlogCloseClient($clients, $clientId, 1001, 'query response failed');
+                            continue 2;
+                        }
+
                         $clients[$clientId]['last_pong_at'] = microtime(true);
                     }
                 }
