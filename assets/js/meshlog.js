@@ -7448,11 +7448,19 @@ class MeshLog {
 
         const linkOutlineColor = '#0d0d0d';
         const linkStrokeColor  = '#fff';
+        const isRoutePathAllowed = (path) => {
+            const reporterId = path?.reporter?.data?.id;
+            const reporterNum = Number(reporterId);
+            if (!Number.isFinite(reporterNum) || reporterNum <= 0) {
+                return true;
+            }
+            return this.isReporterAllowed(reporterId);
+        };
 
         Object.entries(this.layer_descs).forEach(([k,desc]) => {
             const animatedRoute = !!desc.animated;
             const allowedPaths = Array.isArray(desc.paths)
-                ? desc.paths.filter((path) => this.isReporterAllowed(path?.reporter?.data?.id))
+                ? desc.paths.filter((path) => isRoutePathAllowed(path))
                 : [];
             if (allowedPaths.length < 1) {
                 return;
