@@ -3266,7 +3266,15 @@ class MeshLog {
         this.liveStreamReconnectTimer = null;
         this.liveStreamRequested = false;
         this.liveStreamReconnectDelayMs = 1000;
+        this.liveStreamReconnectAttempt = 0;
+        this.liveStreamReconnectMaxDelayMs = 30000;
+        this.liveStreamReconnectJitterMs = 500;
         this.liveStreamMaxDurationSec = 25;
+        this.liveStreamKeepAliveIntervalMs = 25000;
+        this.liveStreamKeepAliveTimeoutMs = 75000;
+        this.liveStreamKeepAliveTimer = null;
+        this.liveStreamPongWatchdogTimer = null;
+        this.liveStreamLastPongAt = 0;
         this.liveForceBootstrap = false;
         this.liveBootstrapState = null;
         this.initialLiveCursorMs = Date.now();
@@ -3283,10 +3291,16 @@ class MeshLog {
             self.clearNotifications();
         };
 
-         
-         window.onblur = function () {
+        window.onblur = function () {
             self.window_active = false;
-         };
+        };
+
+        window.addEventListener('online', () => {
+            if (!this.liveStreamRequested) return;
+            if (this.liveStream) return;
+            this.liveStreamReconnectAttempt = 0;
+            this.__restartLiveStream();
+        });
 
         this.dom_settings_types = document.getElementById(stypesid);
         this.dom_settings_reporters = document.getElementById(sreportersid);
@@ -6729,10 +6743,81 @@ class MeshLog {
         if (!this.liveStreamRequested) return;
         if (this.liveStreamReconnectTimer) return;
 
+        const delayMs = this.__nextLiveStreamReconnectDelayMs();
+
         this.liveStreamReconnectTimer = window.setTimeout(() => {
             this.liveStreamReconnectTimer = null;
             this.__restartLiveStream();
-        }, this.liveStreamReconnectDelayMs);
+        }, delayMs);
+    }
+
+    __nextLiveStreamReconnectDelayMs() {
+        const attempt = Math.max(0, Number(this.liveStreamReconnectAttempt) || 0);
+        const baseDelay = Math.max(250, Number(this.liveStreamReconnectDelayMs) || 1000);
+        const maxDelay = Math.max(baseDelay, Number(this.liveStreamReconnectMaxDelayMs) || 30000);
+        const jitter = Math.max(0, Number(this.liveStreamReconnectJitterMs) || 0);
+
+        const expDelay = Math.min(maxDelay, baseDelay * (2 ** Math.min(attempt, 8)));
+        const jitterDelay = jitter > 0 ? Math.floor(Math.random() * (jitter + 1)) : 0;
+        this.liveStreamReconnectAttempt = attempt + 1;
+
+        return expDelay + jitterDelay;
+    }
+
+    __markLiveStreamHeartbeat() {
+        this.liveStreamLastPongAt = Date.now();
+    }
+
+    __clearLiveStreamKeepAlive() {
+        if (this.liveStreamKeepAliveTimer) {
+            clearInterval(this.liveStreamKeepAliveTimer);
+            this.liveStreamKeepAliveTimer = null;
+        }
+        if (this.liveStreamPongWatchdogTimer) {
+            clearInterval(this.liveStreamPongWatchdogTimer);
+            this.liveStreamPongWatchdogTimer = null;
+        }
+    }
+
+    __startLiveStreamKeepAlive(stream) {
+        this.__clearLiveStreamKeepAlive();
+        this.__markLiveStreamHeartbeat();
+
+        const heartbeat = () => {
+            if (this.liveStream !== stream) return;
+            if (stream.readyState !== WebSocket.OPEN) return;
+
+            const idleMs = Date.now() - this.liveStreamLastPongAt;
+            if (idleMs > this.liveStreamKeepAliveTimeoutMs) {
+                stream.close();
+                return;
+            }
+
+            try {
+                stream.send(JSON.stringify({
+                    type: 'ping',
+                    timestamp_ms: Date.now(),
+                }));
+            } catch (_error) {
+                stream.close();
+            }
+        };
+
+        const watchdog = () => {
+            if (this.liveStream !== stream) return;
+            if (stream.readyState !== WebSocket.OPEN) return;
+
+            const idleMs = Date.now() - this.liveStreamLastPongAt;
+            if (idleMs > this.liveStreamKeepAliveTimeoutMs) {
+                stream.close();
+            }
+        };
+
+        this.liveStreamKeepAliveTimer = window.setInterval(heartbeat, this.liveStreamKeepAliveIntervalMs);
+        this.liveStreamPongWatchdogTimer = window.setInterval(
+            watchdog,
+            Math.max(1000, Math.floor(this.liveStreamKeepAliveIntervalMs / 2))
+        );
     }
 
     __stopLiveStream() {
@@ -6740,6 +6825,8 @@ class MeshLog {
             clearTimeout(this.liveStreamReconnectTimer);
             this.liveStreamReconnectTimer = null;
         }
+
+        this.__clearLiveStreamKeepAlive();
 
         if (this.liveStream) {
             this.liveStream.close();
@@ -6775,11 +6862,23 @@ class MeshLog {
         }
         this.liveStream = stream;
 
+        stream.addEventListener('open', () => {
+            if (this.liveStream !== stream) return;
+            this.liveStreamReconnectAttempt = 0;
+            this.__startLiveStreamKeepAlive(stream);
+            this.__markLiveStreamHeartbeat();
+        });
+
         stream.addEventListener('message', (event) => {
             if (this.liveStream !== stream) return;
 
+            this.__markLiveStreamHeartbeat();
+
             try {
                 const payload = JSON.parse(event.data);
+                if (String(payload?.type ?? '').toLowerCase() === 'pong') {
+                    return;
+                }
                 this.__handleLiveStreamPayload(payload);
             } catch (error) {
                 console.error('live websocket payload parse failed', error);
@@ -6788,12 +6887,14 @@ class MeshLog {
 
         stream.addEventListener('close', () => {
             if (this.liveStream !== stream) return;
+            this.__clearLiveStreamKeepAlive();
             this.liveStream = null;
             this.__scheduleLiveStreamReconnect();
         });
 
         stream.addEventListener('error', () => {
             if (this.liveStream !== stream) return;
+            this.__clearLiveStreamKeepAlive();
             stream.close();
         });
     }

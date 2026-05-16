@@ -6,6 +6,7 @@ require_once __DIR__ . '/../api/v1/live/helpers.php';
 const MESHLOG_WS_BIND = 'tcp://0.0.0.0:8081';
 const MESHLOG_WS_QUERY_INTERVAL_SEC = 1.0;
 const MESHLOG_WS_PING_INTERVAL_SEC = 20.0;
+const MESHLOG_WS_CLIENT_PONG_TIMEOUT_SEC = 75.0;
 const MESHLOG_WS_METADATA_INTERVAL_SEC = 120.0;
 const MESHLOG_WS_MAX_LIMIT = 500;
 const MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT = 500;
@@ -568,6 +569,7 @@ while (true) {
                 'chunk_size' => MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT,
                 'last_query_at' => 0.0,
                 'last_ping_at' => microtime(true),
+                'last_pong_at' => microtime(true),
                 'last_metadata_version' => 0,
                 'sent_packet_signatures' => array(),
                 'sent_packet_order' => array(),
@@ -589,6 +591,8 @@ while (true) {
         if ($chunk === '') {
             continue;
         }
+
+        $clients[$clientId]['last_pong_at'] = microtime(true);
 
         $clients[$clientId]['buffer'] .= $chunk;
 
@@ -684,10 +688,34 @@ while (true) {
                     meshlogCloseClient($clients, $clientId, 1000, 'closed');
                     continue 2;
                 }
+                if ($opcode === 0xA) {
+                    $clients[$clientId]['last_pong_at'] = microtime(true);
+                    continue;
+                }
                 if ($opcode === 0x9) {
                     if (!meshlogSendFrame($socket, $frame['payload'], 0xA)) {
                         meshlogCloseClient($clients, $clientId, 1001, 'pong failed');
                         continue 2;
+                    }
+                    $clients[$clientId]['last_pong_at'] = microtime(true);
+                    continue;
+                }
+                if ($opcode === 0x1) {
+                    $payload = trim(strval($frame['payload'] ?? ''));
+                    if ($payload === '') continue;
+
+                    $decoded = json_decode($payload, true);
+                    if (!is_array($decoded)) continue;
+
+                    if (strtolower(strval($decoded['type'] ?? '')) === 'ping') {
+                        if (!meshlogSendJsonFrame($socket, array(
+                            'type' => 'pong',
+                            'timestamp_ms' => intval(round(microtime(true) * 1000)),
+                        ))) {
+                            meshlogCloseClient($clients, $clientId, 1001, 'pong json failed');
+                            continue 2;
+                        }
+                        $clients[$clientId]['last_pong_at'] = microtime(true);
                     }
                 }
             }
@@ -733,6 +761,11 @@ while (true) {
                 continue;
             }
             $client['last_ping_at'] = $now;
+        }
+
+        if (($now - floatval($client['last_pong_at'] ?? 0.0)) >= MESHLOG_WS_CLIENT_PONG_TIMEOUT_SEC) {
+            meshlogCloseClient($clients, $clientId, 1001, 'pong timeout');
+            continue;
         }
 
         if (($now - $client['last_query_at']) < MESHLOG_WS_QUERY_INTERVAL_SEC) {

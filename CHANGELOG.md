@@ -51,6 +51,9 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **WebSocket metadata traffic reduced to change-only broadcasts** — Metadata snapshots are now refreshed once globally (not once per client), fingerprinted, and sent to each browser only when reporter/contact/channel/scope metadata actually changed.
 - **WebSocket metadata heartbeat interval increased for lower baseline bandwidth** — Idle metadata refresh now runs on a longer cadence to reduce continuous background websocket traffic while preserving eventual consistency.
 - **Feed-type toggle traffic optimized** — WebUI now triggers full bootstrap reloads only when a newly enabled optional type (RAW/TEL/SYS) has no cached history yet; ordinary filter toggles restart the stream without forcing another full bootstrap transfer.
+- **WebSocket keepalive now includes explicit application heartbeat** — WebUI now sends lightweight JSON `ping` heartbeats on active socket sessions and the daemon replies with JSON `pong`, giving the browser a deterministic liveness signal beyond transport-level control frames.
+- **WebSocket reconnect logic now uses exponential backoff with jitter** — Live-feed reconnect scheduling now increases retry delay progressively (with jitter) and resets backoff on successful reconnect, reducing reconnect storms during transient outages.
+- **Server now enforces pong-timeout connection cleanup** — The live daemon now tracks pong/heartbeat activity per client and closes stale connections after a timeout window, improving long-run socket stability and cleanup of half-open sessions.
 
 ### Frontend — New Features
 
