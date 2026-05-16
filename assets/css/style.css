@@ -972,14 +972,6 @@ h2 {
     white-space: nowrap;
 }
 
-.map-search-control {
-    width: 220px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    box-shadow: none;
-}
-
 .map-search-input {
     width: 100%;
     padding: 6px 8px;
@@ -1410,10 +1402,6 @@ h2 {
 }
 
 @media (max-width: 640px) {
-    .map-search-control {
-        width: min(200px, calc(100vw - 28px));
-    }
-
     .map-search-input {
         padding: 8px 11px;
         font-size: 0.78rem;

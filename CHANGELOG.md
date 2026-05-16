@@ -74,6 +74,8 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ### WebUI — Fixes & Improvements
 
+- **Live bootstrap reset no longer crashes on route cleanup** — The WebUI bootstrap reset path now calls the existing route-animation shutdown helper, preventing a runtime `TypeError` that could abort live WebSocket bootstrap before markers and links render.
+- **Dead standalone map-search and polling remnants removed** — Removed the unused standalone map-search control code and stale polling-era state fields from the WebUI runtime, reducing dead branches without changing current menu-search behavior.
 - **Live feed path hops: clickable + tooltip** — Each relay hop hash in the live feed path list is now rendered as a clickable chip. Hovering shows the device name in a black tooltip; clicking focuses the map and opens the device popup.
 - **Live animated routes always foreground** — Live packet animation lines (mouseover or new packet) are now drawn in a dedicated top overlay pane above all device bubbles, so animated routes never disappear behind markers. Static (non-animated) routes remain below markers as before.
 - **Route line highlight color: yellow → cyan** — Route line mouseover highlight changed from yellow (#ffea00/#ffef80) to cyan (#00acc1/#00d9e9) for better color palette fit and reduced visual interference with other UI elements.

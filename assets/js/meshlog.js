@@ -3248,8 +3248,6 @@ class MeshLog {
         this.dom_warning = document.getElementById(warningid);
         this.dom_error = document.getElementById(errorid);
         this.dom_contextmenu = document.getElementById(contextmenuid);
-        this.timer = false;
-        this.autorefresh = 0;
         this.decor = true;
         this._optionalFeedHistoryLoaded = {
             raw: false,
@@ -3263,7 +3261,6 @@ class MeshLog {
         this.liveStreamReconnectAttempt = 0;
         this.liveStreamReconnectMaxDelayMs = 30000;
         this.liveStreamReconnectJitterMs = 500;
-        this.liveStreamMaxDurationSec = 25;
         this.liveStreamKeepAliveIntervalMs = 25000;
         this.liveStreamKeepAliveTimeoutMs = 75000;
         this.liveStreamKeepAliveTimer = null;
@@ -3328,8 +3325,6 @@ class MeshLog {
         this.__init_contact_order();
         this.__init_contact_types();
         this.__init_warnings();
-        // Old search control disabled - search now integrated into unified map menu at top-right
-        // this._initMapSearchControl();
         this._initMapMenuSearch();
 
         this.link_layers.addTo(this.map);
@@ -3372,71 +3367,6 @@ class MeshLog {
         this.map.on('click', () => { this.clearSelection(); this.closeAllMarkerTooltips(true); });
 
         this.last = '2025-01-01 00:00:00';
-    }
-
-    _initMapSearchControl() {
-        // Old standalone search control - kept disabled since search is now integrated into unified menu
-        // This method is preserved for backward compatibility but no longer called
-        const control = L.control({ position: 'topleft' });
-
-        control.onAdd = () => {
-            const root = document.createElement('div');
-            root.className = 'map-search-control leaflet-bar';
-
-            const input = document.createElement('input');
-            input.type = 'search';
-            input.className = 'map-search-input';
-            input.placeholder = 'Search node';
-            input.autocomplete = 'off';
-            input.spellcheck = false;
-
-            const results = document.createElement('div');
-            results.className = 'map-search-results';
-            results.hidden = true;
-
-            root.append(input);
-            root.append(results);
-
-            L.DomEvent.disableClickPropagation(root);
-            L.DomEvent.disableScrollPropagation(root);
-
-            input.addEventListener('input', () => {
-                this._renderMapSearchResults(input.value);
-            });
-
-            input.addEventListener('focus', () => {
-                if (input.value.trim()) {
-                    this._renderMapSearchResults(input.value);
-                }
-            });
-
-            input.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') {
-                    this._hideMapSearchResults();
-                    input.blur();
-                    return;
-                }
-
-                if (event.key !== 'Enter') return;
-                event.preventDefault();
-
-                const items = this._getSearchableContacts(input.value);
-                if (items.length < 1) return;
-                this.previewContact(items[0]);
-                this._hideMapSearchResults();
-            });
-
-            this._mapSearch = {
-                control,
-                root,
-                input,
-                results,
-            };
-
-            return root;
-        };
-
-        control.addTo(this.map);
     }
 
     _initMapMenuSearch() {
@@ -3618,12 +3548,6 @@ class MeshLog {
             });
     }
 
-    _hideMapSearchResults() {
-        if (!this._mapSearch?.results) return;
-        this._mapSearch.results.hidden = true;
-        this._mapSearch.results.innerHTML = '';
-    }
-
     _handlePopupControlPointer(event) {
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
@@ -3745,43 +3669,6 @@ class MeshLog {
         }
     }
 
-    _renderMapSearchResults(query) {
-        if (!this._mapSearch?.results) return;
-
-        const results = this._mapSearch.results;
-        const items = this._getSearchableContacts(query);
-        results.innerHTML = '';
-
-        if (!query.trim() || items.length < 1) {
-            results.hidden = true;
-            return;
-        }
-
-        items.forEach(contact => {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'map-search-result';
-            item.innerHTML = `
-                <span class="map-search-result-name">${contact.adv?.data?.name ?? contact.data?.public_key ?? 'Unknown'}</span>
-                <span class="map-search-result-meta">[${contact.hash}] ${contact.getContactTypeLabel()}</span>
-            `;
-            const activatePreview = (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.previewContact(contact);
-                this._hideMapSearchResults();
-            };
-            item.addEventListener('mousedown', activatePreview);
-            item.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-            });
-            results.append(item);
-        });
-
-        results.hidden = false;
-    }
-
     focusContact(contact) {
         if (!contact?.marker || !contact?.adv) return;
 
@@ -3807,10 +3694,6 @@ class MeshLog {
         this.visible_markers.add(contact.data.id);
         this.fadeMarkers();
         contact.showLabel(true);
-
-        if (this._mapSearch?.input) {
-            this._mapSearch.input.value = contact.adv?.data?.name ?? '';
-        }
     }
 
     previewContact(contact) {
@@ -3841,10 +3724,6 @@ class MeshLog {
         this.map.once('zoomend', openLabel);
         setTimeout(openLabel, 420);
         this.map.flyTo(latLng, targetZoom, { duration: 0.35 });
-
-        if (this._mapSearch?.input) {
-            this._mapSearch.input.value = contact.adv?.data?.name ?? '';
-        }
     }
 
     openContactPopup(contact) {
@@ -6534,7 +6413,7 @@ class MeshLog {
 
     __resetStateForBootstrap() {
         this.clearSelection();
-        this.__stopRouteLineAnimations();
+        this._stopRouteLineAnimations();
         this._cleanupTransientRouteAnimations();
         this.transientRouteAnimations = [];
         this.routeAnimationFrames = [];
@@ -7971,11 +7850,6 @@ class MeshLog {
 
     setAutorefresh(interval) {
         this.new_messages = {};
-        if (this.timer) {
-            clearTimeout(this.timer);
-            this.timer = null;
-        }
-
         if (interval >= 5000) {
             this.interval = interval;
             this.liveStreamRequested = true;
