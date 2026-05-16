@@ -5520,18 +5520,16 @@ class MeshLog {
     }
 
     _initMapPanes() {
-        // Route lines sit between tiles and markers so they're always visible beneath nodes.
+        // Static route lines should stay above uninvolved markers, but below active/highlighted markers.
         const routePane = this.map.createPane(MeshLog.ROUTE_PANE);
-        routePane.style.zIndex = '450';
+        routePane.style.zIndex = '560';
         routePane.style.pointerEvents = 'auto';
 
         const routePointPane = this.map.createPane(MeshLog.ROUTE_POINT_PANE);
         routePointPane.style.zIndex = '610';
         routePointPane.style.pointerEvents = 'auto';
 
-        // Background (non-highlighted) markers sit ABOVE route lines so they stay clickable
-        // even when routes are displayed.  Previously this was 350 (below routes at 500),
-        // which let glow-lines and animation trails intercept click events on markers.
+        // Background (non-highlighted) markers remain below route overlays.
         const backgroundPane = this.map.createPane(MeshLog.MARKER_PANE_BACKGROUND);
         backgroundPane.style.zIndex = '520';
         backgroundPane.style.pointerEvents = 'auto';
