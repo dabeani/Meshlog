@@ -45,7 +45,10 @@ $mapZoom = intval($mapConfig['zoom'] ?? 10);
 <div id="container">
 <div id="leftbar">
     <div id="sidebar-tabs">
-        <button class="sidebar-tab active" data-tab="live">Live</button>
+        <button class="sidebar-tab sidebar-tab-live active" data-tab="live">
+            <span class="sidebar-tab-live-label">Live</span>
+            <span id="live-ws-status-dot" class="live-ws-status-dot is-red" aria-hidden="true" title="WebSocket disconnected"></span>
+        </button>
         <button class="sidebar-tab" data-tab="devices">Devices</button>
         <button class="sidebar-tab" data-tab="stats">Stats</button>
         <button class="sidebar-tab" data-tab="settings">Settings</button>

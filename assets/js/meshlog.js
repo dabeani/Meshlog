@@ -3275,6 +3275,8 @@ class MeshLog {
         this.liveStreamKeepAliveTimer = null;
         this.liveStreamPongWatchdogTimer = null;
         this.liveStreamLastPongAt = 0;
+        this.liveWsActivityPulseTimer = null;
+        this.dom_live_ws_status_dot = document.getElementById('live-ws-status-dot');
         this.liveForceBootstrap = false;
         this.liveBootstrapState = null;
         this.initialLiveCursorMs = Date.now();
@@ -6741,6 +6743,8 @@ class MeshLog {
         if (!this.liveStreamRequested) return;
         if (this.liveStreamReconnectTimer) return;
 
+        this.__setLiveWsStatus('connecting');
+
         const delayMs = this.__nextLiveStreamReconnectDelayMs();
 
         this.liveStreamReconnectTimer = window.setTimeout(() => {
@@ -6764,6 +6768,45 @@ class MeshLog {
 
     __markLiveStreamHeartbeat() {
         this.liveStreamLastPongAt = Date.now();
+    }
+
+    __setLiveWsStatus(state) {
+        if (!this.dom_live_ws_status_dot) return;
+
+        this.dom_live_ws_status_dot.classList.remove('is-red', 'is-yellow', 'is-green');
+
+        if (state === 'connected') {
+            this.dom_live_ws_status_dot.classList.add('is-green');
+            this.dom_live_ws_status_dot.title = 'WebSocket connected';
+            return;
+        }
+
+        if (state === 'connecting') {
+            this.dom_live_ws_status_dot.classList.add('is-yellow');
+            this.dom_live_ws_status_dot.title = 'WebSocket connecting';
+            return;
+        }
+
+        this.dom_live_ws_status_dot.classList.add('is-red');
+        this.dom_live_ws_status_dot.title = 'WebSocket disconnected';
+    }
+
+    __pulseLiveWsActivity() {
+        if (!this.dom_live_ws_status_dot) return;
+
+        this.dom_live_ws_status_dot.classList.remove('is-activity');
+        void this.dom_live_ws_status_dot.offsetWidth;
+        this.dom_live_ws_status_dot.classList.add('is-activity');
+
+        if (this.liveWsActivityPulseTimer) {
+            clearTimeout(this.liveWsActivityPulseTimer);
+        }
+
+        this.liveWsActivityPulseTimer = window.setTimeout(() => {
+            if (!this.dom_live_ws_status_dot) return;
+            this.dom_live_ws_status_dot.classList.remove('is-activity');
+            this.liveWsActivityPulseTimer = null;
+        }, 900);
     }
 
     __clearLiveStreamKeepAlive() {
@@ -6796,6 +6839,7 @@ class MeshLog {
                     type: 'ping',
                     timestamp_ms: Date.now(),
                 }));
+                this.__pulseLiveWsActivity();
             } catch (_error) {
                 stream.close();
             }
@@ -6826,6 +6870,11 @@ class MeshLog {
 
         this.__clearLiveStreamKeepAlive();
 
+        if (this.liveWsActivityPulseTimer) {
+            clearTimeout(this.liveWsActivityPulseTimer);
+            this.liveWsActivityPulseTimer = null;
+        }
+
         if (this.liveStream) {
             this.liveStream.close();
             this.liveStream = null;
@@ -6836,11 +6885,15 @@ class MeshLog {
         this.__stopLiveStream();
 
         if (!this.liveStreamRequested) {
+            this.__setLiveWsStatus('disconnected');
             return;
         }
 
+        this.__setLiveWsStatus('connecting');
+
         if (typeof WebSocket !== 'function') {
             this.showError('This browser does not support the live WebSocket feed.', 5000);
+            this.__setLiveWsStatus('disconnected');
             return;
         }
 
@@ -6855,6 +6908,7 @@ class MeshLog {
         } catch (error) {
             console.error('live websocket creation failed', streamUrl, error);
             this.showError('Live WebSocket connection failed to start.', 5000);
+            this.__setLiveWsStatus('connecting');
             this.__scheduleLiveStreamReconnect();
             return;
         }
@@ -6863,14 +6917,17 @@ class MeshLog {
         stream.addEventListener('open', () => {
             if (this.liveStream !== stream) return;
             this.liveStreamReconnectAttempt = 0;
+             this.__setLiveWsStatus('connected');
             this.__startLiveStreamKeepAlive(stream);
             this.__markLiveStreamHeartbeat();
+            this.__pulseLiveWsActivity();
         });
 
         stream.addEventListener('message', (event) => {
             if (this.liveStream !== stream) return;
 
             this.__markLiveStreamHeartbeat();
+            this.__pulseLiveWsActivity();
 
             try {
                 const payload = JSON.parse(event.data);
@@ -6887,12 +6944,14 @@ class MeshLog {
             if (this.liveStream !== stream) return;
             this.__clearLiveStreamKeepAlive();
             this.liveStream = null;
+            this.__setLiveWsStatus(this.liveStreamRequested ? 'connecting' : 'disconnected');
             this.__scheduleLiveStreamReconnect();
         });
 
         stream.addEventListener('error', () => {
             if (this.liveStream !== stream) return;
             this.__clearLiveStreamKeepAlive();
+            this.__setLiveWsStatus(this.liveStreamRequested ? 'connecting' : 'disconnected');
             stream.close();
         });
     }
@@ -8183,10 +8242,12 @@ class MeshLog {
         if (interval >= 5000) {
             this.interval = interval;
             this.liveStreamRequested = true;
+            this.__setLiveWsStatus('connecting');
             this.__restartLiveStream();
         } else {
             this.interval = 0;
             this.liveStreamRequested = false;
+            this.__setLiveWsStatus('disconnected');
             this.__stopLiveStream();
         }
     }

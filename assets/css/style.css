@@ -394,6 +394,52 @@ h2 {
     border-bottom-color: #4a9eff;
 }
 
+.sidebar-tab-live {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.sidebar-tab-live-label {
+    display: inline-block;
+}
+
+.live-ws-status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+    transition: background-color 0.2s ease;
+}
+
+.live-ws-status-dot.is-red {
+    background-color: #e74c3c;
+}
+
+.live-ws-status-dot.is-yellow {
+    background-color: #f1c40f;
+}
+
+.live-ws-status-dot.is-green {
+    background-color: #2ecc71;
+}
+
+.live-ws-status-dot.is-activity {
+    animation: live-ws-dot-blue-pulse 850ms ease-out 1;
+}
+
+@keyframes live-ws-dot-blue-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(70, 166, 255, 0.85);
+    }
+    100% {
+        box-shadow: 0 0 0 10px rgba(70, 166, 255, 0);
+    }
+}
+
 .sidebar-tab-panel {
     flex: 1;
     overflow-y: auto;

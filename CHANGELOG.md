@@ -55,6 +55,8 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **WebSocket reconnect logic now uses exponential backoff with jitter** — Live-feed reconnect scheduling now increases retry delay progressively (with jitter) and resets backoff on successful reconnect, reducing reconnect storms during transient outages.
 - **Server now enforces pong-timeout connection cleanup** — The live daemon now tracks pong/heartbeat activity per client and closes stale connections after a timeout window, improving long-run socket stability and cleanup of half-open sessions.
 - **Static packet route lines now render above uninvolved pin markers** — The map pane stacking order now draws non-animated packet path overlays above regular (non-active) marker pins while keeping active/highlighted markers at the top.
+- **Live tab now shows WebSocket connection status at a glance** — Added a status dot beside the Live tab label: red when disconnected, yellow while connecting/reconnecting, green once connected.
+- **Live tab status dot now pulses on WebSocket activity** — Incoming/outgoing heartbeat and message traffic trigger a fading blue pulse on the status dot so socket activity is visible in real time.
 
 ### Frontend — New Features
 
