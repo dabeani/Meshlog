@@ -153,121 +153,200 @@ function oldestPacketTimestampMs(array $packets) {
     return $oldest;
 }
 
-function buildLivePacketBatch($meshlog, $sinceMs, $beforeMs, array $types, $limit, $historyMode = false) {
-    $fetchCount = max(1, intval($limit) + 1);
-    $queryWindow = array(
-        'after_ms' => $historyMode ? 0 : intval($sinceMs),
-        'before_ms' => $historyMode ? intval($beforeMs) : 0,
-        'count' => $fetchCount,
-    );
+function buildLivePacketWhereClause($alias, $sinceMs, $beforeMs, &$binds) {
+    $conditions = array();
 
-    $advertisements = $meshlog->getAdvertisementsQuick(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
+    if ($sinceMs > 0) {
+        $conditions[] = "$alias.created_at >= FROM_UNIXTIME(?)";
+        $binds[] = intval(floor($sinceMs / 1000));
+    }
 
-    $messages = $meshlog->getDirectMessagesQuick(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
+    if ($beforeMs > 0) {
+        $conditions[] = "$alias.created_at < FROM_UNIXTIME(?)";
+        $binds[] = intval(floor($beforeMs / 1000));
+    }
 
-    $channelMessages = $meshlog->getChannelMessagesQuick(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
+    if (count($conditions) < 1) {
+        return '';
+    }
 
-    $rawPackets = $meshlog->getRawPackets(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
+    return ' WHERE ' . implode(' AND ', $conditions);
+}
 
-    $telemetry = $meshlog->getTelemetry(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
-
-    $systemReports = $meshlog->getSystemReports(array(
-        'after_ms' => $queryWindow['after_ms'],
-        'before_ms' => $queryWindow['before_ms'],
-        'count' => $queryWindow['count'],
-    ));
-
-    $advertisementRows = extractList($advertisements, 'advertisements');
-    $messageRows = extractList($messages, 'direct_messages');
-    $channelMessageRows = extractList($channelMessages, 'channel_messages');
-    $rawPacketRows = extractList($rawPackets, 'raw_packets');
-    $telemetryRows = extractList($telemetry, 'telemetry');
-    $systemReportRows = extractList($systemReports, 'system_reports');
-
-    $combined = array();
+function buildLivePacketReferenceQuery($sinceMs, $beforeMs, array $types) {
+    $parts = array();
+    $binds = array();
 
     if (in_array('ADV', $types, true)) {
-        foreach ($advertisementRows as $adv) {
-            $packet = $adv;
-            $packet['node_type'] = (string)$packet['type'];
-            $packet['type'] = 'ADV';
-            $combined[] = $packet;
-        }
+        $parts[] = "SELECT 'ADV' AS packet_type, a.id, a.created_at FROM advertisements a" . buildLivePacketWhereClause('a', $sinceMs, $beforeMs, $binds);
     }
 
     if (in_array('MSG', $types, true)) {
-        foreach ($messageRows as $msg) {
-            $packet = $msg;
-            $packet['type'] = 'MSG';
-            $combined[] = $packet;
-        }
+        $parts[] = "SELECT 'MSG' AS packet_type, d.id, d.created_at FROM direct_messages d" . buildLivePacketWhereClause('d', $sinceMs, $beforeMs, $binds);
     }
 
     if (in_array('PUB', $types, true)) {
-        foreach ($channelMessageRows as $cmsg) {
-            $packet = $cmsg;
-            $packet['type'] = 'PUB';
-            $combined[] = $packet;
-        }
+        $parts[] = "SELECT 'PUB' AS packet_type, c.id, c.created_at FROM channel_messages c" . buildLivePacketWhereClause('c', $sinceMs, $beforeMs, $binds);
     }
 
     if (in_array('RAW', $types, true)) {
-        foreach ($rawPacketRows as $raw) {
-            $packet = $raw;
-            $packet['type'] = 'RAW';
-            $combined[] = $packet;
-        }
+        $parts[] = "SELECT 'RAW' AS packet_type, r.id, r.created_at FROM raw_packets r" . buildLivePacketWhereClause('r', $sinceMs, $beforeMs, $binds);
     }
 
     if (in_array('TEL', $types, true)) {
-        foreach ($telemetryRows as $tel) {
-            $packet = $tel;
-            $packet['type'] = 'TEL';
-            $combined[] = $packet;
-        }
+        $parts[] = "SELECT 'TEL' AS packet_type, t.id, t.created_at FROM telemetry t" . buildLivePacketWhereClause('t', $sinceMs, $beforeMs, $binds);
     }
 
     if (in_array('SYS', $types, true)) {
-        foreach ($systemReportRows as $sys) {
-            $packet = $sys;
-            $packet['type'] = 'SYS';
-            $combined[] = $packet;
+        $parts[] = "SELECT 'SYS' AS packet_type, s.id, s.created_at FROM system_reports s" . buildLivePacketWhereClause('s', $sinceMs, $beforeMs, $binds);
+    }
+
+    return array($parts, $binds);
+}
+
+function fetchLivePacketReferences($meshlog, $sinceMs, $beforeMs, array $types, $limit, $offset = 0) {
+    list($parts, $binds) = buildLivePacketReferenceQuery($sinceMs, $beforeMs, $types);
+    if (count($parts) < 1) {
+        return array();
+    }
+
+    $limit = max(1, intval($limit));
+    $offset = max(0, intval($offset));
+    $sql = "
+        SELECT packet_type, id, created_at
+        FROM (
+            " . implode("\nUNION ALL\n", $parts) . "
+        ) live_packets
+        ORDER BY created_at DESC, id DESC, packet_type DESC
+        LIMIT ? OFFSET ?
+    ";
+
+    $stmt = $meshlog->pdo->prepare($sql);
+    $position = 1;
+    foreach ($binds as $bind) {
+        $stmt->bindValue($position++, $bind, PDO::PARAM_INT);
+    }
+    $stmt->bindValue($position++, $limit, PDO::PARAM_INT);
+    $stmt->bindValue($position, $offset, PDO::PARAM_INT);
+    $stmt->execute();
+
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return is_array($rows) ? $rows : array();
+}
+
+function fetchLivePacketsByReferences($meshlog, array $references) {
+    if (count($references) < 1) {
+        return array();
+    }
+
+    $idsByType = array(
+        'ADV' => array(),
+        'MSG' => array(),
+        'PUB' => array(),
+        'RAW' => array(),
+        'TEL' => array(),
+        'SYS' => array(),
+    );
+
+    foreach ($references as $reference) {
+        $type = strtoupper(strval($reference['packet_type'] ?? ''));
+        $id = intval($reference['id'] ?? 0);
+        if ($id <= 0 || !array_key_exists($type, $idsByType)) continue;
+        $idsByType[$type][$id] = $id;
+    }
+
+    $indexed = array();
+    $fetchParams = function($ids) {
+        return array(
+            'offset' => 0,
+            'count' => count($ids),
+            'after_ms' => 0,
+            'before_ms' => 0,
+            'ids' => array_values($ids),
+        );
+    };
+
+    if (count($idsByType['ADV']) > 0) {
+        $rows = extractList($meshlog->getAdvertisementsQuick($fetchParams($idsByType['ADV'])), 'advertisements');
+        foreach ($rows as $row) {
+            $packet = $row;
+            $packet['node_type'] = (string)$packet['type'];
+            $packet['type'] = 'ADV';
+            $indexed['ADV:' . intval($packet['id'] ?? 0)] = $packet;
         }
     }
 
-    $combined = enrichPackets($combined, $meshlog->pdo);
+    if (count($idsByType['MSG']) > 0) {
+        $rows = extractList($meshlog->getDirectMessagesQuick($fetchParams($idsByType['MSG'])), 'direct_messages');
+        foreach ($rows as $row) {
+            $packet = $row;
+            $packet['type'] = 'MSG';
+            $indexed['MSG:' . intval($packet['id'] ?? 0)] = $packet;
+        }
+    }
 
-    usort($combined, function($a, $b) {
-        return (packetTimestampMs($b) ?? 0) <=> (packetTimestampMs($a) ?? 0);
-    });
+    if (count($idsByType['PUB']) > 0) {
+        $rows = extractList($meshlog->getChannelMessagesQuick($fetchParams($idsByType['PUB'])), 'channel_messages');
+        foreach ($rows as $row) {
+            $packet = $row;
+            $packet['type'] = 'PUB';
+            $indexed['PUB:' . intval($packet['id'] ?? 0)] = $packet;
+        }
+    }
 
-    $hasMore = count($combined) > $limit;
-    $packets = array_slice($combined, 0, $limit);
+    if (count($idsByType['RAW']) > 0) {
+        $rows = extractList($meshlog->getRawPackets($fetchParams($idsByType['RAW'])), 'raw_packets');
+        foreach ($rows as $row) {
+            $packet = $row;
+            $packet['type'] = 'RAW';
+            $indexed['RAW:' . intval($packet['id'] ?? 0)] = $packet;
+        }
+    }
+
+    if (count($idsByType['TEL']) > 0) {
+        $rows = extractList($meshlog->getTelemetry($fetchParams($idsByType['TEL'])), 'telemetry');
+        foreach ($rows as $row) {
+            $packet = $row;
+            $packet['type'] = 'TEL';
+            $indexed['TEL:' . intval($packet['id'] ?? 0)] = $packet;
+        }
+    }
+
+    if (count($idsByType['SYS']) > 0) {
+        $rows = extractList($meshlog->getSystemReports($fetchParams($idsByType['SYS'])), 'system_reports');
+        foreach ($rows as $row) {
+            $packet = $row;
+            $packet['type'] = 'SYS';
+            $indexed['SYS:' . intval($packet['id'] ?? 0)] = $packet;
+        }
+    }
+
+    $ordered = array();
+    foreach ($references as $reference) {
+        $key = strtoupper(strval($reference['packet_type'] ?? '')) . ':' . intval($reference['id'] ?? 0);
+        if (!isset($indexed[$key])) continue;
+        $ordered[] = $indexed[$key];
+    }
+
+    return $ordered;
+}
+
+function buildLivePacketBatch($meshlog, $sinceMs, $beforeMs, array $types, $limit, $historyMode = false, $offset = 0) {
+    $fetchCount = max(1, intval($limit) + 1);
+    $querySinceMs = $historyMode ? 0 : intval($sinceMs);
+    $queryBeforeMs = intval($beforeMs);
+    $references = fetchLivePacketReferences($meshlog, $querySinceMs, $queryBeforeMs, $types, $fetchCount, $offset);
+
+    $hasMore = count($references) > $limit;
+    $pageReferences = array_slice($references, 0, $limit);
+    $packets = fetchLivePacketsByReferences($meshlog, $pageReferences);
+    $packets = enrichPackets($packets, $meshlog->pdo);
 
     return array(
         'packets' => $packets,
         'has_more' => $hasMore,
         'oldest_timestamp_ms' => oldestPacketTimestampMs($packets),
         'newest_timestamp_ms' => newestPacketTimestampMs($packets),
+        'returned_count' => count($pageReferences),
     );
 }

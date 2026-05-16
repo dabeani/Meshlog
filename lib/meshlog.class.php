@@ -1707,12 +1707,37 @@ class MeshLog {
     public function getReportedQuick($params, $tklass, $rklass, $extra, $binds) {
         $offset = (int) ($params['offset'] ?? 0);
         $limit = (int) ($params['count'] ?? DEFAULT_COUNT);
+        $ids = $params['ids'] ?? array();
         $where = $this->getTimeFiltersSql($params);
+        $whereClauses = array();
         if (!empty($where[0])) {
-            $extra .= " WHERE " . $where[0];
+            $whereClauses[] = $where[0];
             foreach ($where[1] as $w) {
                 $binds[] = $w;
             }
+        }
+
+        if (is_array($ids) && count($ids) > 0) {
+            $normalizedIds = array();
+            foreach ($ids as $id) {
+                $id = intval($id);
+                if ($id <= 0) continue;
+                $normalizedIds[$id] = $id;
+            }
+
+            if (count($normalizedIds) > 0) {
+                $placeholders = array();
+                foreach (array_values($normalizedIds) as $index => $id) {
+                    $placeholder = ':id_' . $index;
+                    $placeholders[] = $placeholder;
+                    $binds[] = array($placeholder, $id, PDO::PARAM_INT);
+                }
+                $whereClauses[] = "t.id IN (" . implode(',', $placeholders) . ")";
+            }
+        }
+
+        if (count($whereClauses) > 0) {
+            $extra .= " WHERE " . implode(' AND ', $whereClauses);
         }
 
         if ($limit > MAX_COUNT) $limit = MAX_COUNT;

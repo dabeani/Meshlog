@@ -213,17 +213,17 @@ function meshlogCloseClient(&$clients, $clientId, $statusCode = 1000, $reason = 
     unset($clients[$clientId]);
 }
 
-function meshlogFetchLiveBatch(&$meshlog, $config, $sinceMs, array $types, $limit) {
+function meshlogFetchLiveBatch(&$meshlog, $config, $sinceMs, $beforeMs, array $types, $limit, $historyMode = false, $offset = 0) {
     if (!$meshlog instanceof MeshLog) {
         $meshlog = meshlogCreateInstance($config);
     }
 
     try {
-        return buildLivePacketBatch($meshlog, $sinceMs, 0, $types, $limit, false);
+        return buildLivePacketBatch($meshlog, $sinceMs, $beforeMs, $types, $limit, $historyMode, $offset);
     } catch (Throwable $e) {
         meshlogWsLog('WARN', 'Live WebSocket query failed, recreating MeshLog instance: ' . $e->getMessage());
         $meshlog = meshlogCreateInstance($config);
-        return buildLivePacketBatch($meshlog, $sinceMs, 0, $types, $limit, false);
+        return buildLivePacketBatch($meshlog, $sinceMs, $beforeMs, $types, $limit, $historyMode, $offset);
     }
 }
 
@@ -701,6 +701,8 @@ while (true) {
                 'last_query_at' => 0.0,
                 'last_ping_at' => microtime(true),
                 'last_pong_at' => microtime(true),
+                'query_offset' => 0,
+                'query_target_ms' => 0,
                 'last_metadata_version' => 0,
                 'sent_packet_signatures' => array(),
                 'sent_packet_order' => array(),
@@ -755,13 +757,15 @@ while (true) {
                 $clients[$clientId]['handshake'] = true;
                 $clients[$clientId]['bootstrap'] = intval($query['bootstrap'] ?? 0) !== 0;
                 $clients[$clientId]['since_ms'] = max(0, intval($query['since_ms'] ?? 0));
-                $clients[$clientId]['types'] = meshlogNormalizeTypes($query['types'] ?? '');
-                $clients[$clientId]['limit'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['limit'] ?? 100)));
-                $clients[$clientId]['count'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['count'] ?? MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT)));
-                $clients[$clientId]['chunk_size'] = min(
-                    MESHLOG_WS_BOOTSTRAP_CHUNK_MAX,
-                    max(MESHLOG_WS_BOOTSTRAP_CHUNK_MIN, intval($query['chunk_size'] ?? MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT))
-                );
+                 $clients[$clientId]['types'] = meshlogNormalizeTypes($query['types'] ?? '');
+                 $clients[$clientId]['limit'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['limit'] ?? 100)));
+                 $clients[$clientId]['count'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['count'] ?? MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT)));
+                 $clients[$clientId]['query_offset'] = 0;
+                 $clients[$clientId]['query_target_ms'] = 0;
+                 $clients[$clientId]['chunk_size'] = min(
+                     MESHLOG_WS_BOOTSTRAP_CHUNK_MAX,
+                     max(MESHLOG_WS_BOOTSTRAP_CHUNK_MIN, intval($query['chunk_size'] ?? MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT))
+                 );
 
                 if ($clients[$clientId]['bootstrap']) {
                     $bootstrap = meshlogFetchBootstrapSnapshot(
@@ -937,12 +941,25 @@ while (true) {
             $client['last_query_at'] = $now;
 
             try {
-                $fetchLimit = max(intval($client['limit'] ?? 0), MESHLOG_WS_MAX_LIMIT);
-                $result = meshlogFetchLiveBatch($meshlog, $config, $client['since_ms'], $client['types'], $fetchLimit);
+                $fetchLimit = MESHLOG_WS_MAX_LIMIT;
+                $queryOffset = max(0, intval($client['query_offset'] ?? 0));
+                $result = meshlogFetchLiveBatch($meshlog, $config, $client['since_ms'], 0, $client['types'], $fetchLimit, false, $queryOffset);
                 $packets = $result['packets'] ?? array();
+                $returnedCount = max(0, intval($result['returned_count'] ?? count($packets)));
+
+                if ($queryOffset === 0 && count($packets) > 0) {
+                    $client['query_target_ms'] = max(
+                        intval($client['query_target_ms'] ?? 0),
+                        intval($result['newest_timestamp_ms'] ?? $client['since_ms'])
+                    );
+                }
+
                 $packets = meshlogFilterClientDuplicates($client, $packets);
                 if (count($packets) > 0) {
-                    $cursorMs = $result['newest_timestamp_ms'] ?? $client['since_ms'];
+                    $cursorMs = max(
+                        intval($result['newest_timestamp_ms'] ?? $client['since_ms']),
+                        intval($client['query_target_ms'] ?? 0)
+                    );
                     $chunkSize = max(1, intval($client['limit'] ?? MESHLOG_WS_MAX_LIMIT));
                     $packetChunks = array_chunk($packets, $chunkSize);
                     $chunkCount = count($packetChunks);
@@ -962,8 +979,19 @@ while (true) {
                             continue 2;
                         }
                     }
+                }
 
-                    $client['since_ms'] = intval($cursorMs);
+                if (!empty($result['has_more']) && $returnedCount > 0) {
+                    $client['query_offset'] = $queryOffset + $returnedCount;
+                } else {
+                    $finalCursorMs = max(
+                        intval($client['since_ms'] ?? 0),
+                        intval($client['query_target_ms'] ?? 0),
+                        intval($result['newest_timestamp_ms'] ?? 0)
+                    );
+                    $client['since_ms'] = $finalCursorMs;
+                    $client['query_offset'] = 0;
+                    $client['query_target_ms'] = 0;
                 }
             } catch (Throwable $e) {
                 meshlogWsLog('ERROR', sprintf('WebSocket live query failed for client %d: %s', $clientId, $e->getMessage()));
