@@ -937,23 +937,30 @@ while (true) {
             $client['last_query_at'] = $now;
 
             try {
-                $result = meshlogFetchLiveBatch($meshlog, $config, $client['since_ms'], $client['types'], $client['limit']);
+                $fetchLimit = max(intval($client['limit'] ?? 0), MESHLOG_WS_MAX_LIMIT);
+                $result = meshlogFetchLiveBatch($meshlog, $config, $client['since_ms'], $client['types'], $fetchLimit);
                 $packets = $result['packets'] ?? array();
                 $packets = meshlogFilterClientDuplicates($client, $packets);
                 if (count($packets) > 0) {
                     $cursorMs = $result['newest_timestamp_ms'] ?? $client['since_ms'];
-                    $payload = json_encode(array(
-                        'packets' => $packets,
-                        'timestamp_ms' => $cursorMs,
-                        'count' => count($packets),
-                        'has_more' => $result['has_more'] ?? false,
-                        'oldest_timestamp_ms' => $result['oldest_timestamp_ms'] ?? null,
-                    ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $chunkSize = max(1, intval($client['limit'] ?? MESHLOG_WS_MAX_LIMIT));
+                    $packetChunks = array_chunk($packets, $chunkSize);
+                    $chunkCount = count($packetChunks);
 
-                    if ($payload === false || !meshlogSendFrame($socket, $payload, 0x1)) {
-                        meshlogCloseClient($clients, $clientId, 1001, 'send failed');
-                        unset($client);
-                        continue;
+                    foreach ($packetChunks as $chunkIndex => $packetChunk) {
+                        $payload = json_encode(array(
+                            'packets' => $packetChunk,
+                            'timestamp_ms' => newestPacketTimestampMs($packetChunk) ?? $cursorMs,
+                            'count' => count($packetChunk),
+                            'has_more' => ($chunkIndex + 1) < $chunkCount || ($result['has_more'] ?? false),
+                            'oldest_timestamp_ms' => oldestPacketTimestampMs($packetChunk),
+                        ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+                        if ($payload === false || !meshlogSendFrame($socket, $payload, 0x1)) {
+                            meshlogCloseClient($clients, $clientId, 1001, 'send failed');
+                            unset($client);
+                            continue 2;
+                        }
                     }
 
                     $client['since_ms'] = intval($cursorMs);
