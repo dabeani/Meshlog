@@ -48,6 +48,9 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 - **Optional feed history now reloads via WebSocket bootstrap, not REST fallbacks** — When live-feed type filters change, the WebUI requests a WebSocket bootstrap refresh and no longer backfills RAW/TEL/SYS through separate REST requests.
 - **WebSocket bootstrap is now sliced into bounded frames** — Initial WebUI bootstrap delivery now uses `bootstrap_start` + `bootstrap_slice` + `bootstrap_done` messages with configurable chunk sizing, replacing the previous single large bootstrap frame and reducing large-payload risk on slower browsers/networks.
 - **WebSocket live packet delivery now suppresses duplicate frames per client** — The live daemon now keeps a bounded per-client packet-signature cache and skips re-sending unchanged packet rows, preventing repeated duplicate delivery around reconnects and inclusive timestamp boundaries.
+- **WebSocket metadata traffic reduced to change-only broadcasts** — Metadata snapshots are now refreshed once globally (not once per client), fingerprinted, and sent to each browser only when reporter/contact/channel/scope metadata actually changed.
+- **WebSocket metadata heartbeat interval increased for lower baseline bandwidth** — Idle metadata refresh now runs on a longer cadence to reduce continuous background websocket traffic while preserving eventual consistency.
+- **Feed-type toggle traffic optimized** — WebUI now triggers full bootstrap reloads only when a newly enabled optional type (RAW/TEL/SYS) has no cached history yet; ordinary filter toggles restart the stream without forcing another full bootstrap transfer.
 
 ### Frontend — New Features
 

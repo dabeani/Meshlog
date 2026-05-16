@@ -6,7 +6,7 @@ require_once __DIR__ . '/../api/v1/live/helpers.php';
 const MESHLOG_WS_BIND = 'tcp://0.0.0.0:8081';
 const MESHLOG_WS_QUERY_INTERVAL_SEC = 1.0;
 const MESHLOG_WS_PING_INTERVAL_SEC = 20.0;
-const MESHLOG_WS_METADATA_INTERVAL_SEC = 30.0;
+const MESHLOG_WS_METADATA_INTERVAL_SEC = 120.0;
 const MESHLOG_WS_MAX_LIMIT = 500;
 const MESHLOG_WS_BOOTSTRAP_DEFAULT_COUNT = 500;
 const MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT = 120;
@@ -275,6 +275,56 @@ function meshlogFetchMetadataSnapshot(&$meshlog, $config, $count = MESHLOG_WS_ME
     );
 }
 
+function meshlogNormalizeMetadataRows($rows, array $keys) {
+    $normalized = array();
+    foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+        $item = array();
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $row)) {
+                $item[$key] = $row[$key];
+            }
+        }
+        if (count($item) > 0) {
+            $normalized[] = $item;
+        }
+    }
+    usort($normalized, function ($a, $b) {
+        return intval($a['id'] ?? 0) <=> intval($b['id'] ?? 0);
+    });
+    return $normalized;
+}
+
+function meshlogMetadataFingerprintFromPayload(array $payload) {
+    $reporters = meshlogNormalizeMetadataRows(
+        extractList($payload['reporters'] ?? array(), 'reporters'),
+        array('id', 'public_key', 'name', 'authorized', 'pending')
+    );
+    $contacts = meshlogNormalizeMetadataRows(
+        extractList($payload['contacts'] ?? array(), 'contacts'),
+        array('id', 'public_key', 'name', 'type', 'hidden', 'enabled')
+    );
+    $channels = meshlogNormalizeMetadataRows(
+        extractList($payload['channels'] ?? array(), 'channels'),
+        array('id', 'hash', 'name', 'enabled')
+    );
+
+    $scopesMap = $payload['scopes_map'] ?? array();
+    if (!is_array($scopesMap)) {
+        $scopesMap = array();
+    }
+    ksort($scopesMap);
+
+    $fingerprintData = array(
+        'reporters' => $reporters,
+        'contacts' => $contacts,
+        'channels' => $channels,
+        'scopes_map' => $scopesMap,
+    );
+
+    return sha1(json_encode($fingerprintData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
 function meshlogFetchBootstrapSnapshot(&$meshlog, $config, array $types, $count) {
     if (!$meshlog instanceof MeshLog) {
         $meshlog = meshlogCreateInstance($config);
@@ -469,6 +519,13 @@ function meshlogSendBootstrapSlices($socket, array $bootstrap, $bootstrapId, $ch
 $config = meshlogLoadConfig(__DIR__);
 $meshlog = null;
 
+$metadataCache = array(
+    'last_refresh_at' => 0.0,
+    'fingerprint' => '',
+    'version' => 0,
+    'payload' => null,
+);
+
 $server = @stream_socket_server(MESHLOG_WS_BIND, $errno, $errstr);
 if (!$server) {
     meshlogWsLog('ERROR', sprintf('Unable to bind WebSocket server on %s: %s (%d)', MESHLOG_WS_BIND, $errstr, $errno));
@@ -511,7 +568,7 @@ while (true) {
                 'chunk_size' => MESHLOG_WS_BOOTSTRAP_CHUNK_DEFAULT,
                 'last_query_at' => 0.0,
                 'last_ping_at' => microtime(true),
-                'last_metadata_at' => 0.0,
+                'last_metadata_version' => 0,
                 'sent_packet_signatures' => array(),
                 'sent_packet_order' => array(),
             );
@@ -594,7 +651,11 @@ while (true) {
                         $clients[$clientId]['since_ms'],
                         max(0, intval($bootstrap['timestamp_ms'] ?? 0))
                     );
-                    $clients[$clientId]['last_metadata_at'] = microtime(true);
+
+                    $bootstrapFingerprint = meshlogMetadataFingerprintFromPayload($bootstrap);
+                    if ($bootstrapFingerprint === ($metadataCache['fingerprint'] ?? '')) {
+                        $clients[$clientId]['last_metadata_version'] = intval($metadataCache['version'] ?? 0);
+                    }
                 }
 
                 meshlogWsLog('INFO', sprintf(
@@ -637,6 +698,23 @@ while (true) {
     }
 
     $now = microtime(true);
+
+    if (($now - floatval($metadataCache['last_refresh_at'] ?? 0.0)) >= MESHLOG_WS_METADATA_INTERVAL_SEC) {
+        try {
+            $snapshot = meshlogFetchMetadataSnapshot($meshlog, $config);
+            $fingerprint = meshlogMetadataFingerprintFromPayload($snapshot);
+            if ($fingerprint !== ($metadataCache['fingerprint'] ?? '')) {
+                $metadataCache['payload'] = $snapshot;
+                $metadataCache['fingerprint'] = $fingerprint;
+                $metadataCache['version'] = intval($metadataCache['version'] ?? 0) + 1;
+            }
+            $metadataCache['last_refresh_at'] = $now;
+        } catch (Throwable $e) {
+            meshlogWsLog('WARN', 'WebSocket metadata refresh failed: ' . $e->getMessage());
+            $metadataCache['last_refresh_at'] = $now;
+        }
+    }
+
     foreach (array_keys($clients) as $clientId) {
         if (!isset($clients[$clientId]) || !$clients[$clientId]['handshake']) {
             continue;
@@ -692,22 +770,15 @@ while (true) {
             }
         }
 
-        if (($now - ($client['last_metadata_at'] ?? 0.0)) >= MESHLOG_WS_METADATA_INTERVAL_SEC) {
-            try {
-                $metadata = meshlogFetchMetadataSnapshot($meshlog, $config);
-                $metadataPayload = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-                if ($metadataPayload === false || !meshlogSendFrame($socket, $metadataPayload, 0x1)) {
-                    meshlogCloseClient($clients, $clientId, 1001, 'metadata send failed');
-                    unset($client);
-                    continue;
-                }
-                $client['last_metadata_at'] = $now;
-            } catch (Throwable $e) {
-                meshlogWsLog('ERROR', sprintf('WebSocket metadata query failed for client %d: %s', $clientId, $e->getMessage()));
-                meshlogCloseClient($clients, $clientId, 1011, 'metadata failed');
+        $metadataVersion = intval($metadataCache['version'] ?? 0);
+        if ($metadataVersion > intval($client['last_metadata_version'] ?? 0) && is_array($metadataCache['payload'])) {
+            $metadataPayload = json_encode($metadataCache['payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($metadataPayload === false || !meshlogSendFrame($socket, $metadataPayload, 0x1)) {
+                meshlogCloseClient($clients, $clientId, 1001, 'metadata send failed');
                 unset($client);
                 continue;
             }
+            $client['last_metadata_version'] = $metadataVersion;
         }
 
         unset($client);

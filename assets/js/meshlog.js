@@ -5849,7 +5849,13 @@ class MeshLog {
     }
 
     __onTypesChanged() {
-        this.liveForceBootstrap = true;
+        const needsBootstrap = (
+            (this.__isOptionalFeedTypeEnabled('raw') && !this._optionalFeedHistoryLoaded.raw) ||
+            (this.__isOptionalFeedTypeEnabled('telemetry') && !this._optionalFeedHistoryLoaded.telemetry) ||
+            (this.__isOptionalFeedTypeEnabled('system') && !this._optionalFeedHistoryLoaded.system)
+        );
+
+        this.liveForceBootstrap = needsBootstrap;
         this.__restartLiveStream();
         this.updateMessagesDom();
         this.updateMarkersForFilter();
