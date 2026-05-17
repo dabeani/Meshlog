@@ -5,7 +5,7 @@
 /test.txt
 /debug.txt
 /iOS-APP-GUIDE.md
-
+/Package.swift
 
 # macOS / Xcode local state
 **/.DS_Store
