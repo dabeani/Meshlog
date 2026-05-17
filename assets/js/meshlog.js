@@ -6621,10 +6621,54 @@ class MeshLog {
         return true;
     }
 
+    _applyLiveChannelsDelta(data) {
+        if (data?.error) {
+            this.showError(data.error, 4000);
+            return false;
+        }
+
+        const upserts = Array.isArray(data?.objects) ? data.objects : [];
+        const removedIds = Array.isArray(data?.removed_ids) ? data.removed_ids : [];
+
+        for (let i = 0; i < upserts.length; i++) {
+            const row = upserts[i];
+            const key = `${row.id}`;
+            const incoming = new MeshLogChannel(this, row);
+            if (this.channels.hasOwnProperty(key)) {
+                this.channels[key].merge(incoming.data);
+            } else {
+                this.channels[key] = incoming;
+            }
+        }
+
+        for (let i = 0; i < removedIds.length; i++) {
+            const key = `${Number(removedIds[i])}`;
+            const channel = this.channels[key] ?? null;
+            const cb = channel?.dom?.cb ?? null;
+            if (cb?.parentNode) {
+                cb.parentNode.removeChild(cb);
+            }
+            delete this.channels[key];
+        }
+
+        if (upserts.length > 0 || removedIds.length > 0) {
+            this.onLoadChannels();
+        }
+
+        return upserts.length > 0 || removedIds.length > 0;
+    }
+
     __applyLiveMetadataPayload(payload) {
-        this._syncLiveReporters(payload.reporters ?? {objects: []});
-        this._syncLiveContacts(payload.contacts ?? {objects: []});
-        this._syncLiveChannels(payload.channels ?? {objects: []});
+        const mode = String(payload?.mode ?? 'full').toLowerCase();
+        if (mode === 'delta') {
+            this._applyLiveReportersDelta(payload.reporters ?? {});
+            this._applyLiveContactsDelta(payload.contacts ?? {});
+            this._applyLiveChannelsDelta(payload.channels ?? {});
+        } else {
+            this._syncLiveReporters(payload.reporters ?? {objects: []});
+            this._syncLiveContacts(payload.contacts ?? {objects: []});
+            this._syncLiveChannels(payload.channels ?? {objects: []});
+        }
         this.__applyScopesMap(payload.scopes_map ?? {});
     }
 
@@ -7173,6 +7217,57 @@ class MeshLog {
         return true;
     }
 
+    _applyLiveContactsDelta(data) {
+        if (data?.error) {
+            this.showError(data.error, 4000);
+            return false;
+        }
+
+        const upserts = Array.isArray(data?.objects) ? data.objects : [];
+        const removedIds = Array.isArray(data?.removed_ids) ? data.removed_ids : [];
+        const touchedContacts = [];
+
+        for (let i = 0; i < upserts.length; i++) {
+            const row = upserts[i];
+            const key = `${row.id}`;
+            const incoming = new MeshLogContact(this, row);
+            if (this.contacts.hasOwnProperty(key)) {
+                this._mergeLiveContactSnapshot(this.contacts[key], incoming);
+                touchedContacts.push(this.contacts[key]);
+            } else {
+                this.contacts[key] = incoming;
+                touchedContacts.push(incoming);
+            }
+        }
+
+        let routesChanged = false;
+        const removedContactIds = new Set();
+        for (let i = 0; i < removedIds.length; i++) {
+            const key = `${Number(removedIds[i])}`;
+            const contactId = Number(this.contacts[key]?.data?.id ?? removedIds[i]);
+            if (Number.isFinite(contactId) && contactId > 0) {
+                removedContactIds.add(contactId);
+            }
+            if (this._removeContactByKey(key)) {
+                routesChanged = true;
+            }
+        }
+
+        if (this._pruneRouteDescsByContactIds(removedContactIds)) {
+            routesChanged = true;
+        }
+
+        if (routesChanged) {
+            this.updatePaths();
+        }
+
+        if (touchedContacts.length > 0) {
+            this.onLoadContacts(touchedContacts);
+        }
+
+        return touchedContacts.length > 0 || removedIds.length > 0;
+    }
+
     _syncLiveReporters(data) {
         if (data?.error) {
             this.showError(data.error, 4000);
@@ -7221,6 +7316,54 @@ class MeshLog {
 
         this.__init_reporters();
         return true;
+    }
+
+    _applyLiveReportersDelta(data) {
+        if (data?.error) {
+            this.showError(data.error, 4000);
+            return false;
+        }
+
+        const upserts = Array.isArray(data?.objects) ? data.objects : [];
+        const removedIds = Array.isArray(data?.removed_ids) ? data.removed_ids : [];
+        let routesChanged = false;
+
+        for (let i = 0; i < upserts.length; i++) {
+            const row = upserts[i];
+            const key = `${row.id}`;
+            const incoming = new MeshLogReporter(this, row);
+            if (this.reporters.hasOwnProperty(key)) {
+                this.reporters[key].merge(incoming.data);
+            } else {
+                this.reporters[key] = incoming;
+            }
+        }
+
+        const removedReporterIds = new Set();
+        for (let i = 0; i < removedIds.length; i++) {
+            const key = `${Number(removedIds[i])}`;
+            const reporterId = Number(this.reporters[key]?.data?.id ?? removedIds[i]);
+            if (Number.isFinite(reporterId) && reporterId > 0) {
+                removedReporterIds.add(reporterId);
+            }
+            if (this._removeReporterByKey(key)) {
+                routesChanged = true;
+            }
+        }
+
+        if (this._pruneRouteDescsByReporterIds(removedReporterIds)) {
+            routesChanged = true;
+        }
+
+        if (routesChanged) {
+            this.updatePaths();
+        }
+
+        if (upserts.length > 0 || removedIds.length > 0) {
+            this.__init_reporters();
+        }
+
+        return upserts.length > 0 || removedIds.length > 0;
     }
 
     resolveScopeName(scope) {

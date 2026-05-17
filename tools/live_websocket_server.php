@@ -359,6 +359,77 @@ function meshlogWrapObjectList(array $objects) {
     );
 }
 
+function meshlogBuildMetadataPayload(array $reporters, array $contacts, array $channels, array $scopesMap, $mode = 'full') {
+    return array(
+        'type' => 'metadata',
+        'mode' => $mode,
+        'reporters' => meshlogWrapObjectList($reporters),
+        'contacts' => meshlogWrapObjectList($contacts),
+        'channels' => meshlogWrapObjectList($channels),
+        'scopes_map' => $scopesMap,
+        'timestamp_ms' => intval(round(microtime(true) * 1000)),
+    );
+}
+
+function meshlogIndexMetadataRowsById(array $rows) {
+    $indexed = array();
+    foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+        $id = intval($row['id'] ?? 0);
+        if ($id <= 0) continue;
+        $indexed[$id] = $row;
+    }
+    ksort($indexed);
+    return $indexed;
+}
+
+function meshlogBuildMetadataDeltaList(array $previousRows, array $currentRows) {
+    $previousById = meshlogIndexMetadataRowsById($previousRows);
+    $currentById = meshlogIndexMetadataRowsById($currentRows);
+
+    $upserts = array();
+    foreach ($currentById as $id => $row) {
+        if (!isset($previousById[$id]) || $previousById[$id] != $row) {
+            $upserts[] = $row;
+        }
+    }
+
+    $removedIds = array();
+    foreach ($previousById as $id => $_row) {
+        if (!isset($currentById[$id])) {
+            $removedIds[] = intval($id);
+        }
+    }
+
+    return array(
+        'objects' => $upserts,
+        'count' => count($upserts),
+        'removed_ids' => $removedIds,
+        'removed_count' => count($removedIds),
+    );
+}
+
+function meshlogBuildMetadataDeltaPayload(array $previousPayload, array $currentPayload) {
+    return array(
+        'type' => 'metadata',
+        'mode' => 'delta',
+        'reporters' => meshlogBuildMetadataDeltaList(
+            extractList($previousPayload['reporters'] ?? array(), 'reporters'),
+            extractList($currentPayload['reporters'] ?? array(), 'reporters')
+        ),
+        'contacts' => meshlogBuildMetadataDeltaList(
+            extractList($previousPayload['contacts'] ?? array(), 'contacts'),
+            extractList($currentPayload['contacts'] ?? array(), 'contacts')
+        ),
+        'channels' => meshlogBuildMetadataDeltaList(
+            extractList($previousPayload['channels'] ?? array(), 'channels'),
+            extractList($currentPayload['channels'] ?? array(), 'channels')
+        ),
+        'scopes_map' => $currentPayload['scopes_map'] ?? array(),
+        'timestamp_ms' => intval(round(microtime(true) * 1000)),
+    );
+}
+
 function meshlogFetchMetadataSnapshot(&$meshlog, $config, $count = MESHLOG_WS_METADATA_COUNT) {
     if (!$meshlog instanceof MeshLog) {
         $meshlog = meshlogCreateInstance($config);
@@ -399,14 +470,7 @@ function meshlogFetchMetadataSnapshot(&$meshlog, $config, $count = MESHLOG_WS_ME
         array('id', 'hash', 'name', 'enabled')
     );
 
-    return array(
-        'type' => 'metadata',
-        'reporters' => meshlogWrapObjectList($compactReporters),
-        'contacts' => meshlogWrapObjectList($compactContacts),
-        'channels' => meshlogWrapObjectList($compactChannels),
-        'scopes_map' => $scopesMap,
-        'timestamp_ms' => intval(round(microtime(true) * 1000)),
-    );
+    return meshlogBuildMetadataPayload($compactReporters, $compactContacts, $compactChannels, $scopesMap, 'full');
 }
 
 function meshlogNormalizeMetadataRows($rows, array $keys) {
@@ -700,6 +764,8 @@ $metadataCache = array(
     'fingerprint' => '',
     'version' => 0,
     'payload' => null,
+    'previous_version' => 0,
+    'delta_payload' => null,
 );
 
 $server = @stream_socket_server(MESHLOG_WS_BIND, $errno, $errstr);
@@ -943,9 +1009,15 @@ while (true) {
             $snapshot = meshlogFetchMetadataSnapshot($meshlog, $config);
             $fingerprint = meshlogMetadataFingerprintFromPayload($snapshot);
             if ($fingerprint !== ($metadataCache['fingerprint'] ?? '')) {
+                $previousPayload = is_array($metadataCache['payload'] ?? null) ? $metadataCache['payload'] : null;
+                $previousVersion = intval($metadataCache['version'] ?? 0);
                 $metadataCache['payload'] = $snapshot;
                 $metadataCache['fingerprint'] = $fingerprint;
                 $metadataCache['version'] = intval($metadataCache['version'] ?? 0) + 1;
+                $metadataCache['previous_version'] = $previousVersion;
+                $metadataCache['delta_payload'] = is_array($previousPayload)
+                    ? meshlogBuildMetadataDeltaPayload($previousPayload, $snapshot)
+                    : null;
             }
             $metadataCache['last_refresh_at'] = $now;
         } catch (Throwable $e) {
@@ -1047,7 +1119,16 @@ while (true) {
 
         $metadataVersion = intval($metadataCache['version'] ?? 0);
         if ($metadataVersion > intval($client['last_metadata_version'] ?? 0) && is_array($metadataCache['payload'])) {
-            $metadataPayload = json_encode($metadataCache['payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $metadataToSend = $metadataCache['payload'];
+            if (
+                intval($client['last_metadata_version'] ?? 0) > 0
+                && intval($client['last_metadata_version'] ?? 0) === intval($metadataCache['previous_version'] ?? 0)
+                && is_array($metadataCache['delta_payload'] ?? null)
+            ) {
+                $metadataToSend = $metadataCache['delta_payload'];
+            }
+
+            $metadataPayload = json_encode($metadataToSend, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($metadataPayload === false || !meshlogSendFrame($socket, $metadataPayload, 0x1)) {
                 meshlogCloseClient($clients, $clientId, 1001, 'metadata send failed');
                 unset($client);
