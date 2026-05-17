@@ -3217,6 +3217,9 @@ class MeshLogLinkLayer {
 class MeshLog {
 
     static MAX_TRANSIENT_ROUTE_ANIMATIONS = 8;
+    static MAX_RENDERED_LOG_ITEMS = 1200;
+    static LIVE_ANIMATION_WINDOW_MS = 1000;
+    static LIVE_ANIMATION_BUDGET_PER_WINDOW = 8;
     static MARKER_PANE_BACKGROUND = 'meshlog-marker-background';
     static MARKER_PANE_ROUTE = 'meshlog-marker-route';
     static ROUTE_PANE = 'meshlog-route-lines';
@@ -3266,6 +3269,8 @@ class MeshLog {
         this.liveStreamReconnectAttempt = 0;
         this.liveStreamReconnectMaxDelayMs = 30000;
         this.liveStreamReconnectJitterMs = 500;
+        this.liveAnimationWindowStartedAt = 0;
+        this.liveAnimationBudgetRemaining = MeshLog.LIVE_ANIMATION_BUDGET_PER_WINDOW;
         this.liveStreamKeepAliveIntervalMs = 25000;
         this.liveStreamKeepAliveTimeoutMs = 75000;
         this.liveStreamKeepAliveTimer = null;
@@ -7296,37 +7301,110 @@ class MeshLog {
     }
 
     addMessage(msg) {
-        let isnew = msg.dom ? false : true;
-        let dom = msg.createDom();
+        const loaded = this.__prepareIncomingMessage(msg);
+        if (!loaded) return;
+
+        this.__insertPreparedMessages([loaded]);
+        this.__pruneRenderedMessages();
+    }
+
+    __prepareIncomingMessage(msg) {
+        const isnew = msg.dom ? false : true;
+        const dom = msg.createDom();
         msg.updateDom();
 
-        if (isnew) {
-            // find pos by date
+        if (!isnew || !dom?.container) {
+            return null;
+        }
+
+        if (this.contacts.hasOwnProperty(msg.data.contact_id)) {
+            const contact = this.contacts[msg.data.contact_id];
+            if (!contact.last || msg.time > contact.last.time) {
+                contact.last = msg;
+            }
+            if (msg instanceof MeshLogAdvertisement && this._shouldReplaceContactAdvertisement(contact.adv, msg)) {
+                contact.adv = msg;
+                contact.update();
+            }
+        }
+
+        this.onNewMessage(msg);
+
+        return {
+            msg,
+            container: dom.container,
+            time: Number(dom.container.dataset.time) || 0,
+        };
+    }
+
+    __appendPreparedMessages(fragmentEntries) {
+        if (!Array.isArray(fragmentEntries) || fragmentEntries.length < 1) return;
+
+        const fragment = document.createDocumentFragment();
+        for (let i = 0; i < fragmentEntries.length; i++) {
+            fragment.appendChild(fragmentEntries[i].container);
+        }
+        this.dom_logs.appendChild(fragment);
+    }
+
+    __prependPreparedMessages(fragmentEntries) {
+        if (!Array.isArray(fragmentEntries) || fragmentEntries.length < 1) return;
+
+        const fragment = document.createDocumentFragment();
+        for (let i = 0; i < fragmentEntries.length; i++) {
+            fragment.appendChild(fragmentEntries[i].container);
+        }
+
+        if (this.dom_logs.firstChild) {
+            this.dom_logs.insertBefore(fragment, this.dom_logs.firstChild);
+            return;
+        }
+
+        this.dom_logs.appendChild(fragment);
+    }
+
+    __insertPreparedMessages(entries) {
+        if (!Array.isArray(entries) || entries.length < 1) return;
+
+        entries.sort((a, b) => {
+            if (b.time !== a.time) return b.time - a.time;
+            return Number(b.msg?.data?.id ?? 0) - Number(a.msg?.data?.id ?? 0);
+        });
+
+        if (this.dom_logs.childElementCount < 1) {
+            this.__appendPreparedMessages(entries);
+            return;
+        }
+
+        const firstExistingTime = Number(this.dom_logs.firstElementChild?.dataset.time ?? NaN);
+        const lastExistingTime = Number(this.dom_logs.lastElementChild?.dataset.time ?? NaN);
+        const newestIncomingTime = entries[0].time;
+        const oldestIncomingTime = entries[entries.length - 1].time;
+
+        if (!Number.isFinite(firstExistingTime) || oldestIncomingTime >= firstExistingTime) {
+            this.__prependPreparedMessages(entries);
+            return;
+        }
+
+        if (Number.isFinite(lastExistingTime) && newestIncomingTime <= lastExistingTime) {
+            this.__appendPreparedMessages(entries);
+            return;
+        }
+
+        for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
             let inserted = false;
-            let newTime = dom.container.dataset.time;
             for (let child of this.dom_logs.children) {
-                const childTime = child.dataset.time;
-                if (newTime > childTime) {
-                    this.dom_logs.insertBefore(dom.container, child);
+                const childTime = Number(child.dataset.time) || 0;
+                if (entry.time > childTime) {
+                    this.dom_logs.insertBefore(entry.container, child);
                     inserted = true;
                     break;
                 }
             }
-
-            // If not inserted, append at the end
-            if (!inserted) this.dom_logs.appendChild(dom.container);
-
-            if (this.contacts.hasOwnProperty(msg.data.contact_id)) {
-                let contact = this.contacts[msg.data.contact_id];
-                if (!contact.last || msg.time > contact.last.time) {
-                    contact.last = msg;
-                }
-                if (msg instanceof MeshLogAdvertisement && this._shouldReplaceContactAdvertisement(contact.adv, msg)) {
-                    contact.adv = msg;
-                    contact.update(); // refresh sidebar badge + marker when a new ADV arrives
-                }
+            if (!inserted) {
+                this.dom_logs.appendChild(entry.container);
             }
-            this.onNewMessage(msg);
         }
     }
 
@@ -7349,14 +7427,85 @@ class MeshLog {
         }
     }
 
+    __pruneRenderedMessages() {
+        const maxItems = MeshLog.MAX_RENDERED_LOG_ITEMS;
+        if (!this.dom_logs || maxItems < 1) return;
+
+        let pathsChanged = false;
+        while (this.dom_logs.childElementCount > maxItems) {
+            const child = this.dom_logs.lastElementChild;
+            if (!child) break;
+
+            const instance = child.firstElementChild?.instance ?? child.instance ?? null;
+            if (Array.isArray(instance?.reports) && instance.reports.length > 0) {
+                for (let i = 0; i < instance.reports.length; i++) {
+                    instance.reports[i].hidePath();
+                }
+                pathsChanged = true;
+            }
+
+            const messageId = typeof instance?.getId === 'function'
+                ? String(instance.getId())
+                : '';
+            if (messageId && this.messages.hasOwnProperty(messageId)) {
+                delete this.messages[messageId];
+            }
+
+            if (instance?.dom?.container === child) {
+                instance.dom = null;
+            }
+
+            child.remove();
+        }
+
+        if (pathsChanged) {
+            this.updatePaths();
+        }
+    }
+
+    _consumeLiveAnimationBudget(cost = 1) {
+        const now = Date.now();
+        if ((now - this.liveAnimationWindowStartedAt) >= MeshLog.LIVE_ANIMATION_WINDOW_MS) {
+            this.liveAnimationWindowStartedAt = now;
+            this.liveAnimationBudgetRemaining = MeshLog.LIVE_ANIMATION_BUDGET_PER_WINDOW;
+        }
+
+        const normalizedCost = Math.max(1, Number(cost) || 1);
+        if (this.liveAnimationBudgetRemaining < normalizedCost) {
+            return false;
+        }
+
+        this.liveAnimationBudgetRemaining -= normalizedCost;
+        return true;
+    }
+
+    _shouldAnimateLiveMessage(msg) {
+        if (this._initialLoad) return false;
+        if (!(msg instanceof MeshLogAdvertisement || msg instanceof MeshLogChannelMessage || msg instanceof MeshLogDirectMessage)) {
+            return false;
+        }
+        if (typeof msg.isVisible === 'function' && !msg.isVisible()) {
+            return false;
+        }
+        return this._consumeLiveAnimationBudget(1);
+    }
+
     onLoadMessages(messages = null) {
         const messageList = Array.isArray(messages) ? messages : Object.values(this.messages);
+        const prepared = [];
         messageList.forEach((msg) => {
             const id = msg?.getId?.() ?? msg?.data?.id ?? 'unknown';
-            try { this.addMessage(msg); }
+            try {
+                const loaded = this.__prepareIncomingMessage(msg);
+                if (loaded) {
+                    prepared.push(loaded);
+                }
+            }
             catch (e) { console.error('addMessage failed for', id, e); }
         });
-        this.updateMessagesDom(messageList);
+
+        this.__insertPreparedMessages(prepared);
+        this.__pruneRenderedMessages();
     }
 
     onLoadAll(delta = null) {
@@ -7966,8 +8115,9 @@ class MeshLog {
             };
             this.new_messages[hash].push(msg);
         }
-        // Animate the path of any newly received packet on the map
-        this._animateNewPacketPath(msg);
+        if (this._shouldAnimateLiveMessage(msg)) {
+            this._animateNewPacketPath(msg);
+        }
     }
 
     clearNotifications() {

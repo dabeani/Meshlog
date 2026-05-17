@@ -328,6 +328,37 @@ function meshlogReadScopesMap($meshlog) {
     return $map;
 }
 
+function meshlogCompactMetadataRows($rows, array $keys) {
+    $normalized = array();
+    foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+
+        $item = array();
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $row)) {
+                $item[$key] = $row[$key];
+            }
+        }
+
+        if (count($item) > 0) {
+            $normalized[] = $item;
+        }
+    }
+
+    usort($normalized, function ($a, $b) {
+        return intval($a['id'] ?? 0) <=> intval($b['id'] ?? 0);
+    });
+
+    return $normalized;
+}
+
+function meshlogWrapObjectList(array $objects) {
+    return array(
+        'objects' => $objects,
+        'count' => count($objects),
+    );
+}
+
 function meshlogFetchMetadataSnapshot(&$meshlog, $config, $count = MESHLOG_WS_METADATA_COUNT) {
     if (!$meshlog instanceof MeshLog) {
         $meshlog = meshlogCreateInstance($config);
@@ -355,11 +386,24 @@ function meshlogFetchMetadataSnapshot(&$meshlog, $config, $count = MESHLOG_WS_ME
         $scopesMap = meshlogReadScopesMap($meshlog);
     }
 
+    $compactReporters = meshlogCompactMetadataRows(
+        extractList($reporters, 'reporters'),
+        array('id', 'public_key', 'name', 'style', 'authorized', 'pending', 'contact_id', 'time_sync', 'reporter_status')
+    );
+    $compactContacts = meshlogCompactMetadataRows(
+        extractList($contacts, 'contacts'),
+        array('id', 'public_key', 'name', 'type', 'hash_size', 'hidden', 'enabled')
+    );
+    $compactChannels = meshlogCompactMetadataRows(
+        extractList($channels, 'channels'),
+        array('id', 'hash', 'name', 'enabled')
+    );
+
     return array(
         'type' => 'metadata',
-        'reporters' => $reporters,
-        'contacts' => $contacts,
-        'channels' => $channels,
+        'reporters' => meshlogWrapObjectList($compactReporters),
+        'contacts' => meshlogWrapObjectList($compactContacts),
+        'channels' => meshlogWrapObjectList($compactChannels),
         'scopes_map' => $scopesMap,
         'timestamp_ms' => intval(round(microtime(true) * 1000)),
     );
