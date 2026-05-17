@@ -30,6 +30,29 @@ function meshlogCreateInstance($config) {
     return $meshlog;
 }
 
+function meshlogBuildPublicConfigPayload($config) {
+    $mapConfig = is_array($config['map'] ?? null) ? $config['map'] : array();
+
+    return array(
+        'app_version' => '1.1.0',
+        'api_version' => 'v1',
+        'map' => array(
+            'default_lat' => floatval($mapConfig['lat'] ?? 51.5074),
+            'default_lon' => floatval($mapConfig['lon'] ?? -0.1278),
+            'default_zoom' => intval($mapConfig['zoom'] ?? 10),
+        ),
+        'features' => array(
+            'live_feed' => true,
+            'map' => true,
+            'devices' => true,
+            'statistics' => true,
+            'admin' => true,
+        ),
+        'polling_interval_seconds' => 5,
+        'max_live_items' => 500,
+    );
+}
+
 function meshlogAllowedLiveTypes() {
     return array('ADV', 'MSG', 'PUB', 'RAW', 'TEL', 'SYS');
 }
@@ -56,6 +79,14 @@ function meshlogNormalizeTypes($rawTypes) {
     }
 
     return array_values($types);
+}
+
+function meshlogNormalizeQueryCount($rawCount, $defaultCount = MESHLOG_WS_METADATA_COUNT) {
+    return min(MESHLOG_WS_METADATA_COUNT, max(1, intval($rawCount ?? $defaultCount)));
+}
+
+function meshlogNormalizeQueryOffset($rawOffset) {
+    return max(0, intval($rawOffset ?? 0));
 }
 
 function meshlogParseHandshakeRequest($buffer) {
@@ -243,8 +274,56 @@ function meshlogResolveQueryAction(&$meshlog, $config, $action, array $params) {
     $queryAction = strtolower(trim(strval($action ?? '')));
     $queryParams = is_array($params) ? $params : array();
 
-    $executeAction = function ($meshlogInstance) use ($queryAction, $queryParams) {
+    $executeAction = function ($meshlogInstance) use ($queryAction, $queryParams, $config) {
         switch ($queryAction) {
+            case 'live_feed': {
+                $sinceMs = max(0, intval($queryParams['since_ms'] ?? 0));
+                $beforeMs = max(0, intval($queryParams['before_ms'] ?? 0));
+                $types = meshlogNormalizeTypes($queryParams['types'] ?? '');
+                $limit = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($queryParams['limit'] ?? 50)));
+                $historyMode = $beforeMs > 0;
+                $batch = buildLivePacketBatch($meshlogInstance, $sinceMs, $beforeMs, $types, $limit, $historyMode, 0);
+
+                return array(
+                    'packets' => $batch['packets'] ?? array(),
+                    'timestamp_ms' => intval($batch['newest_timestamp_ms'] ?? $sinceMs),
+                    'count' => intval($batch['returned_count'] ?? 0),
+                    'has_more' => !empty($batch['has_more']),
+                    'oldest_timestamp_ms' => $batch['oldest_timestamp_ms'] ?? null,
+                );
+            }
+
+            case 'contacts': {
+                return $meshlogInstance->getContactsQuick(array(
+                    'offset' => meshlogNormalizeQueryOffset($queryParams['offset'] ?? 0),
+                    'count' => meshlogNormalizeQueryCount($queryParams['count'] ?? MESHLOG_WS_METADATA_COUNT),
+                    'after_ms' => max(0, intval($queryParams['after_ms'] ?? 0)),
+                    'before_ms' => max(0, intval($queryParams['before_ms'] ?? 0)),
+                ));
+            }
+
+            case 'reporters': {
+                return $meshlogInstance->getReporters(array(
+                    'offset' => meshlogNormalizeQueryOffset($queryParams['offset'] ?? 0),
+                    'count' => meshlogNormalizeQueryCount($queryParams['count'] ?? MESHLOG_WS_METADATA_COUNT),
+                    'after_ms' => max(0, intval($queryParams['after_ms'] ?? 0)),
+                    'before_ms' => max(0, intval($queryParams['before_ms'] ?? 0)),
+                ));
+            }
+
+            case 'channels': {
+                return $meshlogInstance->getChannels(array(
+                    'offset' => meshlogNormalizeQueryOffset($queryParams['offset'] ?? 0),
+                    'count' => meshlogNormalizeQueryCount($queryParams['count'] ?? MESHLOG_WS_METADATA_COUNT),
+                    'after_ms' => max(0, intval($queryParams['after_ms'] ?? 0)),
+                    'before_ms' => max(0, intval($queryParams['before_ms'] ?? 0)),
+                ));
+            }
+
+            case 'config': {
+                return meshlogBuildPublicConfigPayload($config);
+            }
+
             case 'stats': {
                 $windowHours = meshlogNormalizeWindowHours($queryParams['window_hours'] ?? 24, 24);
                 return $meshlogInstance->getGeneralAdvertisementStats($windowHours);
@@ -803,6 +882,7 @@ while (true) {
                 'buffer' => '',
                 'handshake' => false,
                 'bootstrap' => false,
+                'query_only' => false,
                 'since_ms' => 0,
                 'types' => meshlogAllowedLiveTypes(),
                 'limit' => 100,
@@ -866,6 +946,7 @@ while (true) {
                 $query = $request['query'];
                 $clients[$clientId]['handshake'] = true;
                 $clients[$clientId]['bootstrap'] = intval($query['bootstrap'] ?? 0) !== 0;
+                $clients[$clientId]['query_only'] = intval($query['query_only'] ?? 0) !== 0;
                 $clients[$clientId]['since_ms'] = max(0, intval($query['since_ms'] ?? 0));
                  $clients[$clientId]['types'] = meshlogNormalizeTypes($query['types'] ?? '');
                  $clients[$clientId]['limit'] = min(MESHLOG_WS_MAX_LIMIT, max(1, intval($query['limit'] ?? 100)));
@@ -1048,6 +1129,11 @@ while (true) {
 
         if (($now - floatval($client['last_pong_at'] ?? 0.0)) >= MESHLOG_WS_CLIENT_PONG_TIMEOUT_SEC) {
             meshlogCloseClient($clients, $clientId, 1001, 'pong timeout');
+            continue;
+        }
+
+        if (!empty($client['query_only'])) {
+            unset($client);
             continue;
         }
 

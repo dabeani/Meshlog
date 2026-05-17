@@ -1,0 +1,41 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project MeshLog.xcodeproj -scheme MeshLogAustria-tvOS -configuration Debug -destination generic/platform=tvOS -derivedDataPath build-tvOS-agent/DerivedData build
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (1 target)
+    Target 'MeshLogAustria-tvOS' in project 'MeshLog' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS26.4.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --print-asset-tag-combinations --output-format xml1 /Users/bernhard/BMKArduino/MC/Meshlog/ios-app/Assets.xcassets
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+Build description signature: 3f8a67e0d7b61f38a206aa49a93db338
+Build description path: /Users/bernhard/BMKArduino/MC/Meshlog/ios-app/build-tvOS-agent/DerivedData/Build/Intermediates.noindex/XCBuildData/3f8a67e0d7b61f38a206aa49a93db338.xcbuilddata
+/Users/bernhard/BMKArduino/MC/Meshlog/ios-app/MeshLog.xcodeproj: error: No profiles for 'com.meshlog.app.tvos' were found: Xcode couldn't find any tvOS App Development provisioning profiles matching 'com.meshlog.app.tvos'. Automatic signing is disabled and unable to generate a profile. To enable automatic signing, pass -allowProvisioningUpdates to xcodebuild. (in target 'MeshLogAustria-tvOS' from project 'MeshLog')
+** BUILD FAILED **
+
+
+The following build commands failed:
+	Building project MeshLog with scheme MeshLogAustria-tvOS and configuration Debug
+(1 failure)

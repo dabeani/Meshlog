@@ -1,0 +1,489 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0BFF47972D1922BBA13861F2 /* PacketModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B04F288ED9A463EE7ABB553D /* PacketModels.swift */; };
+		1321852FFFCC25B9D08F5F0B /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F11D37DE137F246C2CCF30 /* LoginView.swift */; };
+		153928A1FCF277C8D6164F7B /* LiveFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1E528E30D9ECFFC44401C0 /* LiveFeedView.swift */; };
+		1C2323B10B5E65678751818F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7164D72C7C9E09BCDC45B630 /* Assets.xcassets */; };
+		232B61AB22E3E27CEA865F45 /* AuthenticationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1237969603C9B701D0616069 /* AuthenticationManager.swift */; };
+		2EAA7B69FD0EEF87CBDACBD1 /* Configuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29D810ACBC482C3EF273142E /* Configuration.swift */; };
+		39227230056259ACC36DB099 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7164D72C7C9E09BCDC45B630 /* Assets.xcassets */; };
+		3CF5B9A616ED50294A1A8806 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C34D3B5B9C7C76AA088001FD /* APIClient.swift */; };
+		3FA48E1828D7A005387908AA /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AA2B2BB65B37DAE1BE68A63 /* MapView.swift */; };
+		43C2C26651A622164903AB73 /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B9CD5F7278DA6DEB3D2A18 /* DevicesView.swift */; };
+		5483F6D7E46A56FB266214D7 /* meshcore-austria_logo.jpg in Resources */ = {isa = PBXBuildFile; fileRef = BC258C1BD06597C6FE571A62 /* meshcore-austria_logo.jpg */; };
+		6BA6E11D5B4E2C637682B01E /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26F2DD19609521E283911CCD /* StatsView.swift */; };
+		70209AAC9046D6A259AE80BD /* DevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B9CD5F7278DA6DEB3D2A18 /* DevicesView.swift */; };
+		7072BEA16A6CF2C283411860 /* PacketModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B04F288ED9A463EE7ABB553D /* PacketModels.swift */; };
+		720F0C5D4DF17DD2B9865D31 /* MapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AA2B2BB65B37DAE1BE68A63 /* MapView.swift */; };
+		730E849D66FDFDDE7F20A7CC /* Configuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29D810ACBC482C3EF273142E /* Configuration.swift */; };
+		8D5F65A7E07776D6E2AEC459 /* LiveFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD1E528E30D9ECFFC44401C0 /* LiveFeedView.swift */; };
+		A865521C803670AB37AEC4FF /* AuthenticationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1237969603C9B701D0616069 /* AuthenticationManager.swift */; };
+		B39C809137527DD4B9AC04B5 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C34D3B5B9C7C76AA088001FD /* APIClient.swift */; };
+		B9F842B8240FA6E481864581 /* MeshLogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54400EFC4668BC74E87CFED7 /* MeshLogApp.swift */; };
+		C3CDD281216FC916A0BD9AEA /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F11D37DE137F246C2CCF30 /* LoginView.swift */; };
+		CFC3A11D07EA02480A7FAC11 /* meshcore-austria_logo.jpg in Resources */ = {isa = PBXBuildFile; fileRef = BC258C1BD06597C6FE571A62 /* meshcore-austria_logo.jpg */; };
+		DCD80ED3C9A4589475C42A6D /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26F2DD19609521E283911CCD /* StatsView.swift */; };
+		E1E20422AEC205579AC7496B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3EF57F642273EB10E541A36 /* SettingsView.swift */; };
+		E67849274E4F2A0A588B8D63 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3EF57F642273EB10E541A36 /* SettingsView.swift */; };
+		FE9D5D9C08D108312799660D /* MeshLogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54400EFC4668BC74E87CFED7 /* MeshLogApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		10B9CD5F7278DA6DEB3D2A18 /* DevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesView.swift; sourceTree = "<group>"; };
+		1237969603C9B701D0616069 /* AuthenticationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationManager.swift; sourceTree = "<group>"; };
+		1F9A95748B6088AD02C526FC /* MeshLogAustria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeshLogAustria.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		26F2DD19609521E283911CCD /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
+		29D810ACBC482C3EF273142E /* Configuration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Configuration.swift; sourceTree = "<group>"; };
+		4AA2B2BB65B37DAE1BE68A63 /* MapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapView.swift; sourceTree = "<group>"; };
+		54400EFC4668BC74E87CFED7 /* MeshLogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshLogApp.swift; sourceTree = "<group>"; };
+		7164D72C7C9E09BCDC45B630 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B04F288ED9A463EE7ABB553D /* PacketModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketModels.swift; sourceTree = "<group>"; };
+		BC258C1BD06597C6FE571A62 /* meshcore-austria_logo.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "meshcore-austria_logo.jpg"; sourceTree = "<group>"; };
+		C2287AD145EF2F734A1E3C77 /* MeshLogAustria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeshLogAustria.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C34D3B5B9C7C76AA088001FD /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		C3EF57F642273EB10E541A36 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E2F11D37DE137F246C2CCF30 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		FD1E528E30D9ECFFC44401C0 /* LiveFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFeedView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		5B1351279BE2F378B5401953 /* Managers */ = {
+			isa = PBXGroup;
+			children = (
+				C34D3B5B9C7C76AA088001FD /* APIClient.swift */,
+				1237969603C9B701D0616069 /* AuthenticationManager.swift */,
+			);
+			path = Managers;
+			sourceTree = "<group>";
+		};
+		76BAA344ABB88BF50A024883 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1F9A95748B6088AD02C526FC /* MeshLogAustria.app */,
+				C2287AD145EF2F734A1E3C77 /* MeshLogAustria.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E17089540ADBFB16E715E1F3 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				B04F288ED9A463EE7ABB553D /* PacketModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		EB361E9ABF07262BA8F6483A = {
+			isa = PBXGroup;
+			children = (
+				7164D72C7C9E09BCDC45B630 /* Assets.xcassets */,
+				29D810ACBC482C3EF273142E /* Configuration.swift */,
+				BC258C1BD06597C6FE571A62 /* meshcore-austria_logo.jpg */,
+				54400EFC4668BC74E87CFED7 /* MeshLogApp.swift */,
+				5B1351279BE2F378B5401953 /* Managers */,
+				E17089540ADBFB16E715E1F3 /* Models */,
+				FAE5047C23D2AE7B78207964 /* Views */,
+				76BAA344ABB88BF50A024883 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FAE5047C23D2AE7B78207964 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				10B9CD5F7278DA6DEB3D2A18 /* DevicesView.swift */,
+				FD1E528E30D9ECFFC44401C0 /* LiveFeedView.swift */,
+				E2F11D37DE137F246C2CCF30 /* LoginView.swift */,
+				4AA2B2BB65B37DAE1BE68A63 /* MapView.swift */,
+				C3EF57F642273EB10E541A36 /* SettingsView.swift */,
+				26F2DD19609521E283911CCD /* StatsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5E2E769086EB9DC948F90E78 /* MeshLogAustria-tvOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9C68776F03FCDD49166266A4 /* Build configuration list for PBXNativeTarget "MeshLogAustria-tvOS" */;
+			buildPhases = (
+				33970CC95781BAC2FA82510B /* Sources */,
+				7C501A4C3A21976ECDEFEA12 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "MeshLogAustria-tvOS";
+			packageProductDependencies = (
+			);
+			productName = "MeshLogAustria-tvOS";
+			productReference = 1F9A95748B6088AD02C526FC /* MeshLogAustria.app */;
+			productType = "com.apple.product-type.application";
+		};
+		868CBA3A9F95490F71FD8DDF /* MeshLogAustria */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 817C9EA2013FD315D618AB5D /* Build configuration list for PBXNativeTarget "MeshLogAustria" */;
+			buildPhases = (
+				1E4F5C01618C9B9800547E33 /* Sources */,
+				64238D2EB9366160585BBCCC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MeshLogAustria;
+			packageProductDependencies = (
+			);
+			productName = MeshLogAustria;
+			productReference = C2287AD145EF2F734A1E3C77 /* MeshLogAustria.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		2998D9E5A0BCB3509200F1BD /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2640;
+			};
+			buildConfigurationList = 0A6619D6F9E7049DCBDAD6A3 /* Build configuration list for PBXProject "MeshLogAustria" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = EB361E9ABF07262BA8F6483A;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 76BAA344ABB88BF50A024883 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				868CBA3A9F95490F71FD8DDF /* MeshLogAustria */,
+				5E2E769086EB9DC948F90E78 /* MeshLogAustria-tvOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		64238D2EB9366160585BBCCC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				39227230056259ACC36DB099 /* Assets.xcassets in Resources */,
+				CFC3A11D07EA02480A7FAC11 /* meshcore-austria_logo.jpg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7C501A4C3A21976ECDEFEA12 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1C2323B10B5E65678751818F /* Assets.xcassets in Resources */,
+				5483F6D7E46A56FB266214D7 /* meshcore-austria_logo.jpg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1E4F5C01618C9B9800547E33 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3CF5B9A616ED50294A1A8806 /* APIClient.swift in Sources */,
+				A865521C803670AB37AEC4FF /* AuthenticationManager.swift in Sources */,
+				730E849D66FDFDDE7F20A7CC /* Configuration.swift in Sources */,
+				43C2C26651A622164903AB73 /* DevicesView.swift in Sources */,
+				153928A1FCF277C8D6164F7B /* LiveFeedView.swift in Sources */,
+				1321852FFFCC25B9D08F5F0B /* LoginView.swift in Sources */,
+				720F0C5D4DF17DD2B9865D31 /* MapView.swift in Sources */,
+				B9F842B8240FA6E481864581 /* MeshLogApp.swift in Sources */,
+				7072BEA16A6CF2C283411860 /* PacketModels.swift in Sources */,
+				E1E20422AEC205579AC7496B /* SettingsView.swift in Sources */,
+				6BA6E11D5B4E2C637682B01E /* StatsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		33970CC95781BAC2FA82510B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B39C809137527DD4B9AC04B5 /* APIClient.swift in Sources */,
+				232B61AB22E3E27CEA865F45 /* AuthenticationManager.swift in Sources */,
+				2EAA7B69FD0EEF87CBDACBD1 /* Configuration.swift in Sources */,
+				70209AAC9046D6A259AE80BD /* DevicesView.swift in Sources */,
+				8D5F65A7E07776D6E2AEC459 /* LiveFeedView.swift in Sources */,
+				C3CDD281216FC916A0BD9AEA /* LoginView.swift in Sources */,
+				3FA48E1828D7A005387908AA /* MapView.swift in Sources */,
+				FE9D5D9C08D108312799660D /* MeshLogApp.swift in Sources */,
+				0BFF47972D1922BBA13861F2 /* PacketModels.swift in Sources */,
+				E67849274E4F2A0A588B8D63 /* SettingsView.swift in Sources */,
+				DCD80ED3C9A4589475C42A6D /* StatsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		331DFC61A5278B75555ED7D0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 7;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to your MeshLog server on local network";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Displaying mesh nodes on map";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.3;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.meshlog.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Debug;
+		};
+		401F9412AD07D6408F49F3CC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				DEVELOPMENT_TEAM = YU2Z29VEKY;
+				INFOPLIST_KEY_CFBundleDisplayName = MeshLogAustria;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.meshlog.app.tvos;
+				PRODUCT_NAME = MeshLogAustria;
+				SDKROOT = appletvos;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Debug;
+		};
+		7A2E2F84322019BD9D1102AE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = YU2Z29VEKY;
+				INFOPLIST_KEY_CFBundleDisplayName = MeshLogAustria;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_NAME = MeshLogAustria;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		CCD7DBA52C35CB930FD7BD43 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				DEVELOPMENT_TEAM = YU2Z29VEKY;
+				INFOPLIST_KEY_CFBundleDisplayName = MeshLogAustria;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.meshlog.app.tvos;
+				PRODUCT_NAME = MeshLogAustria;
+				SDKROOT = appletvos;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Release;
+		};
+		D0B10B659A3D98CFE408DFE0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = YU2Z29VEKY;
+				INFOPLIST_KEY_CFBundleDisplayName = MeshLogAustria;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_NAME = MeshLogAustria;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		FCB3CEE49A6738AD50BFEAE2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 7;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to your MeshLog server on local network";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Displaying mesh nodes on map";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.3;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.meshlog.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0A6619D6F9E7049DCBDAD6A3 /* Build configuration list for PBXProject "MeshLogAustria" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				331DFC61A5278B75555ED7D0 /* Debug */,
+				FCB3CEE49A6738AD50BFEAE2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		817C9EA2013FD315D618AB5D /* Build configuration list for PBXNativeTarget "MeshLogAustria" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A2E2F84322019BD9D1102AE /* Debug */,
+				D0B10B659A3D98CFE408DFE0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9C68776F03FCDD49166266A4 /* Build configuration list for PBXNativeTarget "MeshLogAustria-tvOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				401F9412AD07D6408F49F3CC /* Debug */,
+				CCD7DBA52C35CB930FD7BD43 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 2998D9E5A0BCB3509200F1BD /* Project object */;
+}
