@@ -8,6 +8,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ### Backend / Container — Performance & Stability (2026-05-15)
 
+- **Coverage map cells now expose the contributing devices directly from the map** — Coverage overlay dots now include a quick popup list of the top devices seen in that cell, with per-device report counts/SNR and one-tap jump into the existing device popup for fast inspection.
 - **Live WebUI now avoids the biggest browser overload paths under heavy traffic** — The live websocket metadata heartbeat now sends compact reporter/contact/channel snapshots instead of full quick-query payloads, the client no longer does a second full DOM update pass for every loaded message batch, rendered log rows are capped to prevent unbounded DOM growth, and burst route animations are throttled to visible human-facing packet types instead of high-rate RAW/system traffic.
 - **Live websocket metadata heartbeats now use incremental diffs for already-synced clients** — Fresh websocket clients still receive one compact full metadata snapshot when needed, but ongoing reporter/contact/channel updates now send only changed rows plus removed IDs, eliminating repeated full metadata resyncs after minor admin/name/state changes.
 - **Container boot no longer loops on a false database-upgrade-required error after migration 023** — `MeshLog` now expects schema version `23`, so the MQTT worker and live websocket server no longer reject the already-migrated database during startup.

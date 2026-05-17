@@ -5362,6 +5362,100 @@ class MeshLog {
         return '#f44336';                  // poor — red
     }
 
+    _getCoverageDeviceLabel(device) {
+        const name = String(device?.name ?? '').trim();
+        if (name) return name;
+
+        const contactId = Number(device?.contact_id ?? 0);
+        const contact = contactId > 0 ? (this.contacts[contactId] ?? null) : null;
+        const contactName = String(contact?.data?.name ?? '').trim();
+        if (contactName) return contactName;
+
+        const publicKey = String(device?.public_key ?? contact?.data?.public_key ?? '').trim();
+        return publicKey ? publicKey.slice(0, 12) : 'Unknown device';
+    }
+
+    _renderCoverageSpotPopup(spot) {
+        const devices = Array.isArray(spot?.devices) ? spot.devices : [];
+        const deviceCount = Math.max(Number(spot?.device_count) || 0, devices.length);
+        const rows = devices.map((device) => {
+            const contactId = Number(device?.contact_id ?? 0);
+            const contact = contactId > 0 ? (this.contacts[contactId] ?? null) : null;
+            const label = escapeXml(this._getCoverageDeviceLabel(device));
+            const secondaryKey = String(device?.public_key ?? contact?.data?.public_key ?? '').trim();
+            const meta = [
+                `${Number(device?.report_count) || 0} report${Number(device?.report_count) === 1 ? '' : 's'}`,
+                `avg ${Number(device?.avg_snr ?? 0).toFixed(1)} dB`,
+            ];
+            const keyHtml = secondaryKey
+                ? `<span class="map-coverage-device-key">${escapeXml(secondaryKey.slice(0, 16))}</span>`
+                : '';
+            const inner = `
+                <span class="map-coverage-device-name-row">
+                    <span class="map-coverage-device-name">${label}</span>
+                    ${keyHtml}
+                </span>
+                <span class="map-coverage-device-meta">${escapeXml(meta.join(' · '))}</span>
+            `;
+
+            if (contact?.adv) {
+                return `<button type="button" class="map-coverage-device-btn" data-contact-id="${contactId}">${inner}</button>`;
+            }
+
+            return `<div class="map-coverage-device-btn is-static">${inner}</div>`;
+        }).join('');
+
+        const overflowCount = Math.max(0, deviceCount - devices.length);
+        const moreHtml = overflowCount > 0
+            ? `<div class="map-coverage-device-more">+${overflowCount} more device${overflowCount === 1 ? '' : 's'} in this cell</div>`
+            : '';
+
+        return `
+            <div class="device-popup-card map-coverage-popup-card">
+                <div class="device-popup-header">
+                    <div class="device-popup-title">Coverage Cell</div>
+                    <div class="device-popup-subtitle">${escapeXml(Number(spot?.lat ?? 0).toFixed(3))}, ${escapeXml(Number(spot?.lon ?? 0).toFixed(3))}</div>
+                </div>
+                <div class="device-popup-badges">
+                    <span class="device-popup-badge">${escapeXml(String(Number(spot?.report_count) || 0))} reports</span>
+                    <span class="device-popup-badge">${escapeXml(String(deviceCount))} devices</span>
+                    <span class="device-popup-badge">Avg ${escapeXml(Number(spot?.avg_snr ?? 0).toFixed(1))} dB</span>
+                    <span class="device-popup-badge">Peak ${escapeXml(Number(spot?.max_snr ?? 0).toFixed(1))} dB</span>
+                </div>
+                <div class="device-popup-section">
+                    <div class="device-popup-section-head">
+                        <div class="device-popup-section-title">Devices</div>
+                        <div class="device-popup-subtitle">Tap to open</div>
+                    </div>
+                    <div class="map-coverage-device-list">${rows || '<div class="map-coverage-device-empty">No linked devices in this cell.</div>'}</div>
+                    ${moreHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    _wireCoverageSpotPopup(popupElement) {
+        if (!popupElement) return;
+
+        popupElement.querySelectorAll('.map-coverage-device-btn[data-contact-id]').forEach((button) => {
+            if (button.dataset.bound === '1') return;
+            button.dataset.bound = '1';
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const contactId = Number(button.dataset.contactId ?? 0);
+                const contact = contactId > 0 ? (this.contacts[contactId] ?? null) : null;
+                if (!contact?.adv) return;
+
+                if (this.map) {
+                    this.map.closePopup();
+                }
+                this.focusContact(contact);
+            });
+        });
+    }
+
     _renderCoverageSpots(spots) {
         if (!this.map || typeof L === 'undefined') return;
         this._removeCoverageLayer();
@@ -5380,6 +5474,19 @@ class MeshLog {
                 `SNR: ${spot.avg_snr} dB · ${spot.report_count} report${spot.report_count !== 1 ? 's' : ''}`,
                 { direction: 'top', offset: [0, -4], opacity: 0.92, className: 'map-coverage-tooltip' }
             );
+            marker.bindPopup(this._renderCoverageSpotPopup(spot), {
+                className: 'compact-marker-popup map-coverage-popup',
+                maxWidth: 340,
+                closeButton: true,
+                autoClose: true,
+            });
+            marker.on('popupopen', (event) => {
+                const popupElement = event.popup?.getElement?.();
+                if (!popupElement) return;
+                L.DomEvent.disableClickPropagation(popupElement);
+                L.DomEvent.disableScrollPropagation(popupElement);
+                this._wireCoverageSpotPopup(popupElement);
+            });
             return marker;
         });
         this._coverageLayer = L.layerGroup(markers).addTo(this.map);

@@ -880,6 +880,67 @@ h2 {
     border-radius: 5px;
 }
 
+.map-coverage-device-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.map-coverage-device-btn {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    color: #f4f4f4;
+    padding: 8px 9px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.map-coverage-device-btn:hover {
+    background: rgba(255,255,255,0.10);
+    border-color: rgba(255,255,255,0.2);
+}
+
+.map-coverage-device-btn.is-static {
+    cursor: default;
+}
+
+.map-coverage-device-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+}
+
+.map-coverage-device-name {
+    color: #ffffff;
+    font-size: 0.77rem;
+    font-weight: 700;
+}
+
+.map-coverage-device-key,
+.map-coverage-device-meta,
+.map-coverage-device-more,
+.map-coverage-device-empty {
+    color: rgba(255,255,255,0.7);
+    font-size: 0.68rem;
+}
+
+.map-coverage-device-key {
+    font-family: monospace;
+}
+
+.map-coverage-device-more,
+.map-coverage-device-empty {
+    margin-top: 6px;
+}
+
 /* Device bubble activity indicator glow */
 @keyframes device-activity-glow {
     0% {

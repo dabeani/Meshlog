@@ -2488,18 +2488,22 @@ class MeshLog {
                 SELECT
                     ROUND(a.lat, :p1) AS grid_lat,
                     ROUND(a.lon,  :p2) AS grid_lon,
+                    a.contact_id          AS contact_id,
+                    COALESCE(NULLIF(TRIM(c.name), ''), '') AS contact_name,
+                    COALESCE(c.public_key, '')             AS contact_public_key,
+                    SUM(ar.snr)           AS snr_sum,
                     ROUND(AVG(ar.snr), 1) AS avg_snr,
                     MAX(ar.snr)           AS max_snr,
                     COUNT(*)              AS report_count
                 FROM advertisement_reports ar
                 JOIN advertisements a ON a.id = ar.advertisement_id
+                LEFT JOIN contacts c ON c.id = a.contact_id
                 WHERE ar.received_at >= NOW() - INTERVAL :wh HOUR
                   AND a.lat IS NOT NULL AND a.lat != 0
                   AND a.lon IS NOT NULL AND a.lon != 0
                   AND ar.snr IS NOT NULL
-                GROUP BY grid_lat, grid_lon
-                ORDER BY report_count DESC
-                LIMIT 5000
+                GROUP BY grid_lat, grid_lon, a.contact_id, contact_name, contact_public_key
+                ORDER BY grid_lat ASC, grid_lon ASC, report_count DESC, a.contact_id ASC
             ");
             $stmt->bindValue(':p1', $precision, PDO::PARAM_INT);
             $stmt->bindValue(':p2', $precision, PDO::PARAM_INT);
@@ -2511,18 +2515,91 @@ class MeshLog {
             return array('spots' => array(), 'window_hours' => $windowHours, 'error' => 'Query failed');
         }
 
-        $spots = array();
+        $spotsByKey = array();
         foreach ($rows as $row) {
             $lat = floatval($row['grid_lat']);
             $lon = floatval($row['grid_lon']);
-            if ($lat === 0.0 && $lon === 0.0) continue;
-            $spots[] = array(
-                'lat'          => $lat,
-                'lon'          => $lon,
-                'avg_snr'      => floatval($row['avg_snr']),
-                'max_snr'      => floatval($row['max_snr']),
-                'report_count' => intval($row['report_count']),
-            );
+            if ($lat === 0.0 && $lon === 0.0) {
+                continue;
+            }
+
+            $spotKey = sprintf('%.6F,%.6F', $lat, $lon);
+            if (!isset($spotsByKey[$spotKey])) {
+                $spotsByKey[$spotKey] = array(
+                    'lat'          => $lat,
+                    'lon'          => $lon,
+                    'avg_snr'      => 0.0,
+                    'max_snr'      => null,
+                    'report_count' => 0,
+                    'device_count' => 0,
+                    'devices'      => array(),
+                    '_snr_sum'     => 0.0,
+                );
+            }
+
+            $reportCount = intval($row['report_count']);
+            $snrSum = floatval($row['snr_sum']);
+            $maxSnr = floatval($row['max_snr']);
+
+            $spotsByKey[$spotKey]['report_count'] += $reportCount;
+            $spotsByKey[$spotKey]['_snr_sum'] += $snrSum;
+            $spotsByKey[$spotKey]['max_snr'] = ($spotsByKey[$spotKey]['max_snr'] === null)
+                ? $maxSnr
+                : max($spotsByKey[$spotKey]['max_snr'], $maxSnr);
+
+            $contactId = intval($row['contact_id'] ?? 0);
+            if ($contactId > 0) {
+                $spotsByKey[$spotKey]['device_count'] += 1;
+                $spotsByKey[$spotKey]['devices'][] = array(
+                    'contact_id'   => $contactId,
+                    'name'         => trim(strval($row['contact_name'] ?? '')),
+                    'public_key'   => strtoupper(trim(strval($row['contact_public_key'] ?? ''))),
+                    'avg_snr'      => floatval($row['avg_snr']),
+                    'max_snr'      => $maxSnr,
+                    'report_count' => $reportCount,
+                );
+            }
+        }
+
+        $spots = array_values($spotsByKey);
+        foreach ($spots as &$spot) {
+            $spot['avg_snr'] = $spot['report_count'] > 0
+                ? round($spot['_snr_sum'] / $spot['report_count'], 1)
+                : 0.0;
+
+            usort($spot['devices'], function ($left, $right) {
+                $leftCount = intval($left['report_count'] ?? 0);
+                $rightCount = intval($right['report_count'] ?? 0);
+                if ($leftCount !== $rightCount) {
+                    return $rightCount <=> $leftCount;
+                }
+                return intval($left['contact_id'] ?? 0) <=> intval($right['contact_id'] ?? 0);
+            });
+
+            if (count($spot['devices']) > 8) {
+                $spot['devices'] = array_slice($spot['devices'], 0, 8);
+            }
+
+            unset($spot['_snr_sum']);
+        }
+        unset($spot);
+
+        usort($spots, function ($left, $right) {
+            $leftCount = intval($left['report_count'] ?? 0);
+            $rightCount = intval($right['report_count'] ?? 0);
+            if ($leftCount !== $rightCount) {
+                return $rightCount <=> $leftCount;
+            }
+            $leftLat = floatval($left['lat'] ?? 0);
+            $rightLat = floatval($right['lat'] ?? 0);
+            if ($leftLat !== $rightLat) {
+                return $leftLat <=> $rightLat;
+            }
+            return floatval($left['lon'] ?? 0) <=> floatval($right['lon'] ?? 0);
+        });
+
+        if (count($spots) > 5000) {
+            $spots = array_slice($spots, 0, 5000);
         }
 
         return array('spots' => $spots, 'window_hours' => $windowHours);
