@@ -24,7 +24,7 @@ define("DEFAULT_COUNT", 500);
 class MeshLog {
     public $pdo = null;
     private $error = '';
-    private $version = 22;
+    private $version = 23;
     private $ntpConfig = array(
         'enabled' => true,
         'host' => 'pool.ntp.org',

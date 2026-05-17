@@ -8,6 +8,7 @@ All notable changes to MeshLogAustria (forked) are recorded here, in reverse chr
 
 ### Backend / Container — Performance & Stability (2026-05-15)
 
+- **Container boot no longer loops on a false database-upgrade-required error after migration 023** — `MeshLog` now expects schema version `23`, so the MQTT worker and live websocket server no longer reject the already-migrated database during startup.
 - **Decoded RAW packet metadata no longer overflows the database payload column** — Added `migration 023` to widen `raw_packets.payload` from `VARBINARY(256)` to `BLOB`, fixing dropped MQTT packet inserts once decoded PATH/stats/group-datagram metadata exceeds the legacy 256-byte limit.
 - **MeshCore MQTT decoder now follows the current upstream packet/payload docs more strictly** — Binary packet handling now trusts the raw header over bridge `packet_type` metadata, keeps encrypted wrapper decoders version-aware without forcing unencrypted ADVERT/ACK/PATH/CONTROL packets to fall back to RAW, decodes GRP_DATA as datagram metadata instead of text, preserves returned-PATH bundled payload bytes (including stats frames), and scales CONTROL `DISCOVER_RESP` SNR to dB.
 - **WebSocket live backlog paging now preserves overflow beyond the first server batch** — Live packet selection now uses one globally ordered cross-table reference query plus offset-based backlog draining, so bursts larger than 500 packets are delivered across successive websocket polls instead of being skipped at the cursor boundary.
