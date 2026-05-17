@@ -4211,13 +4211,29 @@ class MeshLog {
 
         for (let i = 0; i < reports.length; i++) {
             const report = reports[i];
+            const reporter = this.reporters[Number(report?.reporter_id ?? 0)] ?? null;
+            const reporterContactId = Number(reporter?.getContactId?.() ?? 0);
+            const reporterContact = reporterContactId > 0 ? (this.contacts[reporterContactId] ?? null) : null;
             const firstHopHash = parsePath(report?.path ?? '')[0] ?? '';
-            if (!firstHopHash) continue;
+            let repeaterContact = null;
 
-            const nearest = this.findNearestContact(pointLat, pointLon, firstHopHash, true);
-            const repeaterContact = nearest?.result ?? null;
+            if (firstHopHash) {
+                const nearest = this.findNearestContact(pointLat, pointLon, firstHopHash, true, true);
+                const nearestContact = nearest?.result ?? null;
+                if (nearestContact?.adv && (!nearestContact.isRepeater || nearestContact.isRepeater())) {
+                    repeaterContact = nearestContact;
+                }
+            }
+
+            if (!repeaterContact && reporterContact?.adv) {
+                const reporterLat = Number(reporterContact.adv.data.lat);
+                const reporterLon = Number(reporterContact.adv.data.lon);
+                if (Number.isFinite(reporterLat) && Number.isFinite(reporterLon) && !(reporterLat === 0 && reporterLon === 0)) {
+                    repeaterContact = reporterContact;
+                }
+            }
+
             if (!repeaterContact?.adv) continue;
-            if (!repeaterContact.isRepeater || !repeaterContact.isRepeater()) continue;
             if (seenContactIds.has(repeaterContact.data.id)) continue;
 
             seenContactIds.add(repeaterContact.data.id);
@@ -4260,7 +4276,7 @@ class MeshLog {
             warnings: [],
             preview: {
                 title: `${contact.adv?.data?.name ?? contact.data.public_key} route point`,
-                subtitle: `${repeaters.length} repeater${repeaters.length === 1 ? '' : 's'} heard this advertisement`,
+                subtitle: `${repeaters.length} route contact${repeaters.length === 1 ? '' : 's'} heard this advertisement`,
                 accent: '#ff4d4d',
                 chips: [contact.hash ? `[${contact.hash}]` : null, contact.getContactTypeLabel()].filter(Boolean),
                 footer: point.created_at ? `Seen ${point.created_at}` : '',
@@ -4316,7 +4332,7 @@ class MeshLog {
                 <div class="device-popup-mini-dot-popup">
                     <div><strong>Received:</strong> ${escapeXml(contact.formatPopupTimestamp(point.created_at))}</div>
                     <div><strong>Sender:</strong> ${escapeXml(contact.formatPopupTimestamp(point.sent_at))}</div>
-                    <div><strong>Heard by:</strong> ${escapeXml(heardBy.length > 0 ? heardBy.join(', ') : 'No repeater path stored')}</div>
+                    <div><strong>Heard by:</strong> ${escapeXml(heardBy.length > 0 ? heardBy.join(', ') : 'Stored report had no resolvable route contact')}</div>
                 </div>
             `;
 
@@ -7791,13 +7807,13 @@ class MeshLog {
         });
     }
 
-    findNearestContact(lat, lon, hash, repeater) {
+    findNearestContact(lat, lon, hash, repeater, includeExpired = false) {
         let matches = 0;
         let match = false;
         let matchDist = 99999;
 
         Object.entries(this.contacts).forEach(([k,c]) => {
-            if (c.checkHash(hash) && c.adv && !c.isVeryExpired() && (!repeater || c.isRepeater())) {
+            if (c.checkHash(hash) && c.adv && (includeExpired || !c.isVeryExpired()) && (!repeater || c.isRepeater())) {
                 let current = [c.adv.data.lat, c.adv.data.lon];
                 if (current[0] == 0 && current[1] == 0) return;
 
