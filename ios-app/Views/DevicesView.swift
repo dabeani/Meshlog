@@ -8,6 +8,7 @@ struct DevicesView: View {
     @State private var isLoading = false
     @State private var selectedContact: Contact?
     @State private var searchText = ""
+    @State private var hasLoadedOnce = false
     @AppStorage("collector_filter_selected_ids") private var collectorFilterRaw = ""
 
     private var selectedCollectorIds: Set<Int> {
@@ -103,8 +104,17 @@ struct DevicesView: View {
             .navigationTitle("Devices")
             .meshNavigationBarInline()
             .onAppear {
+                guard navigationState.selectedTab == 2, !hasLoadedOnce else { return }
                 Task {
                     await loadContacts()
+                    hasLoadedOnce = true
+                }
+            }
+            .onChange(of: navigationState.selectedTab) { _, newTab in
+                guard newTab == 2, !hasLoadedOnce else { return }
+                Task {
+                    await loadContacts()
+                    hasLoadedOnce = true
                 }
             }
         }

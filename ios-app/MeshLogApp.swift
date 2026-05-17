@@ -181,19 +181,26 @@ struct MeshLogApp: App {
 
     @ViewBuilder
     private func activeTabContent() -> some View {
-        switch navigationState.selectedTab {
-        case 0:
+        ZStack {
             tabContent(for: 0) { LiveFeedView() }
-        case 1:
+                .opacity(navigationState.selectedTab == 0 ? 1 : 0)
+                .allowsHitTesting(navigationState.selectedTab == 0)
+
             tabContent(for: 1) { MapView() }
-        case 2:
+                .opacity(navigationState.selectedTab == 1 ? 1 : 0)
+                .allowsHitTesting(navigationState.selectedTab == 1)
+
             tabContent(for: 2) { DevicesView() }
-        case 3:
+                .opacity(navigationState.selectedTab == 2 ? 1 : 0)
+                .allowsHitTesting(navigationState.selectedTab == 2)
+
             tabContent(for: 3) { StatsView() }
-        case 4:
+                .opacity(navigationState.selectedTab == 3 ? 1 : 0)
+                .allowsHitTesting(navigationState.selectedTab == 3)
+
             tabContent(for: 4) { SettingsView() }
-        default:
-            tabContent(for: 0) { LiveFeedView() }
+                .opacity(navigationState.selectedTab == 4 ? 1 : 0)
+                .allowsHitTesting(navigationState.selectedTab == 4)
         }
     }
 

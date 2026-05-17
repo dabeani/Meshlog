@@ -4,10 +4,12 @@ import Charts
 
 struct StatsView: View {
     @EnvironmentObject var apiClient: APIClient
+    @EnvironmentObject var navigationState: AppNavigationState
     @State private var stats: StatisticsResponse?
     @State private var selectedWindow: Int = 24
     @State private var isLoading = false
     @State private var lastUpdatedAt: Date?
+    @State private var hasLoadedOnce = false
 
     private let windowOptions = [1, 24, 36]
 
@@ -35,7 +37,9 @@ struct StatsView: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal, 16)
                     .onChange(of: selectedWindow) { _, _ in
-                        Task { await loadStats() }
+                        if navigationState.selectedTab == 3 {
+                            Task { await loadStats() }
+                        }
                     }
 
                     if isLoading {
@@ -251,7 +255,18 @@ struct StatsView: View {
             .navigationTitle("Statistics")
             .meshNavigationBarInline()
             .onAppear {
-                Task { await loadStats() }
+                guard navigationState.selectedTab == 3, !hasLoadedOnce else { return }
+                Task {
+                    await loadStats()
+                    hasLoadedOnce = true
+                }
+            }
+            .onChange(of: navigationState.selectedTab) { _, newTab in
+                guard newTab == 3, !hasLoadedOnce else { return }
+                Task {
+                    await loadStats()
+                    hasLoadedOnce = true
+                }
             }
         }
     }

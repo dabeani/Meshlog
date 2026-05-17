@@ -22,6 +22,12 @@ class APIClient: ObservableObject {
         let error: String
     }
 
+    private struct WebSocketMetadataSnapshot {
+        let contacts: [Contact]
+        let reporters: [Reporter]
+        let channels: [Channel]
+    }
+
     private struct WebSocketQueryEnvelope: Encodable {
         let type: String
         let request_id: String
@@ -159,12 +165,10 @@ class APIClient: ObservableObject {
     // MARK: - Contacts
     
     func fetchContacts(offset: Int = 0, count: Int = 500) async throws -> ContactsResponse {
-        let data = try await makeWebSocketQueryData(action: "contacts", params: [
-            "offset": offset,
-            "count": count
-        ])
-
-        return try JSONDecoder().decode(ContactsResponse.self, from: data)
+        let fetchCount = max(count, offset + count)
+        let snapshot = try await makeWebSocketMetadataSnapshot(count: fetchCount)
+        let contacts = Array(snapshot.contacts.dropFirst(max(0, offset)).prefix(max(0, count)))
+        return ContactsResponse(contacts: contacts, count: contacts.count)
     }
     
     func fetchContactAdvertisements(contactId: Int) async throws -> [Packet] {
@@ -195,15 +199,15 @@ class APIClient: ObservableObject {
     // MARK: - Reporters
     
     func fetchReporters() async throws -> [Reporter] {
-        let data = try await makeWebSocketQueryData(action: "reporters", params: [:])
-        return try decodeFlexibleArray(from: data, preferredKeys: ["reporters", "objects"])
+        let snapshot = try await makeWebSocketMetadataSnapshot(count: 500)
+        return snapshot.reporters
     }
     
     // MARK: - Channels
     
     func fetchChannels() async throws -> [Channel] {
-        let data = try await makeWebSocketQueryData(action: "channels", params: [:])
-        return try decodeFlexibleArray(from: data, preferredKeys: ["channels", "objects"])
+        let snapshot = try await makeWebSocketMetadataSnapshot(count: 500)
+        return snapshot.channels
     }
     
     func updateChannel(_ channel: Channel) async throws {
@@ -398,6 +402,73 @@ class APIClient: ObservableObject {
 
             return try JSONSerialization.data(withJSONObject: payloadObject)
         }
+    }
+
+    private func makeWebSocketMetadataSnapshot(count: Int) async throws -> WebSocketMetadataSnapshot {
+        let fetchCount = max(1, min(500, count))
+        let url = try makeWebSocketURL(queryItems: [
+            URLQueryItem(name: "bootstrap", value: "1"),
+            URLQueryItem(name: "since_ms", value: "0"),
+            URLQueryItem(name: "types", value: "ADV"),
+            URLQueryItem(name: "limit", value: "1"),
+            URLQueryItem(name: "count", value: "\(fetchCount)"),
+            URLQueryItem(name: "chunk_size", value: "120")
+        ])
+
+        let webSocketTask = session.webSocketTask(with: url)
+        webSocketTask.resume()
+        defer {
+            webSocketTask.cancel(with: .normalClosure, reason: nil)
+        }
+
+        var contactObjects: [Any] = []
+        var reporterObjects: [Any] = []
+        var channelObjects: [Any] = []
+
+        while true {
+            let message = try await webSocketTask.receive()
+            let responseData = try data(from: message)
+            let jsonObject = try JSONSerialization.jsonObject(with: responseData)
+
+            guard let envelope = jsonObject as? [String: Any],
+                  let type = envelope["type"] as? String else {
+                continue
+            }
+
+            if type == "bootstrap_done" {
+                return WebSocketMetadataSnapshot(
+                    contacts: try decodeBootstrapObjects(contactObjects, as: Contact.self),
+                    reporters: try decodeBootstrapObjects(reporterObjects, as: Reporter.self),
+                    channels: try decodeBootstrapObjects(channelObjects, as: Channel.self)
+                )
+            }
+
+            guard type == "bootstrap_slice",
+                  let section = envelope["section"] as? String,
+                  let objects = envelope["objects"] as? [Any] else {
+                continue
+            }
+
+            switch section {
+            case "contacts":
+                contactObjects.append(contentsOf: objects)
+            case "reporters":
+                reporterObjects.append(contentsOf: objects)
+            case "channels":
+                channelObjects.append(contentsOf: objects)
+            default:
+                continue
+            }
+        }
+    }
+
+    private func decodeBootstrapObjects<T: Decodable>(_ objects: [Any], as type: T.Type) throws -> [T] {
+        guard !objects.isEmpty else {
+            return []
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: objects)
+        return try JSONDecoder().decode([T].self, from: data)
     }
 
     private func data(from message: URLSessionWebSocketTask.Message) throws -> Data {

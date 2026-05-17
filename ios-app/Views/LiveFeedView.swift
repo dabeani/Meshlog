@@ -118,6 +118,10 @@ struct LiveFeedView: View {
     @AppStorage("notify_new_message") private var notifyNewMessage = false
     @AppStorage("live_feed_items_limit") private var liveFeedItemsLimit = 300
 
+    private var isCurrentTab: Bool {
+        navigationState.selectedTab == 0
+    }
+
     @State private var knownContactIds: Set<Int> = []
     @State private var knownContactKeys: Set<String> = []
     @State private var knownMessagePacketKeys: Set<String> = []
@@ -358,7 +362,7 @@ struct LiveFeedView: View {
                 hasAppeared = true
                 liveLocationManager.requestCurrentLocation()
                 Task { await primeKnownDevices() }
-                if scenePhase == .active {
+                if scenePhase == .active && isCurrentTab {
                     requestLiveStreamRestart(force: true)
                 }
             }
@@ -375,7 +379,9 @@ struct LiveFeedView: View {
 
                 if phase == .active {
                     endBackgroundNotificationTask()
-                    requestLiveStreamRestart(force: true)
+                    if isCurrentTab {
+                        requestLiveStreamRestart(force: true)
+                    }
                 } else {
                     if shouldKeepNotificationStream {
                         beginBackgroundNotificationTask()
@@ -383,6 +389,19 @@ struct LiveFeedView: View {
                         updateTask?.cancel()
                         restartTask?.cancel()
                     }
+                }
+            }
+            .onChange(of: navigationState.selectedTab) { _, newTab in
+                guard hasAppeared else { return }
+
+                if newTab == 0 {
+                    if scenePhase == .active {
+                        requestLiveStreamRestart(force: true)
+                    }
+                } else if !shouldKeepNotificationStream {
+                    updateTask?.cancel()
+                    restartTask?.cancel()
+                    endBackgroundNotificationTask()
                 }
             }
             .onChange(of: showADV) { _, _ in handleFilterChange() }
@@ -498,7 +517,7 @@ struct LiveFeedView: View {
     }
 
     private func requestLiveStreamRestart(force: Bool = false) {
-        guard scenePhase == .active || shouldKeepNotificationStream else {
+        guard (scenePhase == .active && isCurrentTab) || shouldKeepNotificationStream else {
             updateTask?.cancel()
             restartTask?.cancel()
             return

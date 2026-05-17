@@ -70,6 +70,10 @@ struct GeneralSettingsView: View {
     @State private var isLoadingChannels = false
     @State private var collectorLoadError = ""
     @State private var channelLoadError = ""
+    @State private var serverDraftURL = ""
+    @State private var selectedServerMode = "custom"
+    @State private var serverApplyError = ""
+    @State private var lastLoadedBaseURL = ""
 
     @AppStorage("live_type_adv") private var showADV = true
     @AppStorage("live_type_msg") private var showMSG = true
@@ -91,6 +95,8 @@ struct GeneralSettingsView: View {
 
     @State private var showNotificationPermissionHint = false
     @State private var suppressNotificationToggleHandler = false
+
+    private let officialServerURL = "https://meshlog.1tld.net"
 
     private var selectedCollectorIds: Set<Int> {
         Set(
@@ -178,6 +184,88 @@ struct GeneralSettingsView: View {
 
     private func shortReporterKey(_ key: String) -> String {
         String(key.prefix(16)) + "..."
+    }
+
+    private func channelSelectionBinding(for channel: Channel) -> Binding<Bool> {
+        Binding(
+            get: {
+                if channelFilterModeRaw != "selected" {
+                    return true
+                }
+                return !selectedChannelFilterKeys.isDisjoint(with: channelKeys(for: channel))
+            },
+            set: { isEnabled in
+                if channelFilterModeRaw != "selected" {
+                    channelFilterModeRaw = "selected"
+                    selectAllChannels()
+                }
+                toggleChannelSelection(channel, enabled: isEnabled)
+            }
+        )
+    }
+
+    private func syncServerSelectionFromCurrentURL() {
+        let currentURL = apiClient.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if serverDraftURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || currentURL != lastLoadedBaseURL {
+            serverDraftURL = currentURL
+        }
+        selectedServerMode = currentURL.caseInsensitiveCompare(officialServerURL) == .orderedSame ? "official" : "custom"
+    }
+
+    private func normalizedServerURL(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              (scheme == "http" || scheme == "https"),
+              url.host != nil else {
+            return nil
+        }
+        return trimmed
+    }
+
+    @MainActor
+    private func reloadRemoteSelections(force: Bool = false) async {
+        syncServerSelectionFromCurrentURL()
+
+        let currentBaseURL = apiClient.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldReloadCollectors = force || currentBaseURL != lastLoadedBaseURL || reporters.isEmpty || !collectorLoadError.isEmpty
+        let shouldReloadChannels = force || currentBaseURL != lastLoadedBaseURL || channels.isEmpty || !channelLoadError.isEmpty
+        lastLoadedBaseURL = currentBaseURL
+
+        if shouldReloadCollectors {
+            await loadCollectors()
+        }
+
+        if shouldReloadChannels {
+            await loadChannels()
+        }
+    }
+
+    @MainActor
+    private func applyServerSelection() async {
+        serverApplyError = ""
+
+        let targetURL = selectedServerMode == "official" ? officialServerURL : serverDraftURL
+        guard let normalizedURL = normalizedServerURL(targetURL) else {
+            serverApplyError = "Enter a valid http(s) server URL."
+            return
+        }
+
+        let previousURL = apiClient.baseURL
+        apiClient.updateBaseURL(normalizedURL)
+        serverDraftURL = normalizedURL
+        syncServerSelectionFromCurrentURL()
+
+        if previousURL != normalizedURL {
+            reporters = []
+            channels = []
+            collectorNameByPublicKey = [:]
+            collectorLoadError = ""
+            channelLoadError = ""
+        }
+
+        await reloadRemoteSelections(force: true)
     }
 
     private func collectorToggleBinding(for reporterId: Int, allIds: [Int]) -> Binding<Bool> {
@@ -324,6 +412,12 @@ struct GeneralSettingsView: View {
 
                         Spacer()
 
+                        Button("Reload") {
+                            Task { await reloadRemoteSelections(force: true) }
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.cyan)
+
                         Button("All") {
                             collectorFilterRaw = ""
                         }
@@ -391,63 +485,71 @@ struct GeneralSettingsView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    if channelFilterModeRaw == "selected" {
-                        HStack(spacing: 10) {
-                            Button("All") {
-                                selectAllChannels()
-                            }
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.cyan)
-
-                            Button("None") {
-                                clearChannelSelection()
-                            }
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.cyan)
-
-                            Spacer()
+                    HStack(spacing: 10) {
+                        Button("All") {
+                            selectAllChannels()
+                            channelFilterModeRaw = "selected"
                         }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.cyan)
 
-                        if isLoadingChannels {
-                            Text("Loading channels...")
-                                .font(.system(size: 11))
-                                .foregroundColor(.gray)
-                        } else if !channelLoadError.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Channels unavailable")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(.orange)
-                                Text(channelLoadError)
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.gray)
-                                Button("Retry") {
-                                    Task { await loadChannels() }
-                                }
+                        Button("None") {
+                            clearChannelSelection()
+                            channelFilterModeRaw = "selected"
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.cyan)
+
+                        Button("Reload") {
+                            Task { await reloadRemoteSelections(force: true) }
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.cyan)
+
+                        Spacer()
+                    }
+
+                    if channelFilterModeRaw == "all" {
+                        Text("All channels are currently enabled. Toggle any channel below to switch into a custom selected set.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.gray)
+                    }
+
+                    if isLoadingChannels {
+                        Text("Loading channels...")
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                    } else if !channelLoadError.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Channels unavailable")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.cyan)
-                            }
-                        } else if channels.isEmpty {
-                            Text("No channels found")
-                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                            Text(channelLoadError)
+                                .font(.system(size: 10))
                                 .foregroundColor(.gray)
-                        } else {
-                            ForEach(channels) { channel in
-                                let enabled = !selectedChannelFilterKeys.isDisjoint(with: channelKeys(for: channel))
-                                Toggle(isOn: Binding(
-                                    get: { enabled },
-                                    set: { toggleChannelSelection(channel, enabled: $0) }
-                                )) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(channel.name)
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundColor(.white)
-                                        Text("ID \(channel.id)")
-                                            .font(.system(size: 9))
-                                            .foregroundColor(.gray)
-                                    }
-                                }
-                                .tint(.cyan)
+                            Button("Retry") {
+                                Task { await reloadRemoteSelections(force: true) }
                             }
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.cyan)
+                        }
+                    } else if channels.isEmpty {
+                        Text("No channels found")
+                            .font(.system(size: 11))
+                            .foregroundColor(.gray)
+                    } else {
+                        ForEach(channels) { channel in
+                            Toggle(isOn: channelSelectionBinding(for: channel)) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(channel.name)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.white)
+                                    Text("ID \(channel.id)")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                            .tint(.cyan)
                         }
                     }
                 }
@@ -581,8 +683,54 @@ struct GeneralSettingsView: View {
                         .foregroundColor(.white)
                     
                     VStack(alignment: .leading, spacing: 8) {
+                        Picker("Server Endpoint", selection: $selectedServerMode) {
+                            Text("Official").tag("official")
+                            Text("Custom").tag("custom")
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: selectedServerMode) { _, newValue in
+                            if newValue == "official" {
+                                serverDraftURL = officialServerURL
+                            } else if serverDraftURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                serverDraftURL = apiClient.baseURL
+                            }
+                        }
+
+                        if selectedServerMode == "custom" {
+                            TextField(
+                                "Custom server URL",
+                                text: $serverDraftURL,
+                                prompt: Text("https://your-meshlog-server").foregroundColor(Color.white.opacity(0.65))
+                            )
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .meshTextInputStyle()
+                        }
+
+                        HStack(spacing: 10) {
+                            Button("Apply") {
+                                Task { await applyServerSelection() }
+                            }
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.cyan)
+
+                            Button("Reload") {
+                                Task { await reloadRemoteSelections(force: true) }
+                            }
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.cyan)
+
+                            Spacer()
+                        }
+
+                        if !serverApplyError.isEmpty {
+                            Text(serverApplyError)
+                                .font(.system(size: 10))
+                                .foregroundColor(.orange)
+                        }
+
                         HStack {
-                            Text("URL")
+                            Text("Current")
                                 .foregroundColor(.gray)
                             Spacer()
                             Text(apiClient.baseURL)
@@ -653,11 +801,9 @@ struct GeneralSettingsView: View {
                 }
             }
             .padding(16)
-            .onAppear {
-                Task {
-                    if reporters.isEmpty { await loadCollectors() }
-                    if channels.isEmpty { await loadChannels() }
-                }
+            .task(id: apiClient.baseURL) {
+                syncServerSelectionFromCurrentURL()
+                await reloadRemoteSelections()
             }
             .onChange(of: notifyNewDevice) { _, enabled in
                 guard !suppressNotificationToggleHandler else { return }
