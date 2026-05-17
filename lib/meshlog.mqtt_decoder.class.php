@@ -16,7 +16,7 @@ class MeshLogMqttDecoder {
     const PAYLOAD_TYPE_ACK        = 0x03; // Acknowledgment (4-byte CRC checksum, unencrypted)
     const PAYLOAD_TYPE_ADVERT     = 0x04; // Node advertisement (unencrypted)
     const PAYLOAD_TYPE_GRP_TXT    = 0x05; // Group text message (AES-128 encrypted)
-    const PAYLOAD_TYPE_GRP_DATA   = 0x06; // Group datagram (same structure as GRP_TXT, encrypted)
+    const PAYLOAD_TYPE_GRP_DATA   = 0x06; // Group datagram (encrypted; plaintext is data_type + data_len + data)
     const PAYLOAD_TYPE_ANON_REQ   = 0x07; // Anonymous request (dest_hash + sender_pubkey + MAC + ciphertext)
     const PAYLOAD_TYPE_PATH       = 0x08; // Returned path (path_length + path_hashes + extra_type + extra)
     const PAYLOAD_TYPE_TRACE      = 0x09; // Trace packet (path with per-hop SNR data)
@@ -68,10 +68,13 @@ class MeshLogMqttDecoder {
 
             $bytes = hex2bin($raw);
             $packet = static::extractPacket($bytes);
+            if (!is_array($packet)) return null;
+
             $path = $packet['path'] ?? static::decodePath($data['path'] ?? '');
             $hashSize = $packet['hash_size'] ?? static::decodeHashSize($path);
             $routeType = static::normalizeRouteType($packet['route_type'] ?? null);
-            $packetType = intval($data['packet_type'] ?? 0);
+            $packetType = intval(($packet['header'] ?? 0) >> 2) & 0x0F;
+            $payloadVersion = intval($packet['payload_version'] ?? 0);
             $snr = intval($data['SNR'] ?? 0);
 
             $scope = static::resolveScopeFromKnownScopes(
@@ -98,18 +101,18 @@ class MeshLogMqttDecoder {
             // GRP_TXT packets (packet_type=5) are AES-128 encrypted group messages.
             // Attempt decryption using all enabled channels that have a known PSK.
             // Falls through to RAW if no channel matches or decryption fails.
-            if ($packetType === static::PAYLOAD_TYPE_GRP_TXT && !empty($channels)) {
+            if ($payloadVersion === 0 && $packetType === static::PAYLOAD_TYPE_GRP_TXT && !empty($channels)) {
                 $decoded = static::decodeGroupPacket(
-                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels, $packetType
                 );
                 if ($decoded !== null) return $decoded;
             }
 
             // GRP_DATA (packet_type=6) uses the identical outer structure as GRP_TXT.
             // Attempt decryption; fall through to RAW if no channel matches.
-            if ($packetType === static::PAYLOAD_TYPE_GRP_DATA && !empty($channels)) {
+            if ($payloadVersion === 0 && $packetType === static::PAYLOAD_TYPE_GRP_DATA && !empty($channels)) {
                 $decoded = static::decodeGroupPacket(
-                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels
+                    $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels, $packetType
                 );
                 if ($decoded !== null) return $decoded;
             }
@@ -141,7 +144,7 @@ class MeshLogMqttDecoder {
 
             // ANON_REQ (packet_type=7): destination hash + sender pubkey visible; ciphertext encrypted.
             // Extracts the unencrypted routing fields and stores as a decoded RAW entry.
-            if ($packetType === static::PAYLOAD_TYPE_ANON_REQ) {
+            if ($payloadVersion === 0 && $packetType === static::PAYLOAD_TYPE_ANON_REQ) {
                 $decoded = static::decodeAnonReqPacket(
                     $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta
                 );
@@ -150,7 +153,7 @@ class MeshLogMqttDecoder {
 
             // REQ (packet_type=0) and RESPONSE (packet_type=1): encrypted unicast frames.
             // The destination and source node hashes are visible in the unencrypted header.
-            if ($packetType === static::PAYLOAD_TYPE_REQ || $packetType === static::PAYLOAD_TYPE_RESPONSE) {
+            if ($payloadVersion === 0 && ($packetType === static::PAYLOAD_TYPE_REQ || $packetType === static::PAYLOAD_TYPE_RESPONSE)) {
                 $decoded = static::decodeDirectFramePacket(
                     $raw, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $packetType
                 );
@@ -683,6 +686,7 @@ class MeshLogMqttDecoder {
 
         return array(
             'header' => $layout['header'],
+            'payload_version' => $layout['payload_version'],
             'route_type' => $layout['route_type'],
             'path' => static::decodePathBytes(substr($bytes, $layout['path_offset'], $layout['path_byte_len']), $layout['hash_size']),
             'payload' => strtoupper(bin2hex(substr($bytes, $layout['payload_offset']))),
@@ -709,6 +713,7 @@ class MeshLogMqttDecoder {
         return array(
             'header' => $header,
             'packet_type' => (($header >> 2) & 0x0F),
+            'payload_version' => (($header >> 6) & 0x03),
             'path' => $packet['path'] ?? '',
             'payload' => $packet['payload'] ?? '',
             'hash_size' => intval($packet['hash_size'] ?? 1),
@@ -722,6 +727,7 @@ class MeshLogMqttDecoder {
 
         $headerByte = ord($bytes[0]);
         $routeType  = $headerByte & 0x03;
+        $payloadVersion = ($headerByte >> 6) & 0x03;
 
         $hasTransport = ($routeType === static::ROUTE_TYPE_TRANSPORT_FLOOD ||
                          $routeType === static::ROUTE_TYPE_TRANSPORT_DIRECT);
@@ -741,6 +747,7 @@ class MeshLogMqttDecoder {
 
         return array(
             'header' => $headerByte,
+            'payload_version' => $payloadVersion,
             'route_type' => $routeType,
             'hash_size' => $hashSize,
             'path_offset' => $pathOffset,
@@ -1106,10 +1113,14 @@ class MeshLogMqttDecoder {
      * @param  array  $data      Decoded meshcoretomqtt JSON.
      * @param  array  $mqttMeta  MQTT metadata from extractMetadata().
      * @param  array  $channels  Array of MeshLogChannel objects with PSK set.
+     * @param  int    $packetType Packet type constant for the decrypted group packet.
      * @return array|null        PUB data array for insertForReporter(), or null on failure.
      */
-    private static function decodeGroupPacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels) {
+    private static function decodeGroupPacket($rawHex, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $data, $mqttMeta, $channels, $packetType) {
         $bytes = hex2bin($rawHex);
+        $layout = static::extractPacketLayout($bytes);
+        if ($layout === null) return null;
+
         $payload = static::extractPayloadBytes($bytes);
         if ($payload === null) return null;
 
@@ -1201,62 +1212,103 @@ class MeshLogMqttDecoder {
             );
             if ($decrypted === false || strlen($decrypted) < 6) continue;
 
-            // Decrypted format: [timestamp(4)][flags(1)]["SenderName: message\0"...]
-            $tsArr            = unpack('V', substr($decrypted, 0, 4));
-            $senderTimestampS = intval($tsArr[1]);
-            $txtTypeByte      = ord($decrypted[4]);
-            $txtType          = ($txtTypeByte >> 2) & 0x3F;
+            if ($packetType === static::PAYLOAD_TYPE_GRP_TXT) {
+                // Decrypted format: [timestamp(4)][flags(1)]["SenderName: message\0"...]
+                $tsArr            = unpack('V', substr($decrypted, 0, 4));
+                $senderTimestampS = intval($tsArr[1]);
+                $txtTypeByte      = ord($decrypted[4]);
+                $txtType          = ($txtTypeByte >> 2) & 0x3F;
 
-            // Only handle plain text (TXT_TYPE_PLAIN = 0).
-            if ($txtType !== 0) continue;
+                // Only handle plain text (TXT_TYPE_PLAIN = 0).
+                if ($txtType !== 0) continue;
 
-            // Extract text portion after [timestamp(4)][flags(1)] and strip trailing zero padding.
-            $textRaw = rtrim(substr($decrypted, 5), "\0");
-            if ($textRaw === '') continue;
+                // Extract text portion after [timestamp(4)][flags(1)] and strip trailing zero padding.
+                $textRaw = rtrim(substr($decrypted, 5), "\0");
+                if ($textRaw === '') continue;
 
-            // Deduplicate decrypted group messages by semantic content rather than
-            // the bridge's outer packet hash. The plaintext contains the sender name
-            // and message body; combining it with the channel hash and sender
-            // timestamp keeps identical repeat receptions grouped together.
-            $packetHash = substr(
-                hash('sha256', $channel->hash . ':' . $senderTimestampS . ':' . $textRaw),
-                0,
-                16
-            );
+                // Deduplicate decrypted group messages by semantic content rather than
+                // the bridge's outer packet hash. The plaintext contains the sender name
+                // and message body; combining it with the channel hash and sender
+                // timestamp keeps identical repeat receptions grouped together.
+                $packetHash = substr(
+                    hash('sha256', $channel->hash . ':' . $senderTimestampS . ':' . $textRaw),
+                    0,
+                    16
+                );
 
-            // Validate sender clock; fall back to server receive time if unreasonable.
-            $senderTimestampMs = ($senderTimestampS >= static::MIN_VALID_UNIX_TIMESTAMP)
-                ? $senderTimestampS * 1000
-                : $timestamp;
+                // Validate sender clock; fall back to server receive time if unreasonable.
+                $senderTimestampMs = ($senderTimestampS >= static::MIN_VALID_UNIX_TIMESTAMP)
+                    ? $senderTimestampS * 1000
+                    : $timestamp;
 
-            $serverTimestampMs = intval(floor(microtime(true) * 1000));
+                $serverTimestampMs = intval(floor(microtime(true) * 1000));
 
-            return array(
-                'type'     => 'PUB',
-                'reporter' => $reporter,
-                'hash'     => $packetHash,
-                'hash_size' => $hashSize,
-                'scope'    => $scope,
-                'route_type' => $routeType,
-                'channel'  => array(
-                    'hash' => $channel->hash,
-                    'name' => $channel->name,
-                ),
-                'message'  => array(
-                    'text' => $textRaw,
-                    'path' => $path,
-                ),
-                'contact' => array(
-                    'pubkey' => '',   // sender pubkey not available in flood packets
-                ),
-                'time' => array(
-                    'sender' => $senderTimestampMs,
-                    'local'  => $serverTimestampMs,
-                    'server' => $serverTimestampMs,
-                ),
-                'snr'   => $snr,
-                '_mqtt' => $mqttMeta,
-            );
+                return array(
+                    'type'     => 'PUB',
+                    'reporter' => $reporter,
+                    'hash'     => $packetHash,
+                    'hash_size' => $hashSize,
+                    'scope'    => $scope,
+                    'route_type' => $routeType,
+                    'channel'  => array(
+                        'hash' => $channel->hash,
+                        'name' => $channel->name,
+                    ),
+                    'message'  => array(
+                        'text' => $textRaw,
+                        'path' => $path,
+                    ),
+                    'contact' => array(
+                        'pubkey' => '',   // sender pubkey not available in flood packets
+                    ),
+                    'time' => array(
+                        'sender' => $senderTimestampMs,
+                        'local'  => $serverTimestampMs,
+                        'server' => $serverTimestampMs,
+                    ),
+                    'snr'   => $snr,
+                    '_mqtt' => $mqttMeta,
+                );
+            }
+
+            if ($packetType === static::PAYLOAD_TYPE_GRP_DATA) {
+                if (strlen($decrypted) < 3) continue;
+
+                $dataType = unpack('v', substr($decrypted, 0, 2))[1];
+                $dataLen = ord($decrypted[2]);
+                if (strlen($decrypted) < 3 + $dataLen) continue;
+
+                $dataBytes = substr($decrypted, 3, $dataLen);
+                $packetHash = substr(
+                    hash('sha256', $channel->hash . ':grpdata:' . $dataType . ':' . strtoupper(bin2hex($dataBytes))),
+                    0,
+                    16
+                );
+
+                return static::buildRawReturn(
+                    $layout,
+                    $path,
+                    $hashSize,
+                    $scope,
+                    $routeType,
+                    $snr,
+                    $timestamp,
+                    $reporter,
+                    $mqttMeta,
+                    json_encode(array(
+                        'channel' => array(
+                            'hash' => $channel->hash,
+                            'name' => $channel->name,
+                        ),
+                        'group_datagram' => array(
+                            'data_type' => $dataType,
+                            'data_len' => $dataLen,
+                            'data' => strtoupper(bin2hex($dataBytes)),
+                        ),
+                        'hash' => $packetHash,
+                    ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                );
+            }
         }
 
         return null; // no matching channel / MAC verification failed
@@ -1345,11 +1397,14 @@ class MeshLogMqttDecoder {
         }
 
         $extraType = ord($payloadBytes[$pos]);
+        $pos++;
+        $extraBytes = substr($payloadBytes, $pos);
 
         return static::buildRawReturn($layout, $path, $hashSize, $scope, $routeType, $snr, $timestamp, $reporter, $mqttMeta,
             json_encode(array(
                 'returned_path' => $returnedPathHashes,
                 'extra_type' => $extraType,
+                'extra_payload' => static::decodeReturnedPathExtraPayload($extraType, $extraBytes),
             ))
         );
     }
@@ -1384,11 +1439,14 @@ class MeshLogMqttDecoder {
         } elseif ($subType === 9 && strlen($payloadBytes) >= 6) {
             $meta['node_type']    = $flags & 0x0F;
             $snrRaw               = ord($payloadBytes[1]);
-            $meta['discover_snr'] = ($snrRaw >= 128) ? intval($snrRaw - 256) : intval($snrRaw);
+            $discoverSnrRaw       = ($snrRaw >= 128) ? intval($snrRaw - 256) : intval($snrRaw);
+            $meta['discover_snr'] = $discoverSnrRaw / 4.0;
             $meta['tag']          = strtoupper(bin2hex(substr($payloadBytes, 2, 4)));
             $pubkeyLen = strlen($payloadBytes) - 6;
-            if ($pubkeyLen === 8 || $pubkeyLen === 32) {
+            if ($pubkeyLen === 8) {
                 $meta['pubkey_prefix'] = strtoupper(bin2hex(substr($payloadBytes, 6, $pubkeyLen)));
+            } elseif ($pubkeyLen === 32) {
+                $meta['pubkey'] = strtoupper(bin2hex(substr($payloadBytes, 6, $pubkeyLen)));
             }
         }
 
@@ -1447,6 +1505,97 @@ class MeshLogMqttDecoder {
                 'src_hash'  => $srcHash,
             ))
         );
+    }
+
+    private static function decodeReturnedPathExtraPayload($extraType, $extraBytes) {
+        $meta = array(
+            'raw' => strtoupper(bin2hex($extraBytes)),
+        );
+
+        if ($extraType === static::PAYLOAD_TYPE_ACK && strlen($extraBytes) >= 4) {
+            $meta['crc'] = sprintf('%08X', unpack('V', substr($extraBytes, 0, 4))[1]);
+            return $meta;
+        }
+
+        if ($extraType === static::PAYLOAD_TYPE_RESPONSE) {
+            $statsFrame = static::decodeStatsFrame($extraBytes);
+            if ($statsFrame !== null) {
+                $meta['stats'] = $statsFrame;
+            }
+            return $meta;
+        }
+
+        if ($extraType === static::PAYLOAD_TYPE_REQ && strlen($extraBytes) >= 4) {
+            $timestamp = unpack('V', substr($extraBytes, 0, 4))[1];
+            $requestData = substr($extraBytes, 4);
+            $requestType = strlen($requestData) > 0 ? ord($requestData[0]) : null;
+
+            $meta['timestamp'] = $timestamp;
+            $meta['request_type'] = $requestType;
+            if ($requestType === 0x01) $meta['request_name'] = 'get_stats';
+            if ($requestType === 0x02) $meta['request_name'] = 'keepalive';
+            return $meta;
+        }
+
+        return $meta;
+    }
+
+    private static function decodeStatsFrame($frameBytes) {
+        if (!is_string($frameBytes) || strlen($frameBytes) < 2) return null;
+
+        $responseCode = ord($frameBytes[0]);
+        $statsType = ord($frameBytes[1]);
+        if ($responseCode !== 24) return null;
+
+        if ($statsType === 0 && strlen($frameBytes) >= 11) {
+            return array(
+                'type' => 'core',
+                'battery_mv' => unpack('v', substr($frameBytes, 2, 2))[1],
+                'uptime_secs' => unpack('V', substr($frameBytes, 4, 4))[1],
+                'errors' => unpack('v', substr($frameBytes, 8, 2))[1],
+                'queue_len' => ord($frameBytes[10]),
+            );
+        }
+
+        if ($statsType === 1 && strlen($frameBytes) >= 14) {
+            $noiseFloor = unpack('v', substr($frameBytes, 2, 2))[1];
+            if ($noiseFloor >= 0x8000) $noiseFloor -= 0x10000;
+
+            $lastRssi = ord($frameBytes[4]);
+            if ($lastRssi >= 128) $lastRssi -= 256;
+
+            $lastSnr = ord($frameBytes[5]);
+            if ($lastSnr >= 128) $lastSnr -= 256;
+
+            return array(
+                'type' => 'radio',
+                'noise_floor' => $noiseFloor,
+                'last_rssi' => $lastRssi,
+                'last_snr' => $lastSnr / 4.0,
+                'tx_air_secs' => unpack('V', substr($frameBytes, 6, 4))[1],
+                'rx_air_secs' => unpack('V', substr($frameBytes, 10, 4))[1],
+            );
+        }
+
+        if ($statsType === 2 && strlen($frameBytes) >= 26) {
+            $meta = array(
+                'type' => 'packets',
+                'recv' => unpack('V', substr($frameBytes, 2, 4))[1],
+                'sent' => unpack('V', substr($frameBytes, 6, 4))[1],
+                'flood_tx' => unpack('V', substr($frameBytes, 10, 4))[1],
+                'direct_tx' => unpack('V', substr($frameBytes, 14, 4))[1],
+                'flood_rx' => unpack('V', substr($frameBytes, 18, 4))[1],
+                'direct_rx' => unpack('V', substr($frameBytes, 22, 4))[1],
+            );
+
+            if (strlen($frameBytes) >= 30) {
+                $meta['recv_errors'] = unpack('V', substr($frameBytes, 26, 4))[1];
+            }
+
+            return $meta;
+        }
+
+        return null;
     }
 }
 
