@@ -4,6 +4,8 @@
 /ios-app/
 /test.txt
 /debug.txt
+/iOS-APP-GUIDE.md
+
 
 # macOS / Xcode local state
 **/.DS_Store
