@@ -1,9 +1,6 @@
 /config.php
 /docker/.env
 /node_modules/
-/.github/
-/.vscode/
-/.vscode/settings.json
 /test.txt
 /debug.txt
 
